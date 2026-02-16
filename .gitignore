@@ -1,0 +1,39 @@
+﻿# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+npm-debug.log*
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Local runtime
+logs/
+*.pid
+
+# Local DB and env
+comanda-backend/comanda_dev.db
+*.db-shm
+*.db-wal
+.env
+.env.local
+
+# Coverage / caches
+coverage/
+.cache/
+
+# Temp accidental files
+26.0.1
+See
+npm.cmd

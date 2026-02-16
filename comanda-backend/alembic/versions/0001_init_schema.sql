@@ -1,0 +1,4 @@
+-- Source of truth for MVP schema is currently:
+-- ../../../docs/DB_SCHEMA_SQLITE.sql
+--
+-- This file marks the intended first schema migration version.
