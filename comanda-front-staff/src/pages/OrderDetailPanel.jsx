@@ -39,6 +39,8 @@ export function OrderDetailPanel({
   onRefresh,
   onAdvanceItem,
   advancingKey,
+  onCloseTable,
+  closingTable = false,
 }) {
   return (
     <section className="panel">
@@ -67,6 +69,11 @@ export function OrderDetailPanel({
               Comensales: {orderDetail.guest_count} | Entregados: {orderDetail.delivered_items} / {orderDetail.total_items}
             </p>
             <p className="muted">Total: {formatMoney(orderDetail.total_amount)}</p>
+            {actorSector === "ADMIN" && (
+              <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable}>
+                {closingTable ? "Cerrando..." : "Cerrar mesa"}
+              </button>
+            )}
           </article>
 
           <article className="detail-card">

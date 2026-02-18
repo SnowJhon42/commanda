@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { createOrder, fetchMenu } from "./api/clientApi";
+import {
+  fetchMenu,
+  fetchTableSessionState,
+  joinTableSession,
+  openTableSession,
+  openTableSessionEvents,
+  upsertOrderByTable,
+} from "./api/clientApi";
 import { MenuPage } from "./pages/MenuPage";
 import { CheckoutPage } from "./pages/CheckoutPage";
 import { OrderTrackingPage } from "./pages/OrderTrackingPage";
@@ -10,8 +17,21 @@ function cartKey(productId, variantId) {
   return `${productId}:${variantId ?? "none"}`;
 }
 
+function getStableClientId() {
+  if (typeof window === "undefined") return `client-${Date.now()}`;
+  const key = "comanda_client_id";
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const generated = window.crypto?.randomUUID
+    ? window.crypto.randomUUID()
+    : `client-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+  window.localStorage.setItem(key, generated);
+  return generated;
+}
+
 export function App() {
   const [storeId] = useState(DEFAULT_STORE_ID);
+  const [clientId] = useState(getStableClientId);
   const [tableCode, setTableCode] = useState("M1");
   const [guestCount, setGuestCount] = useState(2);
 
@@ -24,6 +44,8 @@ export function App() {
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [lastCreatedOrder, setLastCreatedOrder] = useState(null);
   const [activeOrderId, setActiveOrderId] = useState(null);
+  const [tableSessionId, setTableSessionId] = useState(null);
+  const [connectedClients, setConnectedClients] = useState(1);
   const [uiToast, setUiToast] = useState("");
 
   const loadMenu = async () => {
@@ -125,30 +147,88 @@ export function App() {
       return;
     }
 
-    const payload = {
-      tenant_id: 1,
-      store_id: storeId,
-      table_code: tableCode.trim().toUpperCase(),
-      guest_count: Number(guestCount),
-      items: cartItems.map((item) => ({
-        product_id: item.product_id,
-        variant_id: item.variant_id,
-        qty: item.qty,
-        notes: item.notes?.trim() || undefined,
-      })),
-    };
+    const normalizedTable = tableCode.trim().toUpperCase();
 
     setSubmittingOrder(true);
     try {
-      const created = await createOrder(payload);
+      const opened = await openTableSession({
+        store_id: storeId,
+        table_code: normalizedTable,
+        guest_count: Number(guestCount),
+      });
+      setTableSessionId(opened.table_session_id);
+
+      const joined = await joinTableSession({
+        tableSessionId: opened.table_session_id,
+        clientId,
+        alias: `Mesa-${normalizedTable}-${clientId.slice(-4)}`,
+      });
+      setConnectedClients(joined.connected_clients || 1);
+
+      const created = await upsertOrderByTable({
+        tenant_id: 1,
+        store_id: storeId,
+        table_session_id: opened.table_session_id,
+        guest_count: Number(guestCount),
+        items: cartItems.map((item) => ({
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          qty: item.qty,
+          notes: item.notes?.trim() || undefined,
+        })),
+      });
+
       setLastCreatedOrder(created);
       setActiveOrderId(created.order_id);
       setCartItems([]);
     } catch (error) {
-      setCheckoutError(error.message || "No se pudo crear el pedido.");
+      setCheckoutError(error.message || "No se pudo crear el pedido compartido.");
     } finally {
       setSubmittingOrder(false);
     }
+  };
+
+  useEffect(() => {
+    if (!tableSessionId) return;
+
+    const refreshState = async () => {
+      try {
+        const state = await fetchTableSessionState(tableSessionId);
+        if (state.status === "CLOSED") {
+          setUiToast("La mesa fue cerrada por el staff.");
+          setTableSessionId(null);
+          setConnectedClients(1);
+          setActiveOrderId(null);
+          return;
+        }
+        setConnectedClients(state.connected_clients || 1);
+        if (state.active_order_id) {
+          setActiveOrderId(state.active_order_id);
+        }
+      } catch {
+      }
+    };
+
+    refreshState();
+    const timer = setInterval(refreshState, 10000);
+    const stream = openTableSessionEvents(tableSessionId);
+    stream.onmessage = refreshState;
+    stream.addEventListener("items.changed", refreshState);
+    stream.addEventListener("order.created", refreshState);
+    stream.addEventListener("table.session.joined", refreshState);
+    stream.addEventListener("table.session.closed", refreshState);
+
+    return () => {
+      clearInterval(timer);
+      stream.close();
+    };
+  }, [tableSessionId]);
+
+  const handleTableCodeChange = (value) => {
+    setTableCode(value);
+    setTableSessionId(null);
+    setConnectedClients(1);
+    setActiveOrderId(null);
   };
 
   return (
@@ -156,9 +236,18 @@ export function App() {
       <header className="hero">
         <p className="kicker">Mesa digital</p>
         <h1>Comanda Cliente</h1>
-        <p className="muted">Pedido por mesa con seguimiento en vivo.</p>
+        <p className="muted">Pedido compartido por mesa con seguimiento en vivo.</p>
         <p className="hero-meta">
           Carrito: <strong>{cartItems.reduce((acc, item) => acc + item.qty, 0)}</strong> items
+        </p>
+        <p className="hero-meta">
+          Mesa: <strong>{tableCode.trim().toUpperCase() || "-"}</strong>
+          {tableSessionId && (
+            <>
+              {" | "}Sesion: <strong>#{tableSessionId}</strong>
+              {" | "}Conectados: <strong>{connectedClients}</strong>
+            </>
+          )}
         </p>
       </header>
 
@@ -181,7 +270,7 @@ export function App() {
         checkoutError={checkoutError}
         submittingOrder={submittingOrder}
         lastCreatedOrder={lastCreatedOrder}
-        onTableCodeChange={setTableCode}
+        onTableCodeChange={handleTableCodeChange}
         onGuestCountChange={setGuestCount}
         onUpdateCartQty={updateCartQty}
         onUpdateCartNotes={updateCartNotes}

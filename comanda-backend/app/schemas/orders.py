@@ -18,6 +18,56 @@ class CreateOrderRequest(BaseModel):
     items: list[CreateOrderItemIn]
 
 
+class OpenTableSessionRequest(BaseModel):
+    store_id: int
+    table_code: str
+    guest_count: int = Field(1, gt=0)
+
+
+class OpenTableSessionResponse(BaseModel):
+    table_session_id: int
+    store_id: int
+    table_code: str
+    status: str
+    active_order_id: int | None = None
+
+
+class JoinTableSessionRequest(BaseModel):
+    client_id: str = Field(..., min_length=1, max_length=120)
+    alias: str | None = Field(default=None, max_length=100)
+
+
+class JoinTableSessionResponse(BaseModel):
+    table_session_id: int
+    client_id: str
+    alias: str | None = None
+    connected_clients: int
+
+
+class UpsertOrderByTableRequest(BaseModel):
+    tenant_id: int
+    store_id: int
+    table_session_id: int
+    guest_count: int = Field(..., gt=0)
+    items: list[CreateOrderItemIn]
+
+
+class TableSessionStateResponse(BaseModel):
+    table_session_id: int
+    store_id: int
+    table_code: str
+    status: str
+    connected_clients: int
+    active_order_id: int | None = None
+
+
+class CloseTableSessionResponse(BaseModel):
+    table_session_id: int
+    table_code: str
+    status: str
+    closed_at: datetime
+
+
 class SectorStatusOut(BaseModel):
     sector: str
     status: str
@@ -153,6 +203,7 @@ class ItemStatusEventOut(BaseModel):
 
 class AdminOrderItemsDetailResponse(BaseModel):
     order_id: int
+    table_session_id: int | None = None
     table_code: str
     guest_count: int
     ticket_number: int

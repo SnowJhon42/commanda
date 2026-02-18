@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.db.models import Order, OrderItem, OrderStatus, Product, ProductVariant, Table
+from app.db.models import Order, OrderItem, OrderStatus, Product, ProductVariant, Table, TableSession, TableSessionStatus
 from app.db.session import get_db
 from app.schemas.orders import (
     CreateOrderRequest,
@@ -31,10 +31,21 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         raise HTTPException(status_code=422, detail="At least one item is required")
 
     ticket_number = next_ticket_number(db, payload.store_id)
+    open_table_session = db.scalar(
+        select(TableSession)
+        .where(
+            TableSession.store_id == payload.store_id,
+            TableSession.table_id == table.id,
+            TableSession.status == TableSessionStatus.OPEN.value,
+        )
+        .order_by(TableSession.id.desc())
+        .limit(1)
+    )
     order = Order(
         tenant_id=payload.tenant_id,
         store_id=payload.store_id,
         table_id=table.id,
+        table_session_id=open_table_session.id if open_table_session else None,
         guest_count=payload.guest_count,
         ticket_number=ticket_number,
         status_aggregated=OrderStatus.RECEIVED.value,
@@ -84,6 +95,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         "order.created",
         {
             "order_id": order.id,
+            "table_session_id": order.table_session_id,
             "store_id": order.store_id,
             "table_code": payload.table_code,
             "status_aggregated": order.status_aggregated,
@@ -93,6 +105,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         "items.changed",
         {
             "order_id": order.id,
+            "table_session_id": order.table_session_id,
             "store_id": order.store_id,
             "table_code": payload.table_code,
             "item_sector": None,

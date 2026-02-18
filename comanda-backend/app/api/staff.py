@@ -5,13 +5,24 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import ensure_sector_access, get_current_staff
-from app.db.models import ItemStatusEvent, Order, OrderItem, OrderStatus, Sector, StaffAccount, Table
+from app.db.models import (
+    ItemStatusEvent,
+    Order,
+    OrderItem,
+    OrderStatus,
+    Sector,
+    StaffAccount,
+    Table,
+    TableSession,
+    TableSessionStatus,
+)
 from app.db.session import get_db
 from app.schemas.orders import (
     AdminOrderItemsDetailResponse,
     AdminSectorDelayOut,
     ChangeItemStatusRequest,
     ChangeItemStatusResponse,
+    CloseTableSessionResponse,
     ItemStatusEventOut,
     StaffBoardItemOut,
     StaffBoardItemsResponse,
@@ -122,6 +133,7 @@ def get_staff_order_items_detail(
 
     return AdminOrderItemsDetailResponse(
         order_id=order.id,
+        table_session_id=order.table_session_id,
         table_code=order.table.code,
         guest_count=order.guest_count,
         ticket_number=order.ticket_number,
@@ -197,11 +209,14 @@ def patch_item_status(
     changed.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(changed)
+    table_code = db.scalar(select(Table.code).where(Table.id == order.table_id))
     event_bus.publish(
         "items.changed",
         {
             "order_id": changed.order_id,
+            "table_session_id": order.table_session_id,
             "store_id": order.store_id,
+            "table_code": table_code,
             "item_id": changed.id,
             "item_sector": changed.sector,
             "item_status": changed.status,
@@ -220,4 +235,67 @@ def patch_item_status(
         status_aggregated=order_status,
         updated_by_staff_id=current_staff.id,
         updated_at=changed.updated_at,
+    )
+
+
+@router.post("/tables/{table_code}/close-session", response_model=CloseTableSessionResponse)
+def close_table_session(
+    table_code: str,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> CloseTableSessionResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    normalized_table = table_code.strip().upper()
+    table = db.scalar(select(Table).where(Table.store_id == current_staff.store_id, Table.code == normalized_table))
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    table_session = db.scalar(
+        select(TableSession)
+        .where(
+            TableSession.store_id == current_staff.store_id,
+            TableSession.table_id == table.id,
+            TableSession.status == TableSessionStatus.OPEN.value,
+        )
+        .order_by(TableSession.id.desc())
+        .limit(1)
+    )
+    if not table_session:
+        raise HTTPException(status_code=404, detail="No open table session for this table")
+
+    has_open_orders = db.scalar(
+        select(func.count())
+        .select_from(Order)
+        .where(
+            Order.table_session_id == table_session.id,
+            Order.store_id == current_staff.store_id,
+            Order.status_aggregated != OrderStatus.DELIVERED.value,
+        )
+    ) or 0
+    if has_open_orders > 0:
+        raise HTTPException(status_code=409, detail="Cannot close table session with active non-delivered orders")
+
+    table_session.status = TableSessionStatus.CLOSED.value
+    table_session.closed_at = datetime.utcnow()
+    db.add(table_session)
+    db.commit()
+    db.refresh(table_session)
+
+    event_bus.publish(
+        "table.session.closed",
+        {
+            "table_session_id": table_session.id,
+            "store_id": current_staff.store_id,
+            "table_code": table.code,
+            "closed_at": table_session.closed_at.isoformat() if table_session.closed_at else None,
+        },
+    )
+
+    return CloseTableSessionResponse(
+        table_session_id=table_session.id,
+        table_code=table.code,
+        status=table_session.status,
+        closed_at=table_session.closed_at or datetime.utcnow(),
     )

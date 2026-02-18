@@ -5,6 +5,7 @@ import {
   fetchStaffBoardItems,
   fetchStaffOrderItems,
   openStaffEvents,
+  closeTableSession,
   patchItemStatus,
 } from "./api/staffApi";
 import { LoginPage } from "./pages/LoginPage";
@@ -81,12 +82,14 @@ export function App() {
   const [boardRows, setBoardRows] = useState([]);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [alertsOnly, setAlertsOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [advancingKey, setAdvancingKey] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const [closingTable, setClosingTable] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [alarmText, setAlarmText] = useState("");
@@ -226,6 +229,24 @@ export function App() {
     [session, selectedOrderId, loadBoard, loadOrderDetail]
   );
 
+  const closeTable = useCallback(async () => {
+    if (!session || !selectedOrderDetail || session.staff.sector !== "ADMIN") return;
+    setError("");
+    setClosingTable(true);
+    try {
+      await closeTableSession({
+        token: session.access_token,
+        tableCode: selectedOrderDetail.table_code,
+      });
+      await loadBoard();
+      await loadOrderDetail();
+    } catch (err) {
+      setError(err.message || "No se pudo cerrar la mesa.");
+    } finally {
+      setClosingTable(false);
+    }
+  }, [session, selectedOrderDetail, loadBoard, loadOrderDetail]);
+
   const board = useMemo(() => {
     const alertMetaByOrder = boardRows.reduce((acc, row) => {
       const mediumThreshold = mediumThresholdBySector(staffSector);
@@ -253,8 +274,19 @@ export function App() {
       return acc;
     }, {});
 
+    const prioritizedRows = [...boardRows].sort((a, b) => {
+      const am = alertMetaByOrder[a.order_id] || { high: 0, medium: 0 };
+      const bm = alertMetaByOrder[b.order_id] || { high: 0, medium: 0 };
+      if (bm.high !== am.high) return bm.high - am.high;
+      if (bm.medium !== am.medium) return bm.medium - am.medium;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+    const visibleRows = alertsOnly
+      ? prioritizedRows.filter((row) => (alertMetaByOrder[row.order_id]?.total || 0) > 0)
+      : prioritizedRows;
+
     const sharedProps = {
-      rows: boardRows,
+      rows: visibleRows,
       loading,
       advancingKey,
       selectedOrderId,
@@ -326,6 +358,7 @@ export function App() {
     stream.onmessage = scheduleRefresh;
     stream.addEventListener("items.changed", handleItemChanged);
     stream.addEventListener("order.created", scheduleRefresh);
+    stream.addEventListener("table.session.closed", scheduleRefresh);
 
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -398,6 +431,22 @@ export function App() {
           <button className="btn-primary" onClick={loadBoard} disabled={loading}>
             {loading ? "Actualizando..." : "Actualizar ahora"}
           </button>
+          <label className="field inline-field">
+            <span>Solo alertas</span>
+            <input type="checkbox" checked={alertsOnly} onChange={(e) => setAlertsOnly(e.target.checked)} />
+          </label>
+        </section>
+      )}
+
+      {staffSector !== "ADMIN" && (
+        <section className="panel toolbar">
+          <label className="field inline-field">
+            <span>Solo alertas</span>
+            <input type="checkbox" checked={alertsOnly} onChange={(e) => setAlertsOnly(e.target.checked)} />
+          </label>
+          <button className="btn-primary" onClick={loadBoard} disabled={loading}>
+            {loading ? "Actualizando..." : "Actualizar ahora"}
+          </button>
         </section>
       )}
 
@@ -413,6 +462,8 @@ export function App() {
         onRefresh={loadOrderDetail}
         onAdvanceItem={advanceItem}
         advancingKey={advancingKey}
+        onCloseTable={closeTable}
+        closingTable={closingTable}
       />
     </main>
   );

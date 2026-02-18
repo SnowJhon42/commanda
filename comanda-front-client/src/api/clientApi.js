@@ -54,6 +54,66 @@ export async function createOrder(payload) {
   }
 }
 
+export async function openTableSession(payload) {
+  try {
+    const res = await fetch(`${API_URL}/table/session/open`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo abrir la sesion de mesa.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo abrir la sesion de mesa.");
+  }
+}
+
+export async function joinTableSession({ tableSessionId, clientId, alias }) {
+  try {
+    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, alias }),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo unir a la sesion de mesa.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo unir a la sesion de mesa.");
+  }
+}
+
+export async function fetchTableSessionState(tableSessionId) {
+  try {
+    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/state`);
+    if (!res.ok) {
+      await toApiError(res, "No se pudo cargar estado de la mesa.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar estado de la mesa.");
+  }
+}
+
+export async function upsertOrderByTable(payload) {
+  try {
+    const res = await fetch(`${API_URL}/orders/upsert-by-table`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo actualizar el pedido compartido.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar el pedido compartido.");
+  }
+}
+
 export async function fetchOrder(orderId) {
   try {
     const res = await fetch(`${API_URL}/orders/${orderId}`);
@@ -68,4 +128,8 @@ export async function fetchOrder(orderId) {
 
 export function openOrderEvents(orderId) {
   return new EventSource(`${API_URL}/events/orders/${orderId}/stream`);
+}
+
+export function openTableSessionEvents(tableSessionId) {
+  return new EventSource(`${API_URL}/events/table-session/${tableSessionId}/stream`);
 }

@@ -74,3 +74,33 @@ async def stream_item_events(
             await asyncio.sleep(1)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@router.get("/table-session/{table_session_id}/stream")
+async def stream_table_session_events(
+    table_session_id: int,
+    request: Request,
+    after: int | None = None,
+) -> StreamingResponse:
+    async def gen():
+        cursor = after if after is not None else event_bus.latest_seq()
+
+        while True:
+            if await request.is_disconnected():
+                break
+
+            events = event_bus.after(cursor)
+            sent = False
+            for event in events:
+                cursor = event["seq"]
+                payload = event["payload"]
+                if payload.get("table_session_id") != table_session_id:
+                    continue
+                sent = True
+                yield _sse_frame(event_id=event["seq"], event_name=event["type"], payload=payload)
+
+            if not sent:
+                yield ": keepalive\n\n"
+            await asyncio.sleep(1)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")

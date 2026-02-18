@@ -13,6 +13,9 @@ from app.db.models.entities import (
     StaffAccount,
     Store,
     Table,
+    TableSession,
+    TableSessionClient,
+    TableSessionStatus,
     Tenant,
 )
 
@@ -20,6 +23,8 @@ __all__ = [
     "Tenant",
     "Store",
     "Table",
+    "TableSession",
+    "TableSessionClient",
     "MenuCategory",
     "Product",
     "ProductVariant",
@@ -32,4 +37,5 @@ __all__ = [
     "Sector",
     "FulfillmentSector",
     "OrderStatus",
+    "TableSessionStatus",
 ]

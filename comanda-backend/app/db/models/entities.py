@@ -27,6 +27,11 @@ class OrderStatus(str, Enum):
     DELIVERED = "DELIVERED"
 
 
+class TableSessionStatus(str, Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -54,6 +59,33 @@ class Table(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     orders: Mapped[list["Order"]] = relationship(back_populates="table")
+    sessions: Mapped[list["TableSession"]] = relationship(back_populates="table")
+
+
+class TableSession(Base):
+    __tablename__ = "table_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    table_id: Mapped[int] = mapped_column(ForeignKey("tables.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default=TableSessionStatus.OPEN.value, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    table: Mapped["Table"] = relationship(back_populates="sessions")
+    orders: Mapped[list["Order"]] = relationship(back_populates="table_session")
+
+
+class TableSessionClient(Base):
+    __tablename__ = "table_session_clients"
+    __table_args__ = (UniqueConstraint("table_session_id", "client_id", name="uq_table_session_client"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_session_id: Mapped[int] = mapped_column(ForeignKey("table_sessions.id"), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    alias: Mapped[str | None] = mapped_column(String(100))
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class MenuCategory(Base):
@@ -121,6 +153,7 @@ class Order(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
     table_id: Mapped[int] = mapped_column(ForeignKey("tables.id"), nullable=False)
+    table_session_id: Mapped[int | None] = mapped_column(ForeignKey("table_sessions.id"))
     guest_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     ticket_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status_aggregated: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -130,6 +163,7 @@ class Order(Base):
     )
 
     table: Mapped["Table"] = relationship(back_populates="orders")
+    table_session: Mapped["TableSession | None"] = relationship(back_populates="orders")
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order")
     sector_statuses: Mapped[list["OrderSectorStatus"]] = relationship(back_populates="order")
 

@@ -107,6 +107,21 @@ export async function patchItemStatus({ token, itemId, toStatus }) {
   }
 }
 
+export async function closeTableSession({ token, tableCode }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/tables/${encodeURIComponent(tableCode)}/close-session`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cerrar la mesa.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cerrar la mesa.");
+  }
+}
+
 export function openStaffEvents({ storeId, sector }) {
   const qs = new URLSearchParams({ store_id: String(storeId) });
   if (sector) qs.append("sector", sector);

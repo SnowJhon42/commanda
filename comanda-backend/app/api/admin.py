@@ -111,6 +111,7 @@ def get_admin_order_items_detail(
 
     return AdminOrderItemsDetailResponse(
         order_id=order.id,
+        table_session_id=order.table_session_id,
         table_code=order.table.code,
         guest_count=order.guest_count,
         ticket_number=order.ticket_number,

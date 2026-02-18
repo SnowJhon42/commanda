@@ -153,6 +153,19 @@ button:focus {
   min-width: 220px;
 }
 
+.inline-field {
+  min-width: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.inline-field input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
 .section-head {
   display: flex;
   justify-content: space-between;
