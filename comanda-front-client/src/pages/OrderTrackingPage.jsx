@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchOrder } from "../api/clientApi";
+import { fetchOrder, openOrderEvents } from "../api/clientApi";
+import { statusLabel } from "../utils/statusLabels";
 
 function statusClass(status) {
   if (status === "RECEIVED") return "badge badge-received";
@@ -12,6 +13,7 @@ function statusClass(status) {
 export function OrderTrackingPage({ orderId }) {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
+  const [liveConnected, setLiveConnected] = useState(false);
 
   useEffect(() => {
     if (!orderId) {
@@ -33,10 +35,30 @@ export function OrderTrackingPage({ orderId }) {
         });
     };
     tick();
-    const timer = setInterval(tick, 5000);
+    const timer = setInterval(tick, 7000);
+    const stream = openOrderEvents(orderId);
+    let refreshTimer = null;
+
+    const scheduleRefresh = () => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        tick();
+      }, 200);
+    };
+
+    stream.onopen = () => setLiveConnected(true);
+    stream.onerror = () => setLiveConnected(false);
+    stream.onmessage = scheduleRefresh;
+    stream.addEventListener("items.changed", scheduleRefresh);
+    stream.addEventListener("order.created", scheduleRefresh);
+
     return () => {
       mounted = false;
       clearInterval(timer);
+      if (refreshTimer) clearTimeout(refreshTimer);
+      stream.close();
+      setLiveConnected(false);
     };
   }, [orderId]);
 
@@ -65,8 +87,11 @@ export function OrderTrackingPage({ orderId }) {
         <p>
           Pedido <strong>#{order.id}</strong> - Ticket <strong>{order.ticket_number}</strong>
         </p>
-        <span className={statusClass(order.status_aggregated)}>{order.status_aggregated}</span>
+        <span className={statusClass(order.status_aggregated)}>{statusLabel(order.status_aggregated)}</span>
       </div>
+      <p className={liveConnected ? "live-pill live-pill-on" : "live-pill"}>
+        {liveConnected ? "Actualizacion en vivo activa" : "Actualizacion en vivo reconectando"}
+      </p>
       {error && <p className="warning-text">{error}</p>}
 
       <div className="tracking-grid">
@@ -74,7 +99,7 @@ export function OrderTrackingPage({ orderId }) {
           <article className="tracking-card" key={sector.sector}>
             <p className="muted">{sector.sector}</p>
             <p>
-              <span className={statusClass(sector.status)}>{sector.status}</span>
+              <span className={statusClass(sector.status)}>{statusLabel(sector.status)}</span>
             </p>
             <p className="muted">{new Date(sector.updated_at).toLocaleString("es-AR")}</p>
           </article>

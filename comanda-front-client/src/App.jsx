@@ -24,6 +24,7 @@ export function App() {
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [lastCreatedOrder, setLastCreatedOrder] = useState(null);
   const [activeOrderId, setActiveOrderId] = useState(null);
+  const [uiToast, setUiToast] = useState("");
 
   const loadMenu = async () => {
     setMenuLoading(true);
@@ -46,6 +47,14 @@ export function App() {
     () => cartItems.reduce((acc, item) => acc + item.unit_price * item.qty, 0),
     [cartItems]
   );
+
+  const productQtyInCart = useMemo(() => {
+    const map = {};
+    cartItems.forEach((item) => {
+      map[item.product_id] = (map[item.product_id] || 0) + item.qty;
+    });
+    return map;
+  }, [cartItems]);
 
   const addToCart = ({ product, variant, qty }) => {
     setCheckoutError("");
@@ -78,7 +87,14 @@ export function App() {
         },
       ];
     });
+    setUiToast(`Agregado: ${product.name}`);
   };
+
+  useEffect(() => {
+    if (!uiToast) return;
+    const timer = setTimeout(() => setUiToast(""), 1400);
+    return () => clearTimeout(timer);
+  }, [uiToast]);
 
   const updateCartQty = (key, qty) => {
     const quantity = Number(qty);
@@ -141,7 +157,12 @@ export function App() {
         <p className="kicker">Mesa digital</p>
         <h1>Comanda Cliente</h1>
         <p className="muted">Pedido por mesa con seguimiento en vivo.</p>
+        <p className="hero-meta">
+          Carrito: <strong>{cartItems.reduce((acc, item) => acc + item.qty, 0)}</strong> items
+        </p>
       </header>
+
+      {uiToast && <div className="toast-ok">{uiToast}</div>}
 
       <MenuPage
         menu={menu}
@@ -149,6 +170,7 @@ export function App() {
         error={menuError}
         onRetry={loadMenu}
         onAddToCart={addToCart}
+        productQtyInCart={productQtyInCart}
       />
 
       <CheckoutPage

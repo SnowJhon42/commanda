@@ -35,6 +35,7 @@ class OrderItemOut(BaseModel):
     product_name: str
     qty: int
     sector: str
+    status: str
 
 
 class OrderSectorDetailOut(BaseModel):
@@ -87,6 +88,10 @@ class ChangeSectorStatusResponse(BaseModel):
 class AdminOrderSummaryOut(BaseModel):
     order_id: int
     table_code: str
+    guest_count: int
+    total_items: int
+    delivered_items: int
+    total_amount: float
     status_aggregated: str
     sectors: list[SectorStatusOut]
     created_at: datetime
@@ -95,3 +100,67 @@ class AdminOrderSummaryOut(BaseModel):
 class AdminOrdersResponse(BaseModel):
     total: int
     items: list[AdminOrderSummaryOut]
+
+
+class StaffBoardItemOut(BaseModel):
+    item_id: int
+    order_id: int
+    table_code: str
+    guest_count: int
+    item_name: str
+    qty: int
+    sector: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class StaffBoardItemsResponse(BaseModel):
+    total: int
+    items: list[StaffBoardItemOut]
+
+
+class ChangeItemStatusRequest(BaseModel):
+    to_status: str
+
+
+class ChangeItemStatusResponse(BaseModel):
+    item_id: int
+    order_id: int
+    sector: str
+    previous_status: str
+    current_status: str
+    status_aggregated: str
+    updated_by_staff_id: int
+    updated_at: datetime
+
+
+class AdminSectorDelayOut(BaseModel):
+    sector: str
+    waiting_items: int
+    oldest_waiting_minutes: int
+
+
+class ItemStatusEventOut(BaseModel):
+    id: int
+    item_id: int
+    sector: str
+    from_status: str | None
+    to_status: str
+    changed_by_staff_id: int
+    created_at: datetime
+
+
+class AdminOrderItemsDetailResponse(BaseModel):
+    order_id: int
+    table_code: str
+    guest_count: int
+    ticket_number: int
+    status_aggregated: str
+    total_amount: float
+    delivered_items: int
+    total_items: int
+    delays: list[AdminSectorDelayOut]
+    items: list[StaffBoardItemOut]
+    events: list[ItemStatusEventOut]
+    created_at: datetime

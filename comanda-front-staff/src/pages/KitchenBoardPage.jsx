@@ -1,75 +1,89 @@
-﻿function nextStatus(currentStatus) {
-  if (currentStatus === "RECEIVED") return "IN_PROGRESS";
-  if (currentStatus === "IN_PROGRESS") return "DONE";
-  if (currentStatus === "DONE") return "DELIVERED";
-  return null;
-}
+import { statusLabel } from "../utils/statusLabels";
+import { elapsedMinutes, itemAlertClass, sectorClass, sectorLabel } from "../utils/boardMeta";
 
 function badgeClass(status) {
   if (status === "RECEIVED") return "badge badge-received";
   if (status === "IN_PROGRESS") return "badge badge-progress";
   if (status === "DONE") return "badge badge-done";
+  if (status === "PARCIAL") return "badge badge-partial";
   if (status === "DELIVERED") return "badge badge-delivered";
   return "badge";
 }
 
 export function KitchenBoardPage({
-  orders,
+  rows,
   loading,
-  onAdvanceSector,
+  onAdvanceItem,
   advancingKey,
   onSelectOrder,
   selectedOrderId,
+  alertMetaByOrder = {},
 }) {
   return (
     <section className="panel">
       <div className="section-head">
         <h3>Cocina</h3>
-        <span className="muted">{orders.length} pedidos</span>
+        <span className="muted">{rows.length} mesas activas</span>
       </div>
       {loading && <p className="muted">Actualizando...</p>}
-      {orders.length === 0 ? (
-        <p className="muted">No hay pedidos para este filtro.</p>
+      {rows.length === 0 ? (
+        <p className="muted">No hay items en preparacion en cocina.</p>
       ) : (
         <div className="card-grid">
-          {orders.map((order) => {
-            const next = nextStatus(order.sector_status);
-            const key = `${order.order_id}:${order.sector}`;
-            const updating = advancingKey === key;
+          {rows.map((row) => {
+            const meta = alertMetaByOrder[row.order_id] || {};
             return (
-              <article className="order-card" key={order.order_id}>
-                <div className="order-head">
-                  <h4>
-                    #{order.order_id} - Mesa {order.table_code}
-                  </h4>
-                  <span className={badgeClass(order.sector_status)}>{order.sector_status}</span>
-                </div>
-                <div className="order-actions">
-                  <button
-                    className={selectedOrderId === order.order_id ? "btn-secondary selected-btn" : "btn-secondary"}
-                    onClick={() => onSelectOrder(order.order_id)}
-                  >
-                    {selectedOrderId === order.order_id ? "Seleccionado" : "Ver detalle"}
-                  </button>
-                  {next ? (
-                    <button
-                      className="btn-primary"
-                      disabled={updating}
-                      onClick={() =>
-                        onAdvanceSector({
-                          orderId: order.order_id,
-                          sector: order.sector,
-                          currentStatus: order.sector_status,
-                        })
-                      }
+            <article className="order-card" key={row.order_id}>
+              <div className="order-head">
+                <h4>
+                  Mesa {row.table_code} - Pedido #{row.order_id}
+                  {meta.total > 0 && (
+                    <span
+                      className={meta.severity === "high" ? "alert-count-badge alert-count-high" : "alert-count-badge alert-count-medium"}
+                      title={meta.tooltip}
                     >
-                      {updating ? "Actualizando..." : `Pasar a ${next}`}
-                    </button>
-                  ) : (
-                    <p className="muted">Pedido entregado para cocina.</p>
+                      {meta.total} alertas
+                    </span>
                   )}
-                </div>
-              </article>
+                </h4>
+                <button
+                  className={selectedOrderId === row.order_id ? "btn-secondary selected-btn" : "btn-secondary"}
+                  onClick={() => onSelectOrder(row.order_id)}
+                >
+                  {selectedOrderId === row.order_id ? "Seleccionado" : "Ver detalle"}
+                </button>
+              </div>
+              <div className="sector-list">
+                {row.items.map((item) => {
+                  const key = `${item.item_id}:DONE`;
+                  const updating = advancingKey === key;
+                  const alertClass = itemAlertClass(item, "KITCHEN");
+                  return (
+                    <div className={`sector-row ${alertClass}`} key={item.item_id}>
+                      <span className="row-main">
+                        {item.qty}x {item.item_name}
+                        <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
+                        <span className="muted row-age">{elapsedMinutes(item.updated_at || item.created_at)} min</span>
+                      </span>
+                      <span className={badgeClass(item.status)}>{statusLabel(item.status)}</span>
+                      <button
+                        className="btn-primary"
+                        disabled={updating}
+                        onClick={() =>
+                          onAdvanceItem({
+                            itemId: item.item_id,
+                            currentStatus: item.status,
+                            itemSector: item.sector,
+                          })
+                        }
+                      >
+                        {updating ? "..." : "Marcar LISTO"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
             );
           })}
         </div>

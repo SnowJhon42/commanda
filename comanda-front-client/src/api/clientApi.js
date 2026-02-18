@@ -65,3 +65,7 @@ export async function fetchOrder(orderId) {
     throw toNetworkError(error, "No se pudo cargar el seguimiento.");
   }
 }
+
+export function openOrderEvents(orderId) {
+  return new EventSource(`${API_URL}/events/orders/${orderId}/stream`);
+}

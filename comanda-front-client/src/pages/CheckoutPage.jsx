@@ -23,7 +23,7 @@ export function CheckoutPage({
   };
 
   return (
-    <section className="panel">
+    <section className="panel checkout-panel">
       <div className="section-head">
         <h2>Checkout</h2>
         <span className="muted">{cartItems.length} items</span>
@@ -42,8 +42,8 @@ export function CheckoutPage({
                 </button>
               </div>
               <p className="muted">
-                {item.variant_name ? `${item.variant_name} · ` : ""}
-                {item.sector} · {toMoney(item.unit_price)}
+                {item.variant_name ? `${item.variant_name} | ` : ""}
+                {item.sector} | {toMoney(item.unit_price)}
               </p>
               <div className="row">
                 <label className="field qty-field">

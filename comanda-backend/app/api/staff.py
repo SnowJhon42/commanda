@@ -1,117 +1,223 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import ensure_sector_access, get_current_staff
-from app.db.models import Order, OrderSectorStatus, OrderStatus, StaffAccount, Table
+from app.db.models import ItemStatusEvent, Order, OrderItem, OrderStatus, Sector, StaffAccount, Table
 from app.db.session import get_db
 from app.schemas.orders import (
-    ChangeSectorStatusRequest,
-    ChangeSectorStatusResponse,
-    StaffOrderOut,
-    StaffOrdersResponse,
+    AdminOrderItemsDetailResponse,
+    AdminSectorDelayOut,
+    ChangeItemStatusRequest,
+    ChangeItemStatusResponse,
+    ItemStatusEventOut,
+    StaffBoardItemOut,
+    StaffBoardItemsResponse,
 )
-from app.services.order_status import change_sector_status
+from app.services.item_status import change_item_status
+from app.services.realtime import event_bus
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
 
-@router.get("/orders", response_model=StaffOrdersResponse)
-def list_staff_orders(
+def _board_filter_for_sector(sector: str):
+    if sector == Sector.KITCHEN.value:
+        return and_(OrderItem.sector == Sector.KITCHEN.value, OrderItem.status == OrderStatus.IN_PROGRESS.value)
+    if sector == Sector.BAR.value:
+        return and_(OrderItem.sector == Sector.BAR.value, OrderItem.status == OrderStatus.IN_PROGRESS.value)
+    if sector == Sector.WAITER.value:
+        return or_(
+            OrderItem.status == OrderStatus.DONE.value,
+            and_(OrderItem.sector == Sector.WAITER.value, OrderItem.status == OrderStatus.RECEIVED.value),
+        )
+    if sector == Sector.ADMIN.value:
+        return OrderItem.status != OrderStatus.DELIVERED.value
+    raise HTTPException(status_code=422, detail=f"Unsupported sector filter: {sector}")
+
+
+@router.get("/items/board", response_model=StaffBoardItemsResponse)
+def list_staff_items_board(
     store_id: int,
     sector: str,
-    status: str | None = None,
-    limit: int = 50,
+    limit: int = 200,
     offset: int = 0,
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
-) -> StaffOrdersResponse:
+) -> StaffBoardItemsResponse:
     ensure_sector_access(current_staff, sector)
     if current_staff.store_id != store_id:
         raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
 
+    filter_expr = _board_filter_for_sector(sector)
     base_query = (
-        select(Order, OrderSectorStatus, Table)
-        .join(OrderSectorStatus, Order.id == OrderSectorStatus.order_id)
+        select(OrderItem, Order, Table)
+        .join(Order, Order.id == OrderItem.order_id)
         .join(Table, Table.id == Order.table_id)
-        .where(Order.store_id == store_id, OrderSectorStatus.sector == sector)
+        .where(Order.store_id == store_id, filter_expr)
     )
-    if status:
-        base_query = base_query.where(OrderSectorStatus.status == status)
 
     total = db.scalar(select(func.count()).select_from(base_query.subquery())) or 0
-    rows = db.execute(base_query.order_by(Order.created_at.desc()).limit(limit).offset(offset)).all()
+    rows = db.execute(
+        base_query.order_by(Order.created_at.asc(), OrderItem.created_at.asc(), OrderItem.id.asc()).limit(limit).offset(offset)
+    ).all()
 
-    return StaffOrdersResponse(
+    return StaffBoardItemsResponse(
         total=total,
         items=[
-            StaffOrderOut(
+            StaffBoardItemOut(
+                item_id=item.id,
                 order_id=order.id,
                 table_code=table.code,
-                sector=sector_status.sector,
-                sector_status=sector_status.status,
-                status_aggregated=order.status_aggregated,
-                created_at=order.created_at,
+                guest_count=order.guest_count,
+                item_name=item.product.name if item.product else f"Item {item.id}",
+                qty=item.qty,
+                sector=item.sector,
+                status=item.status,
+                created_at=item.created_at,
+                updated_at=item.updated_at,
             )
-            for order, sector_status, table in rows
+            for item, order, table in rows
         ],
     )
 
 
-@router.patch("/orders/{order_id}/sectors/{sector}/status", response_model=ChangeSectorStatusResponse)
-def patch_order_sector_status(
+@router.get("/orders/{order_id}/items", response_model=AdminOrderItemsDetailResponse)
+def get_staff_order_items_detail(
     order_id: int,
-    sector: str,
-    payload: ChangeSectorStatusRequest,
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
-) -> ChangeSectorStatusResponse:
-    ensure_sector_access(current_staff, sector)
-
-    order = db.scalar(select(Order).where(Order.id == order_id))
+) -> AdminOrderItemsDetailResponse:
+    order = db.scalar(
+        select(Order)
+        .where(Order.id == order_id, Order.store_id == current_staff.store_id)
+        .options(joinedload(Order.items).joinedload(OrderItem.product), joinedload(Order.table))
+    )
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    if current_staff.store_id != order.store_id:
+
+    now_utc = datetime.now(tz=timezone.utc)
+    delays: list[AdminSectorDelayOut] = []
+    sectors = sorted({item.sector for item in order.items})
+    for sector in sectors:
+        waiting = [
+            item
+            for item in order.items
+            if item.sector == sector and item.status in {OrderStatus.RECEIVED.value, OrderStatus.IN_PROGRESS.value}
+        ]
+        if not waiting:
+            delays.append(AdminSectorDelayOut(sector=sector, waiting_items=0, oldest_waiting_minutes=0))
+            continue
+        oldest = min(item.created_at for item in waiting)
+        oldest_aware = oldest.replace(tzinfo=timezone.utc) if oldest.tzinfo is None else oldest
+        delta = now_utc - oldest_aware
+        delays.append(
+            AdminSectorDelayOut(
+                sector=sector,
+                waiting_items=len(waiting),
+                oldest_waiting_minutes=max(0, int(delta.total_seconds() // 60)),
+            )
+        )
+
+    return AdminOrderItemsDetailResponse(
+        order_id=order.id,
+        table_code=order.table.code,
+        guest_count=order.guest_count,
+        ticket_number=order.ticket_number,
+        status_aggregated=order.status_aggregated,
+        total_amount=float(sum(float(item.unit_price) * item.qty for item in order.items)),
+        delivered_items=sum(item.qty for item in order.items if item.status == OrderStatus.DELIVERED.value),
+        total_items=sum(item.qty for item in order.items),
+        delays=delays,
+        items=[
+            StaffBoardItemOut(
+                item_id=item.id,
+                order_id=order.id,
+                table_code=order.table.code,
+                guest_count=order.guest_count,
+                item_name=item.product.name,
+                qty=item.qty,
+                sector=item.sector,
+                status=item.status,
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+            )
+            for item in sorted(order.items, key=lambda row: (row.sector, row.created_at, row.id))
+        ],
+        events=[
+            ItemStatusEventOut(
+                id=event.id,
+                item_id=event.item_id,
+                sector=event.sector,
+                from_status=event.from_status,
+                to_status=event.to_status,
+                changed_by_staff_id=event.changed_by_staff_id,
+                created_at=event.created_at,
+            )
+            for event in db.scalars(
+                select(ItemStatusEvent)
+                .where(ItemStatusEvent.order_id == order.id)
+                .order_by(ItemStatusEvent.created_at.desc(), ItemStatusEvent.id.desc())
+            ).all()
+        ],
+        created_at=order.created_at,
+    )
+
+
+@router.patch("/items/{item_id}/status", response_model=ChangeItemStatusResponse)
+def patch_item_status(
+    item_id: int,
+    payload: ChangeItemStatusRequest,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ChangeItemStatusResponse:
+    item = db.scalar(
+        select(OrderItem).where(OrderItem.id == item_id).options()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    order = db.scalar(select(Order).where(Order.id == item.order_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found for item")
+    if order.store_id != current_staff.store_id:
         raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
 
-    sector_status = db.scalar(
-        select(OrderSectorStatus).where(OrderSectorStatus.order_id == order_id, OrderSectorStatus.sector == sector)
-    )
-    if not sector_status:
-        raise HTTPException(status_code=404, detail="Sector not present in order")
-
-    if payload.to_status not in {
-        OrderStatus.RECEIVED.value,
-        OrderStatus.IN_PROGRESS.value,
-        OrderStatus.DONE.value,
-        OrderStatus.DELIVERED.value,
-    }:
-        raise HTTPException(status_code=422, detail="Invalid target status")
-
-    previous = sector_status.status
     try:
-        changed = change_sector_status(
+        changed, previous, order_status = change_item_status(
             db,
-            order=order,
-            sector_status=sector_status,
+            item=item,
             to_status=payload.to_status,
-            changed_by_staff_id=current_staff.id,
+            current_staff=current_staff,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     changed.updated_at = datetime.utcnow()
     db.commit()
-    db.refresh(order)
     db.refresh(changed)
-    return ChangeSectorStatusResponse(
-        order_id=order.id,
+    event_bus.publish(
+        "items.changed",
+        {
+            "order_id": changed.order_id,
+            "store_id": order.store_id,
+            "item_id": changed.id,
+            "item_sector": changed.sector,
+            "item_status": changed.status,
+            "previous_status": previous,
+            "status_aggregated": order_status,
+            "changed_by_staff_id": current_staff.id,
+        },
+    )
+
+    return ChangeItemStatusResponse(
+        item_id=changed.id,
+        order_id=changed.order_id,
         sector=changed.sector,
         previous_status=previous,
         current_status=changed.status,
-        status_aggregated=order.status_aggregated,
+        status_aggregated=order_status,
         updated_by_staff_id=current_staff.id,
         updated_at=changed.updated_at,
     )

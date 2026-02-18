@@ -39,20 +39,6 @@ export async function sectorLogin(payload) {
   }
 }
 
-export async function fetchStaffOrders({ token, storeId, sector, status }) {
-  try {
-    const qs = new URLSearchParams({ store_id: String(storeId), sector });
-    if (status) qs.append("status", status);
-    const res = await fetch(`${API_URL}/staff/orders?${qs.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) await toApiError(res, "No se pudieron cargar pedidos del sector.");
-    return res.json();
-  } catch (error) {
-    throw toNetworkError(error, "No se pudieron cargar pedidos del sector.");
-  }
-}
-
 export async function fetchAdminOrders({ token, storeId, status }) {
   try {
     const qs = new URLSearchParams({ store_id: String(storeId) });
@@ -67,9 +53,46 @@ export async function fetchAdminOrders({ token, storeId, status }) {
   }
 }
 
-export async function patchSectorStatus({ token, orderId, sector, toStatus }) {
+export async function fetchAdminOrderItems({ token, orderId }) {
   try {
-    const res = await fetch(`${API_URL}/staff/orders/${orderId}/sectors/${sector}/status`, {
+    const res = await fetch(`${API_URL}/admin/orders/${orderId}/items`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar el detalle del pedido.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar el detalle del pedido.");
+  }
+}
+
+export async function fetchStaffOrderItems({ token, orderId }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/items`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar el detalle del pedido.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar el detalle del pedido.");
+  }
+}
+
+export async function fetchStaffBoardItems({ token, storeId, sector }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId), sector });
+    const res = await fetch(`${API_URL}/staff/items/board?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron cargar items del tablero.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron cargar items del tablero.");
+  }
+}
+
+export async function patchItemStatus({ token, itemId, toStatus }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/items/${itemId}/status`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -77,19 +100,15 @@ export async function patchSectorStatus({ token, orderId, sector, toStatus }) {
       },
       body: JSON.stringify({ to_status: toStatus }),
     });
-    if (!res.ok) await toApiError(res, "No se pudo actualizar el estado.");
+    if (!res.ok) await toApiError(res, "No se pudo actualizar el estado del item.");
     return res.json();
   } catch (error) {
-    throw toNetworkError(error, "No se pudo actualizar el estado.");
+    throw toNetworkError(error, "No se pudo actualizar el estado del item.");
   }
 }
 
-export async function fetchOrderDetail(orderId) {
-  try {
-    const res = await fetch(`${API_URL}/orders/${orderId}`);
-    if (!res.ok) await toApiError(res, "No se pudo cargar el detalle del pedido.");
-    return res.json();
-  } catch (error) {
-    throw toNetworkError(error, "No se pudo cargar el detalle del pedido.");
-  }
+export function openStaffEvents({ storeId, sector }) {
+  const qs = new URLSearchParams({ store_id: String(storeId) });
+  if (sector) qs.append("sector", sector);
+  return new EventSource(`${API_URL}/events/items/stream?${qs.toString()}`);
 }

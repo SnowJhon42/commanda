@@ -1,13 +1,22 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 function toMoney(value) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value);
 }
 
-export function MenuPage({ menu, loading, error, onRetry, onAddToCart }) {
+function sectorPillClass(sector) {
+  if (sector === "KITCHEN") return "sector-pill sector-pill-kitchen";
+  if (sector === "BAR") return "sector-pill sector-pill-bar";
+  if (sector === "WAITER") return "sector-pill sector-pill-waiter";
+  return "sector-pill";
+}
+
+export function MenuPage({ menu, loading, error, onRetry, onAddToCart, productQtyInCart = {} }) {
   const [activeCategoryId, setActiveCategoryId] = useState(null);
   const [qtyByProduct, setQtyByProduct] = useState({});
   const [variantByProduct, setVariantByProduct] = useState({});
+  const [pulseByProduct, setPulseByProduct] = useState({});
+  const previousQtyRef = useRef({});
 
   const categories = menu?.categories ?? [];
   const products = menu?.products ?? [];
@@ -27,6 +36,34 @@ export function MenuPage({ menu, loading, error, onRetry, onAddToCart }) {
     onAddToCart({ product, variant: selectedVariant, qty });
     setQtyByProduct((current) => ({ ...current, [product.id]: 1 }));
   };
+
+  useEffect(() => {
+    const prev = previousQtyRef.current;
+    const changedProductIds = Object.keys(productQtyInCart).filter(
+      (id) => (prev[id] || 0) !== (productQtyInCart[id] || 0)
+    );
+    if (changedProductIds.length > 0) {
+      setPulseByProduct((current) => {
+        const next = { ...current };
+        changedProductIds.forEach((id) => {
+          next[id] = true;
+        });
+        return next;
+      });
+      const timer = setTimeout(() => {
+        setPulseByProduct((current) => {
+          const next = { ...current };
+          changedProductIds.forEach((id) => {
+            next[id] = false;
+          });
+          return next;
+        });
+      }, 300);
+      previousQtyRef.current = { ...productQtyInCart };
+      return () => clearTimeout(timer);
+    }
+    previousQtyRef.current = { ...productQtyInCart };
+  }, [productQtyInCart]);
 
   if (loading) {
     return (
@@ -79,11 +116,24 @@ export function MenuPage({ menu, loading, error, onRetry, onAddToCart }) {
           {filteredProducts.map((product) => {
             const selectedVariantId = variantByProduct[product.id] ?? "";
             const qty = qtyByProduct[product.id] ?? 1;
+            const inCartQty = productQtyInCart[product.id] || 0;
+            const isSelected = inCartQty > 0;
+            const pulse = pulseByProduct[String(product.id)];
             return (
-              <article className="product-card" key={product.id}>
+              <article
+                className={isSelected ? "product-card product-card-selected" : "product-card"}
+                key={product.id}
+              >
                 <div className="product-title-row">
                   <h3>{product.name}</h3>
-                  <span className="sector-pill">{product.fulfillment_sector}</span>
+                  <div className="product-badges">
+                    {isSelected && (
+                      <span className={pulse ? "product-count-badge product-count-pulse" : "product-count-badge"}>
+                        x{inCartQty}
+                      </span>
+                    )}
+                    <span className={sectorPillClass(product.fulfillment_sector)}>{product.fulfillment_sector}</span>
+                  </div>
                 </div>
                 <p className="muted">{product.description || "Sin descripcion"}</p>
                 <p className="price">{toMoney(product.base_price)}</p>

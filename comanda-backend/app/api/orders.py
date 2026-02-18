@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.db.models import Order, OrderItem, OrderSectorStatus, OrderStatus, Product, ProductVariant, Table
+from app.db.models import Order, OrderItem, OrderStatus, Product, ProductVariant, Table
 from app.db.session import get_db
 from app.schemas.orders import (
     CreateOrderRequest,
@@ -12,7 +12,9 @@ from app.schemas.orders import (
     OrderSectorDetailOut,
     SectorStatusOut,
 )
+from app.services.item_status import recompute_order_status_from_items
 from app.services.order_routing import route_item_to_sector
+from app.services.realtime import event_bus
 from app.services.ticket_generator import next_ticket_number
 
 router = APIRouter(tags=["orders"])
@@ -71,13 +73,33 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
                 unit_price=float(product.base_price) + variant_price,
                 notes=raw_item.notes,
                 sector=sector,
+                status=OrderStatus.RECEIVED.value,
             )
         )
 
-    for sector in sorted(sectors_present):
-        db.add(OrderSectorStatus(order_id=order.id, sector=sector, status=OrderStatus.RECEIVED.value))
+    order.status_aggregated = recompute_order_status_from_items(db, order.id)
 
     db.commit()
+    event_bus.publish(
+        "order.created",
+        {
+            "order_id": order.id,
+            "store_id": order.store_id,
+            "table_code": payload.table_code,
+            "status_aggregated": order.status_aggregated,
+        },
+    )
+    event_bus.publish(
+        "items.changed",
+        {
+            "order_id": order.id,
+            "store_id": order.store_id,
+            "table_code": payload.table_code,
+            "item_sector": None,
+            "item_status": OrderStatus.RECEIVED.value,
+            "reason": "order_created",
+        },
+    )
     return CreateOrderResponse(
         order_id=order.id,
         ticket_number=order.ticket_number,
@@ -91,7 +113,7 @@ def get_order(order_id: int, db: Session = Depends(get_db)) -> OrderDetailRespon
     order = db.scalar(
         select(Order)
         .where(Order.id == order_id)
-        .options(joinedload(Order.items).joinedload(OrderItem.product), joinedload(Order.sector_statuses), joinedload(Order.table))
+        .options(joinedload(Order.items).joinedload(OrderItem.product), joinedload(Order.table))
     )
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -105,9 +127,12 @@ def get_order(order_id: int, db: Session = Depends(get_db)) -> OrderDetailRespon
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
         sectors=[
-            OrderSectorDetailOut(sector=s.sector, status=s.status, updated_at=s.updated_at)
-            for s in sorted(order.sector_statuses, key=lambda row: row.sector)
+            OrderSectorDetailOut(sector=i.sector, status=i.status, updated_at=i.updated_at)
+            for i in sorted(order.items, key=lambda row: (row.sector, row.id))
         ],
-        items=[OrderItemOut(id=i.id, product_name=i.product.name, qty=i.qty, sector=i.sector) for i in order.items],
+        items=[
+            OrderItemOut(id=i.id, product_name=i.product.name, qty=i.qty, sector=i.sector, status=i.status)
+            for i in order.items
+        ],
         created_at=order.created_at,
     )
