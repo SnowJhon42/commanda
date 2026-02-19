@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.api import admin, auth, events, menu, orders, staff, table_sessions
+from app.api import admin, auth, billing, events, menu, orders, staff, table_sessions
 from app.core.config import settings
 from app.db.base import Base
 from app.db.models import entities as _entities  # noqa: F401
@@ -51,6 +51,42 @@ def _ensure_runtime_schema_migrations() -> None:
                   last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   FOREIGN KEY(table_session_id) REFERENCES table_sessions(id),
                   CONSTRAINT uq_table_session_client UNIQUE (table_session_id, client_id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS bill_splits (
+                  id INTEGER PRIMARY KEY,
+                  order_id INTEGER NOT NULL,
+                  mode TEXT NOT NULL DEFAULT 'EQUAL',
+                  status TEXT NOT NULL DEFAULT 'OPEN',
+                  total_amount NUMERIC(10,2) NOT NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  closed_at DATETIME NULL,
+                  FOREIGN KEY(order_id) REFERENCES orders(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS bill_split_parts (
+                  id INTEGER PRIMARY KEY,
+                  bill_split_id INTEGER NOT NULL,
+                  label TEXT NOT NULL,
+                  amount NUMERIC(10,2) NOT NULL,
+                  payment_status TEXT NOT NULL DEFAULT 'PENDING',
+                  reported_by TEXT NULL,
+                  reported_at DATETIME NULL,
+                  confirmed_by_staff_id INTEGER NULL,
+                  confirmed_at DATETIME NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  FOREIGN KEY(bill_split_id) REFERENCES bill_splits(id),
+                  FOREIGN KEY(confirmed_by_staff_id) REFERENCES staff_accounts(id)
                 )
                 """
             )
@@ -153,3 +189,4 @@ app.include_router(staff.router)
 app.include_router(admin.router)
 app.include_router(events.router)
 app.include_router(table_sessions.router)
+app.include_router(billing.router)

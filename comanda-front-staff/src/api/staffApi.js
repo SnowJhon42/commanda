@@ -122,6 +122,33 @@ export async function closeTableSession({ token, tableCode }) {
   }
 }
 
+export async function createEqualSplit({ orderId, partsCount }) {
+  try {
+    const res = await fetch(`${API_URL}/billing/orders/${orderId}/split-equal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parts_count: Number(partsCount) }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo crear la division.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo crear la division.");
+  }
+}
+
+export async function confirmSplitPart({ token, partId }) {
+  try {
+    const res = await fetch(`${API_URL}/billing/split-parts/${partId}/confirm`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo confirmar el pago.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo confirmar el pago.");
+  }
+}
+
 export function openStaffEvents({ storeId, sector }) {
   const qs = new URLSearchParams({ store_id: String(storeId) });
   if (sector) qs.append("sector", sector);

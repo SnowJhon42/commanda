@@ -6,6 +6,8 @@ import {
   fetchStaffOrderItems,
   openStaffEvents,
   closeTableSession,
+  confirmSplitPart,
+  createEqualSplit,
   patchItemStatus,
 } from "./api/staffApi";
 import { LoginPage } from "./pages/LoginPage";
@@ -90,6 +92,7 @@ export function App() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [closingTable, setClosingTable] = useState(false);
+  const [billingBusy, setBillingBusy] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [alarmText, setAlarmText] = useState("");
@@ -247,6 +250,41 @@ export function App() {
     }
   }, [session, selectedOrderDetail, loadBoard, loadOrderDetail]);
 
+  const createSplit = useCallback(async () => {
+    if (!selectedOrderDetail) return;
+    setError("");
+    setBillingBusy(true);
+    try {
+      await createEqualSplit({
+        orderId: selectedOrderDetail.order_id,
+        partsCount: Math.max(2, Number(selectedOrderDetail.guest_count || 2)),
+      });
+      await loadOrderDetail();
+    } catch (err) {
+      setError(err.message || "No se pudo crear la division.");
+    } finally {
+      setBillingBusy(false);
+    }
+  }, [selectedOrderDetail, loadOrderDetail]);
+
+  const confirmPart = useCallback(
+    async (partId) => {
+      if (!session) return;
+      setError("");
+      setBillingBusy(true);
+      try {
+        await confirmSplitPart({ token: session.access_token, partId });
+        await loadOrderDetail();
+        await loadBoard();
+      } catch (err) {
+        setError(err.message || "No se pudo confirmar el pago.");
+      } finally {
+        setBillingBusy(false);
+      }
+    },
+    [session, loadOrderDetail, loadBoard]
+  );
+
   const board = useMemo(() => {
     const alertMetaByOrder = boardRows.reduce((acc, row) => {
       const mediumThreshold = mediumThresholdBySector(staffSector);
@@ -359,6 +397,7 @@ export function App() {
     stream.addEventListener("items.changed", handleItemChanged);
     stream.addEventListener("order.created", scheduleRefresh);
     stream.addEventListener("table.session.closed", scheduleRefresh);
+    stream.addEventListener("bill.split.updated", scheduleRefresh);
 
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -464,6 +503,9 @@ export function App() {
         advancingKey={advancingKey}
         onCloseTable={closeTable}
         closingTable={closingTable}
+        onCreateSplit={createSplit}
+        onConfirmPart={confirmPart}
+        billingBusy={billingBusy}
       />
     </main>
   );

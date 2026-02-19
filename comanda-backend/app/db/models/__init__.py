@@ -1,5 +1,9 @@
 from app.db.models.entities import (
     FulfillmentSector,
+    BillPartPaymentStatus,
+    BillSplit,
+    BillSplitPart,
+    BillSplitStatus,
     ItemStatusEvent,
     MenuCategory,
     Order,
@@ -34,8 +38,12 @@ __all__ = [
     "OrderSectorStatus",
     "OrderStatusEvent",
     "ItemStatusEvent",
+    "BillSplit",
+    "BillSplitPart",
     "Sector",
     "FulfillmentSector",
     "OrderStatus",
+    "BillSplitStatus",
+    "BillPartPaymentStatus",
     "TableSessionStatus",
 ]

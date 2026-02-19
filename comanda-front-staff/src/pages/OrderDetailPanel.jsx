@@ -1,4 +1,4 @@
-import { sectorClass, sectorLabel } from "../utils/boardMeta";
+ï»¿import { sectorClass, sectorLabel } from "../utils/boardMeta";
 import { statusLabel } from "../utils/statusLabels";
 
 function badgeClass(status) {
@@ -30,6 +30,12 @@ function delayClass(minutes) {
   return "";
 }
 
+function billBadgeClass(status) {
+  if (status === "CONFIRMED") return "badge badge-delivered";
+  if (status === "REPORTED") return "badge badge-done";
+  return "badge badge-received";
+}
+
 export function OrderDetailPanel({
   orderDetail,
   selectedOrderId,
@@ -41,6 +47,9 @@ export function OrderDetailPanel({
   advancingKey,
   onCloseTable,
   closingTable = false,
+  onCreateSplit,
+  onConfirmPart,
+  billingBusy = false,
 }) {
   return (
     <section className="panel">
@@ -139,11 +148,54 @@ export function OrderDetailPanel({
                 {orderDetail.events.slice(0, 30).map((event) => (
                   <li key={event.id}>
                     Item #{event.item_id} ({event.sector}): {event.from_status ? statusLabel(event.from_status) : "-"} {"->"} {statusLabel(event.to_status)}
-                    {" · "}
+                    {" | "}
                     <span className="muted">{new Date(event.created_at).toLocaleString("es-AR")}</span>
                   </li>
                 ))}
               </ul>
+            )}
+          </article>
+
+          <article className="detail-card">
+            <h4>Division de cuenta</h4>
+            {!orderDetail.bill_split ? (
+              actorSector === "ADMIN" ? (
+                <button className="btn-primary" onClick={onCreateSplit} disabled={billingBusy}>
+                  {billingBusy ? "Creando..." : "Crear division (partes iguales)"}
+                </button>
+              ) : (
+                <p className="muted">Sin division creada.</p>
+              )
+            ) : (
+              <div className="sector-list">
+                <div className="sector-row">
+                  <span>Estado</span>
+                  <span className="muted">{orderDetail.bill_split.status}</span>
+                  <span className="muted">Total {formatMoney(orderDetail.bill_split.total_amount)}</span>
+                </div>
+                {orderDetail.bill_split.parts.map((part) => (
+                  <div className="sector-row" key={part.id}>
+                    <span>
+                      {part.label} - {formatMoney(part.amount)}
+                      {part.reported_by ? ` (${part.reported_by})` : ""}
+                    </span>
+                    <span className={billBadgeClass(part.payment_status)}>{part.payment_status}</span>
+                    {actorSector === "ADMIN" && part.payment_status === "REPORTED" ? (
+                      <button className="btn-primary" onClick={() => onConfirmPart(part.id)} disabled={billingBusy}>
+                        {billingBusy ? "..." : "Confirmar"}
+                      </button>
+                    ) : (
+                      <span className="muted">
+                        {part.confirmed_at
+                          ? new Date(part.confirmed_at).toLocaleTimeString("es-AR")
+                          : part.reported_at
+                            ? new Date(part.reported_at).toLocaleTimeString("es-AR")
+                            : "-"}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </article>
         </div>

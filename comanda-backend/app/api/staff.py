@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import ensure_sector_access, get_current_staff
 from app.db.models import (
+    BillSplit,
+    BillSplitStatus,
     ItemStatusEvent,
     Order,
     OrderItem,
@@ -27,6 +29,7 @@ from app.schemas.orders import (
     StaffBoardItemOut,
     StaffBoardItemsResponse,
 )
+from app.services.billing import get_latest_bill_split, to_bill_split_out
 from app.services.item_status import change_item_status
 from app.services.realtime import event_bus
 
@@ -173,6 +176,7 @@ def get_staff_order_items_detail(
                 .order_by(ItemStatusEvent.created_at.desc(), ItemStatusEvent.id.desc())
             ).all()
         ],
+        bill_split=to_bill_split_out(db, get_latest_bill_split(db, order.id)),
         created_at=order.created_at,
     )
 
@@ -276,6 +280,19 @@ def close_table_session(
     ) or 0
     if has_open_orders > 0:
         raise HTTPException(status_code=409, detail="Cannot close table session with active non-delivered orders")
+
+    has_open_bill_splits = db.scalar(
+        select(func.count())
+        .select_from(BillSplit)
+        .join(Order, Order.id == BillSplit.order_id)
+        .where(
+            Order.table_session_id == table_session.id,
+            Order.store_id == current_staff.store_id,
+            BillSplit.status != BillSplitStatus.CLOSED.value,
+        )
+    ) or 0
+    if has_open_bill_splits > 0:
+        raise HTTPException(status_code=409, detail="Cannot close table session with pending bill split confirmations")
 
     table_session.status = TableSessionStatus.CLOSED.value
     table_session.closed_at = datetime.utcnow()

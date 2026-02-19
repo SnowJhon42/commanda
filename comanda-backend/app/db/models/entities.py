@@ -32,6 +32,17 @@ class TableSessionStatus(str, Enum):
     CLOSED = "CLOSED"
 
 
+class BillSplitStatus(str, Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class BillPartPaymentStatus(str, Enum):
+    PENDING = "PENDING"
+    REPORTED = "REPORTED"
+    CONFIRMED = "CONFIRMED"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -166,6 +177,7 @@ class Order(Base):
     table_session: Mapped["TableSession | None"] = relationship(back_populates="orders")
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order")
     sector_statuses: Mapped[list["OrderSectorStatus"]] = relationship(back_populates="order")
+    bill_splits: Mapped[list["BillSplit"]] = relationship(back_populates="order")
 
 
 class OrderItem(Base):
@@ -227,3 +239,35 @@ class ItemStatusEvent(Base):
     to_status: Mapped[str] = mapped_column(String(20), nullable=False)
     changed_by_staff_id: Mapped[int] = mapped_column(ForeignKey("staff_accounts.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class BillSplit(Base):
+    __tablename__ = "bill_splits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False)
+    mode: Mapped[str] = mapped_column(String(20), default="EQUAL", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default=BillSplitStatus.OPEN.value, nullable=False)
+    total_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    order: Mapped["Order"] = relationship(back_populates="bill_splits")
+    parts: Mapped[list["BillSplitPart"]] = relationship(back_populates="bill_split")
+
+
+class BillSplitPart(Base):
+    __tablename__ = "bill_split_parts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bill_split_id: Mapped[int] = mapped_column(ForeignKey("bill_splits.id"), nullable=False)
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    payment_status: Mapped[str] = mapped_column(String(20), default=BillPartPaymentStatus.PENDING.value, nullable=False)
+    reported_by: Mapped[str | None] = mapped_column(String(120))
+    reported_at: Mapped[datetime | None] = mapped_column(DateTime)
+    confirmed_by_staff_id: Mapped[int | None] = mapped_column(ForeignKey("staff_accounts.id"))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    bill_split: Mapped["BillSplit"] = relationship(back_populates="parts")

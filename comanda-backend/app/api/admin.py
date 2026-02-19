@@ -16,6 +16,7 @@ from app.schemas.orders import (
     SectorStatusOut,
     StaffBoardItemOut,
 )
+from app.services.billing import get_latest_bill_split, to_bill_split_out
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -151,5 +152,6 @@ def get_admin_order_items_detail(
                 .order_by(ItemStatusEvent.created_at.desc(), ItemStatusEvent.id.desc())
             ).all()
         ],
+        bill_split=to_bill_split_out(db, get_latest_bill_split(db, order.id)),
         created_at=order.created_at,
     )

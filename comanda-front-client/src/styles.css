@@ -363,6 +363,10 @@ button:focus {
   padding: 10px;
 }
 
+.split-card {
+  margin-top: 12px;
+}
+
 .tracking-items {
   margin: 0;
   padding-left: 18px;

@@ -68,6 +68,36 @@ class CloseTableSessionResponse(BaseModel):
     closed_at: datetime
 
 
+class CreateEqualBillSplitRequest(BaseModel):
+    parts_count: int = Field(..., ge=2, le=20)
+
+
+class ReportBillPartPaymentRequest(BaseModel):
+    payer_label: str = Field(..., min_length=1, max_length=120)
+
+
+class BillSplitPartOut(BaseModel):
+    id: int
+    label: str
+    amount: float
+    payment_status: str
+    reported_by: str | None = None
+    reported_at: datetime | None = None
+    confirmed_by_staff_id: int | None = None
+    confirmed_at: datetime | None = None
+
+
+class BillSplitOut(BaseModel):
+    id: int
+    order_id: int
+    mode: str
+    status: str
+    total_amount: float
+    created_at: datetime
+    closed_at: datetime | None = None
+    parts: list[BillSplitPartOut]
+
+
 class SectorStatusOut(BaseModel):
     sector: str
     status: str
@@ -214,4 +244,5 @@ class AdminOrderItemsDetailResponse(BaseModel):
     delays: list[AdminSectorDelayOut]
     items: list[StaffBoardItemOut]
     events: list[ItemStatusEventOut]
+    bill_split: BillSplitOut | None = None
     created_at: datetime
