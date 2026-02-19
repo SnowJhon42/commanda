@@ -1,14 +1,14 @@
-# comanda-front-staff
+﻿# comanda-front-staff
 
-Frontend staff (desktop-first) para `ADMIN`, `KITCHEN`, `BAR`, `WAITER`.
+Frontend staff (Next.js) para `ADMIN`, `KITCHEN`, `BAR`, `WAITER`.
 
 ## Run
 
 ```bash
 npm install
-npm run dev
+npm run dev -- -H 0.0.0.0 -p 5174
 ```
 
 ## Env
 
-- `VITE_API_URL` (default `http://localhost:8000`)
+- `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`)

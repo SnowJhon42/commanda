@@ -1,10 +1,10 @@
-﻿# COMANDA Workspace
+﻿# COMANDA Monorepo
 
-Repos del MVP:
+Proyecto unificado en un solo repo:
 
-- `comanda-backend`
-- `comanda-front-client`
-- `comanda-front-staff`
+- `comanda-backend` (FastAPI)
+- `comanda-front-client` (Next.js)
+- `comanda-front-staff` (Next.js)
 
 Documentacion tecnica:
 
@@ -14,7 +14,7 @@ Documentacion tecnica:
 - `docs/DB_SEED_MIN.sql`
 - `docs/MOCKUP_MAPPING_MVP.md`
 
-## Operacion local unificada
+## Operacion Local Unificada
 
 Desde `C:\Users\agust\OneDrive\Desktop\COMANDA`:
 
@@ -43,5 +43,30 @@ Atajos:
 URLs locales:
 
 - Backend health: `http://localhost:8000/health`
-- Cliente: `http://localhost:5173`
-- Staff: `http://localhost:5174`
+- Cliente Next.js: `http://localhost:5173`
+- Staff Next.js: `http://localhost:5174`
+
+## Variables Front
+
+Cada frontend usa:
+
+- `NEXT_PUBLIC_API_URL=http://localhost:8000`
+
+Archivos:
+
+- `comanda-front-client/.env.local`
+- `comanda-front-staff/.env.local`
+
+## Vercel
+
+Para deploy en Vercel crear 2 proyectos sobre este mismo repo:
+
+1. Front Cliente
+- Root Directory: `comanda-front-client`
+
+2. Front Staff
+- Root Directory: `comanda-front-staff`
+
+En ambos proyectos configurar:
+
+- `NEXT_PUBLIC_API_URL`: URL publica del backend FastAPI

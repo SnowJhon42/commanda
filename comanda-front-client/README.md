@@ -1,14 +1,14 @@
-# comanda-front-client
+﻿# comanda-front-client
 
-Frontend cliente (mobile-first) para menu, checkout y tracking.
+Frontend cliente (Next.js) para menu, checkout y tracking.
 
 ## Run
 
 ```bash
 npm install
-npm run dev
+npm run dev -- -H 0.0.0.0 -p 5173
 ```
 
 ## Env
 
-- `VITE_API_URL` (default `http://localhost:8000`)
+- `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`)

@@ -1,4 +1,4 @@
-param(
+﻿param(
   [ValidateSet("up", "down", "status", "restart", "logs", "doctor", "start", "stop")]
   [string]$Action = "up"
 )
@@ -67,7 +67,7 @@ function Ensure-EnvFile {
   param([string]$ProjectPath)
   $envFile = Join-Path $ProjectPath ".env.local"
   if (-not (Test-Path $envFile)) {
-    "VITE_API_URL=http://localhost:8000" | Set-Content -Path $envFile -Encoding ASCII
+    "NEXT_PUBLIC_API_URL=http://localhost:8000" | Set-Content -Path $envFile -Encoding ASCII
   }
 }
 
@@ -183,8 +183,8 @@ function Action-Up {
   Ensure-NodeModules -ProjectPath $staffPath -Label "Staff"
 
   $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
-  $clientProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm.cmd run dev -- --host 0.0.0.0 --port 5173" -WorkingDirectory $clientPath -RedirectStandardOutput (Join-Path $logsDir "front-client.out.log") -RedirectStandardError (Join-Path $logsDir "front-client.err.log") -PassThru
-  $staffProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm.cmd run dev -- --host 0.0.0.0 --port 5174" -WorkingDirectory $staffPath -RedirectStandardOutput (Join-Path $logsDir "front-staff.out.log") -RedirectStandardError (Join-Path $logsDir "front-staff.err.log") -PassThru
+  $clientProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm.cmd run dev -- -H 0.0.0.0 -p 5173" -WorkingDirectory $clientPath -RedirectStandardOutput (Join-Path $logsDir "front-client.out.log") -RedirectStandardError (Join-Path $logsDir "front-client.err.log") -PassThru
+  $staffProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm.cmd run dev -- -H 0.0.0.0 -p 5174" -WorkingDirectory $staffPath -RedirectStandardOutput (Join-Path $logsDir "front-staff.out.log") -RedirectStandardError (Join-Path $logsDir "front-staff.err.log") -PassThru
 
   Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
   Write-PidFile -Path $clientPidFile -ProcessId $clientProc.Id

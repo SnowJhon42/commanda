@@ -1,0 +1,14 @@
+{
+  "name": "comanda-monorepo",
+  "private": true,
+  "workspaces": [
+    "comanda-front-client",
+    "comanda-front-staff"
+  ],
+  "scripts": {
+    "dev:client": "npm --prefix comanda-front-client run dev -- -H 0.0.0.0 -p 5173",
+    "dev:staff": "npm --prefix comanda-front-staff run dev -- -H 0.0.0.0 -p 5174",
+    "build:client": "npm --prefix comanda-front-client run build",
+    "build:staff": "npm --prefix comanda-front-staff run build"
+  }
+}
