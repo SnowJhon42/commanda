@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS menu_categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   store_id INTEGER NOT NULL,
   name TEXT NOT NULL,
+  image_url TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS products (
   store_id INTEGER NOT NULL,
   category_id INTEGER,
   name TEXT NOT NULL,
+  image_url TEXT,
   description TEXT,
   base_price NUMERIC NOT NULL CHECK (base_price >= 0),
   fulfillment_sector TEXT NOT NULL CHECK (fulfillment_sector IN ('KITCHEN', 'BAR', 'WAITER')),
@@ -129,6 +131,20 @@ CREATE TABLE IF NOT EXISTS order_status_events (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (order_id) REFERENCES orders(id),
   FOREIGN KEY (changed_by_staff_id) REFERENCES staff_accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS table_session_feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_session_id INTEGER NOT NULL,
+  store_id INTEGER NOT NULL,
+  client_id TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (table_session_id) REFERENCES table_sessions(id),
+  FOREIGN KEY (store_id) REFERENCES stores(id),
+  UNIQUE (table_session_id, client_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_store_created

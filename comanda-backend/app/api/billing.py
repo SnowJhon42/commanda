@@ -72,10 +72,11 @@ def create_equal_split(
     db.flush()
 
     for idx, amount in enumerate(_build_equal_amounts(total, payload.parts_count), start=1):
+        label = "Pago total" if payload.parts_count == 1 else f"Persona {idx}"
         db.add(
             BillSplitPart(
                 bill_split_id=split.id,
-                label=f"Persona {idx}",
+                label=label,
                 amount=float(amount),
                 payment_status=BillPartPaymentStatus.PENDING.value,
                 created_at=datetime.utcnow(),

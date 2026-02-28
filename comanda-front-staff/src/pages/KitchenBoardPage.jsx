@@ -27,7 +27,7 @@ export function KitchenBoardPage({
       </div>
       {loading && <p className="muted">Actualizando...</p>}
       {rows.length === 0 ? (
-        <p className="muted">No hay items en preparacion en cocina.</p>
+        <p className="muted">No hay items recibidos o en preparacion en cocina.</p>
       ) : (
         <div className="card-grid">
           {rows.map((row) => {
@@ -55,7 +55,8 @@ export function KitchenBoardPage({
               </div>
               <div className="sector-list">
                 {row.items.map((item) => {
-                  const key = `${item.item_id}:DONE`;
+                  const nextStatus = item.status === "RECEIVED" ? "IN_PROGRESS" : "DONE";
+                  const key = `${item.item_id}:${nextStatus}`;
                   const updating = advancingKey === key;
                   const alertClass = itemAlertClass(item, "KITCHEN");
                   return (
@@ -77,7 +78,7 @@ export function KitchenBoardPage({
                           })
                         }
                       >
-                        {updating ? "..." : "Marcar LISTO"}
+                        {updating ? "..." : item.status === "RECEIVED" ? "Tomar (EN_PREPARACION)" : "Marcar LISTO"}
                       </button>
                     </div>
                   );

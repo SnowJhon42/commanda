@@ -98,6 +98,26 @@ export async function fetchTableSessionState(tableSessionId) {
   }
 }
 
+export async function submitTableSessionFeedback({ tableSessionId, clientId, rating, comment }) {
+  try {
+    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: clientId,
+        rating: Number(rating),
+        comment: comment?.trim() || undefined,
+      }),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo guardar tu valoracion.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo guardar tu valoracion.");
+  }
+}
+
 export async function upsertOrderByTable(payload) {
   try {
     const res = await fetch(`${API_URL}/orders/upsert-by-table`, {

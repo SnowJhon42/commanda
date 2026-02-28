@@ -68,8 +68,44 @@ class CloseTableSessionResponse(BaseModel):
     closed_at: datetime
 
 
+class TableSessionFeedbackRequest(BaseModel):
+    client_id: str = Field(..., min_length=1, max_length=120)
+    rating: int = Field(..., ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=500)
+
+
+class TableSessionFeedbackResponse(BaseModel):
+    table_session_id: int
+    client_id: str
+    rating: int
+    comment: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class FeedbackDistributionOut(BaseModel):
+    rating: int
+    count: int
+
+
+class FeedbackCommentOut(BaseModel):
+    table_session_id: int
+    table_code: str
+    client_id: str
+    rating: int
+    comment: str
+    created_at: datetime
+
+
+class FeedbackSummaryResponse(BaseModel):
+    avg_rating: float
+    total_feedbacks: int
+    distribution: list[FeedbackDistributionOut]
+    latest_comments: list[FeedbackCommentOut]
+
+
 class CreateEqualBillSplitRequest(BaseModel):
-    parts_count: int = Field(..., ge=2, le=20)
+    parts_count: int = Field(..., ge=1, le=20)
 
 
 class ReportBillPartPaymentRequest(BaseModel):

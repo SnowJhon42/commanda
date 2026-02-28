@@ -15,6 +15,7 @@ from app.schemas.orders import (
 from app.services.item_status import recompute_order_status_from_items
 from app.services.order_routing import route_item_to_sector
 from app.services.realtime import event_bus
+from app.services.table_code import normalize_table_code
 from app.services.ticket_generator import next_ticket_number
 
 router = APIRouter(tags=["orders"])
@@ -22,8 +23,9 @@ router = APIRouter(tags=["orders"])
 
 @router.post("/orders", response_model=CreateOrderResponse, status_code=201)
 def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> CreateOrderResponse:
+    normalized_table_code = normalize_table_code(payload.table_code)
     table = db.scalar(
-        select(Table).where(Table.store_id == payload.store_id, Table.code == payload.table_code, Table.active == True)
+        select(Table).where(Table.store_id == payload.store_id, Table.code == normalized_table_code, Table.active == True)
     )
     if not table:
         raise HTTPException(status_code=404, detail="Table not found or inactive")
@@ -97,7 +99,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
             "order_id": order.id,
             "table_session_id": order.table_session_id,
             "store_id": order.store_id,
-            "table_code": payload.table_code,
+            "table_code": normalized_table_code,
             "status_aggregated": order.status_aggregated,
         },
     )
@@ -107,7 +109,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
             "order_id": order.id,
             "table_session_id": order.table_session_id,
             "store_id": order.store_id,
-            "table_code": payload.table_code,
+            "table_code": normalized_table_code,
             "item_sector": None,
             "item_status": OrderStatus.RECEIVED.value,
             "reason": "order_created",

@@ -25,7 +25,14 @@ function elapsedLabel(createdAt) {
   return `${hours}h ${rem}m`;
 }
 
-export function AdminBoardPage({ rows, loading, onSelectOrder, selectedOrderId, alertMetaByOrder = {} }) {
+export function AdminBoardPage({
+  rows,
+  loading,
+  onSelectOrder,
+  selectedOrderId,
+  alertMetaByOrder = {},
+  freshByOrder = {},
+}) {
   return (
     <section className="panel">
       <div className="section-head">
@@ -54,9 +61,10 @@ export function AdminBoardPage({ rows, loading, onSelectOrder, selectedOrderId, 
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.order_id}>
+                <tr key={row.order_id} className={row.status_aggregated !== "DELIVERED" ? "admin-row-active" : ""}>
                   <td>
                     {row.table_code}
+                    {freshByOrder[row.order_id] && <span className="new-badge">NUEVO</span>}
                     {(alertMetaByOrder[row.order_id]?.total || 0) > 0 && (
                       <span
                         className={

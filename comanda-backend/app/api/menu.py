@@ -31,16 +31,18 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
 
     return MenuResponse(
         store_id=store_id,
-        categories=[CategoryOut(id=c.id, name=c.name, sort_order=c.sort_order) for c in categories],
+        categories=[CategoryOut(id=c.id, name=c.name, image_url=c.image_url, sort_order=c.sort_order) for c in categories],
         products=[
             ProductOut(
                 id=p.id,
                 category_id=p.category_id,
                 name=p.name,
+                image_url=p.image_url,
                 description=p.description,
                 base_price=float(p.base_price),
                 fulfillment_sector=p.fulfillment_sector,
                 variants=variants_by_product.get(p.id, []),
+                active=p.active,
             )
             for p in products
         ],

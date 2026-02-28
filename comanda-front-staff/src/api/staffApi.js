@@ -19,7 +19,9 @@ async function toApiError(res, fallbackMessage) {
 
 function toNetworkError(error, fallbackMessage) {
   if (error?.name === "TypeError") {
-    return new Error("No se pudo conectar con el backend.");
+    return new Error(
+      `No se pudo conectar con el backend (${API_URL}). Verifica que este levantado y responda en /health.`
+    );
   }
   if (error instanceof Error) return error;
   return new Error(fallbackMessage);
@@ -90,6 +92,19 @@ export async function fetchStaffBoardItems({ token, storeId, sector }) {
   }
 }
 
+export async function fetchFeedbackSummary({ token, storeId, limit = 20 }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId), limit: String(limit) });
+    const res = await fetch(`${API_URL}/staff/feedback/summary?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar feedback.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar feedback.");
+  }
+}
+
 export async function patchItemStatus({ token, itemId, toStatus }) {
   try {
     const res = await fetch(`${API_URL}/staff/items/${itemId}/status`, {
@@ -146,6 +161,82 @@ export async function confirmSplitPart({ token, partId }) {
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudo confirmar el pago.");
+  }
+}
+
+export async function fetchAdminMenuCategories({ token }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/categories`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron cargar las categorías.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron cargar las categorías.");
+  }
+}
+
+export async function fetchAdminMenuProducts({ token }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/products`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron cargar los productos.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron cargar los productos.");
+  }
+}
+
+export async function createAdminProduct({ token, payload }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/products`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo crear el producto.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo crear el producto.");
+  }
+}
+
+export async function patchAdminProduct({ token, productId, payload }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/products/${productId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo actualizar el producto.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar el producto.");
+  }
+}
+
+export async function uploadMenuImage({ token, file }) {
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch(`${API_URL}/admin/menu/images`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body,
+    });
+    if (!res.ok) await toApiError(res, "No se pudo subir la imagen.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo subir la imagen.");
   }
 }
 

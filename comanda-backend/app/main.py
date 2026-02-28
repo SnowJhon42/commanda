@@ -14,6 +14,7 @@ app = FastAPI(title=settings.app_name)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
+    allow_origin_regex=settings.cors_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,6 +88,25 @@ def _ensure_runtime_schema_migrations() -> None:
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   FOREIGN KEY(bill_split_id) REFERENCES bill_splits(id),
                   FOREIGN KEY(confirmed_by_staff_id) REFERENCES staff_accounts(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS table_session_feedback (
+                  id INTEGER PRIMARY KEY,
+                  table_session_id INTEGER NOT NULL,
+                  store_id INTEGER NOT NULL,
+                  client_id TEXT NOT NULL,
+                  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                  comment TEXT NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  FOREIGN KEY(table_session_id) REFERENCES table_sessions(id),
+                  FOREIGN KEY(store_id) REFERENCES stores(id),
+                  CONSTRAINT uq_table_session_feedback_client UNIQUE (table_session_id, client_id)
                 )
                 """
             )
@@ -169,6 +189,16 @@ def _ensure_runtime_schema_migrations() -> None:
                 """
             )
         )
+
+        category_columns = conn.execute(text("PRAGMA table_info(menu_categories)")).fetchall()
+        category_column_names = {row[1] for row in category_columns}
+        if "image_url" not in category_column_names:
+            conn.execute(text("ALTER TABLE menu_categories ADD COLUMN image_url TEXT NULL"))
+
+        product_columns = conn.execute(text("PRAGMA table_info(products)")).fetchall()
+        product_column_names = {row[1] for row in product_columns}
+        if "image_url" not in product_column_names:
+            conn.execute(text("ALTER TABLE products ADD COLUMN image_url TEXT NULL"))
 
 
 @app.on_event("startup")

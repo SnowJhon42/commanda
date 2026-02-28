@@ -77,14 +77,15 @@ Response `200`:
 {
   "store_id": 1,
   "categories": [
-    { "id": 1, "name": "Entradas", "sort_order": 1 },
-    { "id": 2, "name": "Principal", "sort_order": 2 }
+    { "id": 1, "name": "Entradas", "image_url": "https://cdn.example.com/menu/categories/entradas.jpg", "sort_order": 1 },
+    { "id": 2, "name": "Principal", "image_url": "https://cdn.example.com/menu/categories/principal.jpg", "sort_order": 2 }
   ],
   "products": [
     {
       "id": 10,
       "category_id": 2,
       "name": "Hamburguesa Clasica",
+      "image_url": "https://cdn.example.com/menu/products/hamburguesa-clasica.jpg",
       "description": "Carne, queso, lechuga y tomate",
       "base_price": 12000,
       "fulfillment_sector": "KITCHEN",
@@ -302,9 +303,184 @@ Errores:
 - `401`: token inválido/ausente
 - `403`: solo ADMIN
 
+### `PATCH /admin/menu/categories/{category_id}/image`
+
+Headers:
+- `Authorization: Bearer <token>`
+
+Request:
+```json
+{
+  "image_url": "https://cdn.example.com/menu/categories/entradas.jpg"
+}
+```
+
+Request para limpiar imagen:
+```json
+{
+  "image_url": null
+}
+```
+
+Response `200`:
+```json
+{
+  "id": 1,
+  "image_url": "https://cdn.example.com/menu/categories/entradas.jpg"
+}
+```
+
+Errores:
+- `401`: token inválido/ausente
+- `403`: solo ADMIN
+- `404`: categoría no existe en la tienda del staff
+- `422`: `image_url` inválida
+
+### `PATCH /admin/menu/products/{product_id}/image`
+
+Headers:
+- `Authorization: Bearer <token>`
+
+Request:
+```json
+{
+  "image_url": "https://cdn.example.com/menu/products/hamburguesa-clasica.jpg"
+}
+```
+
+Response `200`:
+```json
+{
+  "id": 10,
+  "image_url": "https://cdn.example.com/menu/products/hamburguesa-clasica.jpg"
+}
+```
+
+Errores:
+- `401`: token inválido/ausente
+- `403`: solo ADMIN
+- `404`: producto no existe en la tienda del staff
+- `422`: `image_url` inválida
+
 ### `GET /admin/orders/{order_id}`
 
 Detalle completo para auditoría manual.
+
+### `GET /admin/menu/categories`
+
+Headers:
+- `Authorization: Bearer <token>`
+
+Response `200`:
+```json
+[
+  { "id": 1, "name": "Entradas", "image_url": "https://pub-.../menu/categories/entradas.jpg", "sort_order": 1 }
+]
+```
+
+### `GET /admin/menu/products`
+
+Headers:
+- `Authorization: Bearer <token>`
+
+Response `200`:
+```json
+[
+  {
+    "id": 10,
+    "category_id": 1,
+    "name": "Hamburguesa Clasica",
+    "image_url": "https://pub-.../menu/products/hamburguesa-clasica.jpg",
+    "description": "Carne, queso, lechuga y tomate",
+    "base_price": 12000,
+    "fulfillment_sector": "KITCHEN",
+    "variants": [],
+    "active": true
+  }
+]
+```
+
+### `POST /admin/menu/products`
+
+Headers:
+- `Authorization: Bearer <token>`
+
+Request:
+```json
+{
+  "name": "Sticker Salad",
+  "description": "Fresh greens",
+  "base_price": 6800,
+  "fulfillment_sector": "WAITER",
+  "category_id": 2,
+  "image_url": "https://pub-.../menu/products/salad.jpg"
+}
+```
+
+Response `201`:
+```json
+{
+  "id": 11,
+  "category_id": 2,
+  "name": "Sticker Salad",
+  "image_url": "https://pub-.../menu/products/salad.jpg",
+  "description": "Fresh greens",
+  "base_price": 6800,
+  "fulfillment_sector": "WAITER",
+  "variants": [],
+  "active": true
+}
+```
+
+### `PATCH /admin/menu/products/{product_id}`
+
+Headers:
+- `Authorization: Bearer <token>`
+
+Request:
+```json
+{
+  "description": "Carne, queso y pickles",
+  "image_url": null,
+  "active": false
+}
+```
+
+Response `200`:
+```json
+{
+  "id": 10,
+  "category_id": 2,
+  "name": "Hamburguesa Clasica",
+  "image_url": null,
+  "description": "Carne, queso y pickles",
+  "base_price": 12000,
+  "fulfillment_sector": "KITCHEN",
+  "variants": [],
+  "active": false
+}
+```
+
+### `POST /admin/menu/images`
+
+Headers:
+- `Authorization: Bearer <token>`
+- `Content-Type: multipart/form-data`
+
+Body:
+- `file`: imagen (`image/*`, máximo 5MB)
+
+Response `200`:
+```json
+{
+  "image_url": "https://pub-.../menu/images/<uuid>.jpg"
+}
+```
+
+Errores:
+- `400`: archivo no es imagen o está vacío
+- `413`: imagen demasiado grande
+- `502`/`503`: error al enviar a Cloudflare
 
 ## 4) Errores estándar
 

@@ -365,6 +365,98 @@ button:focus {
 
 .split-card {
   margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.split-create {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+}
+
+.split-quick-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.split-field {
+  max-width: 140px;
+}
+
+.split-body {
+  display: grid;
+  gap: 10px;
+}
+
+.split-parts {
+  display: grid;
+  gap: 8px;
+}
+
+.split-part {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+}
+
+.split-part-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.split-part-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.feedback-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.stars-row {
+  display: flex;
+  gap: 8px;
+}
+
+.star-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.star-btn-on {
+  border-color: #f59e0b;
+  background: #fef3c7;
+}
+
+.feedback-textarea {
+  min-height: 100px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.feedback-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .tracking-items {

@@ -1,5 +1,5 @@
 ﻿param(
-  [ValidateSet("up", "down", "status", "restart", "logs", "doctor", "start", "stop")]
+  [ValidateSet("up", "down", "status", "restart", "logs", "doctor", "backend-up", "backend-down", "backend-status", "backend-restart", "start", "stop")]
   [string]$Action = "up"
 )
 
@@ -118,6 +118,23 @@ function Stop-StaleListeners {
   }
 }
 
+function Stop-ListenersForPort {
+  param(
+    [int]$Port,
+    [string]$Name = "Service"
+  )
+  $pids = Get-ListeningPidsForPort -Port $Port
+  if (-not $pids -or $pids.Count -eq 0) { return }
+
+  foreach ($listenerPid in $pids) {
+    try {
+      Stop-Process -Id $listenerPid -Force -ErrorAction Stop
+      Write-Host "${Name}: liberado puerto ${Port} (PID $listenerPid)."
+    } catch {
+      Write-Host "${Name}: no se pudo detener PID $listenerPid en puerto ${Port}."
+    }
+  }
+}
 function Check-Url {
   param([string]$Name, [string]$Url)
   try {
@@ -173,6 +190,30 @@ function Action-Status {
   }
 }
 
+function Action-BackendDown {
+  Stop-FromPidFile -Name "Backend" -PidFile $backendPidFile
+  Stop-ListenersForPort -Port 8000 -Name "Backend"
+}
+
+function Action-BackendStatus {
+  $ok = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
+  if (-not $ok) {
+    exit 1
+  }
+}
+
+function Action-BackendUp {
+  Action-BackendDown
+  $pythonCommand = Resolve-PythonCommand
+  $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
+  Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
+
+  $backendUp = Wait-Url -Url "http://localhost:8000/health" -MaxSeconds 40
+  $null = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
+  if (-not $backendUp) {
+    exit 1
+  }
+}
 function Action-Up {
   Action-Down
 
@@ -260,6 +301,7 @@ function Action-Doctor {
   Write-Host "[doctor] Env local asegurado en ambos fronts."
 
   $dbPath = Join-Path $backendPath "comanda_dev.db"
+  $rootDbPath = Join-Path $root "comanda_dev.db"
   if (-not (Test-Path $dbPath)) {
     Write-Host "ERR DB no encontrada en $dbPath"
     $hasError = $true
@@ -297,6 +339,45 @@ conn.close()
     }
   }
 
+  if (Test-Path $rootDbPath) {
+    Write-Host "[doctor] ADVERTENCIA: DB adicional detectada en raiz: $rootDbPath"
+    try {
+      $py = Resolve-PythonCommand
+      $compareProbe = @'
+import sqlite3
+import sys
+
+backend_path = sys.argv[1]
+root_path = sys.argv[2]
+
+def count_products(path):
+    conn = sqlite3.connect(path)
+    cur = conn.cursor()
+    try:
+        return cur.execute("select count(*) from products").fetchone()[0]
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+backend_products = count_products(backend_path)
+root_products = count_products(root_path)
+
+print(f"backend_products={backend_products}")
+print(f"root_products={root_products}")
+print("same=yes" if backend_products == root_products else "same=no")
+'@
+      $cmpResult = $compareProbe | & $py - $dbPath $rootDbPath 2>&1
+      $cmpText = ($cmpResult | Out-String).Trim()
+      if ($cmpText) { Write-Host $cmpText }
+      if ($cmpText -match "same=no") {
+        Write-Host "WARN Backend usa $dbPath. Evitar iniciar API desde raiz con sqlite relativa."
+      }
+    } catch {
+      Write-Host "WARN No se pudo comparar DB de backend vs raiz."
+    }
+  }
+
   Write-Host "[doctor] Endpoints actuales"
   $null = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
   $null = Check-Url -Name "Client" -Url "http://localhost:5173"
@@ -315,4 +396,8 @@ switch ($Action) {
   "restart" { Action-Down; Action-Up; break }
   "logs" { Action-Logs; break }
   "doctor" { Action-Doctor; break }
+  "backend-up" { Action-BackendUp; break }
+  "backend-down" { Action-BackendDown; break }
+  "backend-status" { Action-BackendStatus; break }
+  "backend-restart" { Action-BackendDown; Action-BackendUp; break }
 }

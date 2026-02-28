@@ -1,19 +1,22 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
   fetchMenu,
+  submitTableSessionFeedback,
   fetchTableSessionState,
   joinTableSession,
   openTableSession,
   openTableSessionEvents,
   upsertOrderByTable,
 } from "./api/clientApi";
-import { MenuPage } from "./pages/MenuPage";
-import { CheckoutPage } from "./pages/CheckoutPage";
-import { OrderTrackingPage } from "./pages/OrderTrackingPage";
+import { MenuPage } from "./views/MenuPage";
+import { CheckoutPage } from "./views/CheckoutPage";
+import { OrderTrackingPage } from "./views/OrderTrackingPage";
+import { SessionClosedFeedbackPage } from "./views/SessionClosedFeedbackPage";
 
 const DEFAULT_STORE_ID = 1;
+const SESSION_STATE_KEY = "comanda_client_session_state_v1";
 
 function cartKey(productId, variantId) {
   return `${productId}:${variantId ?? "none"}`;
@@ -49,6 +52,49 @@ export function App() {
   const [tableSessionId, setTableSessionId] = useState(null);
   const [connectedClients, setConnectedClients] = useState(1);
   const [uiToast, setUiToast] = useState("");
+  const [closedSession, setClosedSession] = useState(null);
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
+  const [feedbackError, setFeedbackError] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(SESSION_STATE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+
+      if (typeof saved.tableCode === "string" && saved.tableCode.trim()) {
+        setTableCode(saved.tableCode);
+      }
+      if (Number(saved.guestCount) > 0) setGuestCount(Number(saved.guestCount));
+      if (Number(saved.tableSessionId) > 0) setTableSessionId(Number(saved.tableSessionId));
+      if (Number(saved.activeOrderId) > 0) setActiveOrderId(Number(saved.activeOrderId));
+      if (Number(saved.connectedClients) > 0) setConnectedClients(Number(saved.connectedClients));
+      if (saved.closedSession?.tableSessionId && saved.closedSession?.tableCode) {
+        setClosedSession({
+          tableSessionId: Number(saved.closedSession.tableSessionId),
+          tableCode: String(saved.closedSession.tableCode),
+        });
+      }
+    } catch {
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const payload = {
+      tableCode,
+      guestCount,
+      tableSessionId,
+      activeOrderId,
+      connectedClients,
+      closedSession,
+    };
+    try {
+      window.localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(payload));
+    } catch {
+    }
+  }, [tableCode, guestCount, tableSessionId, activeOrderId, connectedClients, closedSession]);
 
   const loadMenu = async () => {
     setMenuLoading(true);
@@ -135,6 +181,7 @@ export function App() {
   };
 
   const submitOrder = async () => {
+    if (submittingOrder) return;
     setCheckoutError("");
     if (cartItems.length === 0) {
       setCheckoutError("Agrega al menos un item al carrito.");
@@ -197,10 +244,15 @@ export function App() {
       try {
         const state = await fetchTableSessionState(tableSessionId);
         if (state.status === "CLOSED") {
-          setUiToast("La mesa fue cerrada por el staff.");
+          setClosedSession({
+            tableSessionId: state.table_session_id,
+            tableCode: state.table_code,
+          });
+          setFeedbackError("");
           setTableSessionId(null);
           setConnectedClients(1);
           setActiveOrderId(null);
+          setCartItems([]);
           return;
         }
         setConnectedClients(state.connected_clients || 1);
@@ -233,6 +285,54 @@ export function App() {
     setActiveOrderId(null);
   };
 
+  const goToTracking = () => {
+    if (typeof window === "undefined") return;
+    const node = document.getElementById("tracking-section");
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const resetSession = () => {
+    setClosedSession(null);
+    setTableCode("M1");
+    setGuestCount(2);
+    setActiveOrderId(null);
+    setTableSessionId(null);
+    setConnectedClients(1);
+    setCartItems([]);
+    setCheckoutError("");
+    setFeedbackError("");
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(SESSION_STATE_KEY);
+      } catch {
+      }
+    }
+  };
+
+  const submitFeedbackAndReset = async ({ rating, comment }) => {
+    if (!closedSession?.tableSessionId) {
+      resetSession();
+      return;
+    }
+    setFeedbackSaving(true);
+    setFeedbackError("");
+    try {
+      await submitTableSessionFeedback({
+        tableSessionId: closedSession.tableSessionId,
+        clientId,
+        rating,
+        comment,
+      });
+      resetSession();
+      setUiToast("Gracias por tu valoracion.");
+    } catch (error) {
+      setFeedbackError(error.message || "No se pudo guardar tu valoracion.");
+    } finally {
+      setFeedbackSaving(false);
+    }
+  };
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -254,6 +354,16 @@ export function App() {
       </header>
 
       {uiToast && <div className="toast-ok">{uiToast}</div>}
+
+      {closedSession && (
+        <SessionClosedFeedbackPage
+          tableCode={closedSession.tableCode}
+          saving={feedbackSaving}
+          error={feedbackError}
+          onSubmit={submitFeedbackAndReset}
+          onRestart={resetSession}
+        />
+      )}
 
       <MenuPage
         menu={menu}
@@ -278,9 +388,16 @@ export function App() {
         onUpdateCartNotes={updateCartNotes}
         onRemoveCartItem={removeCartItem}
         onSubmitOrder={submitOrder}
+        onGoToTracking={goToTracking}
       />
 
-      <OrderTrackingPage orderId={activeOrderId} />
+      <OrderTrackingPage
+        orderId={activeOrderId}
+        guestCount={guestCount}
+        tableCode={tableCode}
+        clientId={clientId}
+        feedbackLocked={Boolean(tableSessionId)}
+      />
     </main>
   );
 }

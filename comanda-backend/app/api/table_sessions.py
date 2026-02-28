@@ -13,6 +13,7 @@ from app.db.models import (
     Table,
     TableSession,
     TableSessionClient,
+    TableSessionFeedback,
     TableSessionStatus,
 )
 from app.db.session import get_db
@@ -24,11 +25,14 @@ from app.schemas.orders import (
     OpenTableSessionResponse,
     SectorStatusOut,
     TableSessionStateResponse,
+    TableSessionFeedbackRequest,
+    TableSessionFeedbackResponse,
     UpsertOrderByTableRequest,
 )
 from app.services.item_status import recompute_order_status_from_items
 from app.services.order_routing import route_item_to_sector
 from app.services.realtime import event_bus
+from app.services.table_code import normalize_table_code
 from app.services.ticket_generator import next_ticket_number
 
 router = APIRouter(tags=["table-session"])
@@ -86,7 +90,7 @@ def _add_items_to_order(db: Session, *, store_id: int, order: Order, items: list
 
 @router.post("/table/session/open", response_model=OpenTableSessionResponse)
 def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(get_db)) -> OpenTableSessionResponse:
-    normalized_table_code = payload.table_code.strip().upper()
+    normalized_table_code = normalize_table_code(payload.table_code)
     table = db.scalar(
         select(Table).where(Table.store_id == payload.store_id, Table.code == normalized_table_code, Table.active == True)
     )
@@ -196,6 +200,50 @@ def get_table_session_state(table_session_id: int, db: Session = Depends(get_db)
         status=table_session.status,
         connected_clients=int(connected_clients),
         active_order_id=active_order.id if active_order else None,
+    )
+
+
+@router.post("/table/session/{table_session_id}/feedback", response_model=TableSessionFeedbackResponse)
+def submit_table_session_feedback(
+    table_session_id: int,
+    payload: TableSessionFeedbackRequest,
+    db: Session = Depends(get_db),
+) -> TableSessionFeedbackResponse:
+    table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
+    if not table_session:
+        raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.status != TableSessionStatus.CLOSED.value:
+        raise HTTPException(status_code=409, detail="Table session must be closed before sending feedback")
+
+    feedback = db.scalar(
+        select(TableSessionFeedback).where(
+            TableSessionFeedback.table_session_id == table_session_id,
+            TableSessionFeedback.client_id == payload.client_id,
+        )
+    )
+    if not feedback:
+        feedback = TableSessionFeedback(
+            table_session_id=table_session_id,
+            store_id=table_session.store_id,
+            client_id=payload.client_id,
+            rating=payload.rating,
+            comment=payload.comment,
+        )
+        db.add(feedback)
+    else:
+        feedback.rating = payload.rating
+        feedback.comment = payload.comment
+        db.add(feedback)
+
+    db.commit()
+    db.refresh(feedback)
+    return TableSessionFeedbackResponse(
+        table_session_id=feedback.table_session_id,
+        client_id=feedback.client_id,
+        rating=feedback.rating,
+        comment=feedback.comment,
+        created_at=feedback.created_at,
+        updated_at=feedback.updated_at,
     )
 
 

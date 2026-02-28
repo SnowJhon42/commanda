@@ -99,6 +99,22 @@ class TableSessionClient(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class TableSessionFeedback(Base):
+    __tablename__ = "table_session_feedback"
+    __table_args__ = (UniqueConstraint("table_session_id", "client_id", name="uq_table_session_feedback_client"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_session_id: Mapped[int] = mapped_column(ForeignKey("table_sessions.id"), nullable=False)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
 class MenuCategory(Base):
     __tablename__ = "menu_categories"
     __table_args__ = (UniqueConstraint("store_id", "name", name="uq_menu_categories_store_name"),)
@@ -106,6 +122,7 @@ class MenuCategory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String(500))
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
@@ -118,6 +135,7 @@ class Product(Base):
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("menu_categories.id"))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String(500))
     description: Mapped[str | None] = mapped_column(Text)
     base_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     fulfillment_sector: Mapped[str] = mapped_column(String(20), nullable=False)

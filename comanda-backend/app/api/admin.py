@@ -1,12 +1,32 @@
 from datetime import datetime, timezone
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_staff
-from app.db.models import ItemStatusEvent, Order, OrderItem, OrderStatus, Sector, StaffAccount, Table
+from app.db.models import (
+    FulfillmentSector,
+    ItemStatusEvent,
+    MenuCategory,
+    Order,
+    OrderItem,
+    OrderStatus,
+    Product,
+    Sector,
+    StaffAccount,
+    Table,
+)
 from app.db.session import get_db
+from app.schemas.menu import (
+    CategoryOut,
+    ImageUploadOut,
+    ImageUrlPatchIn,
+    ImageUrlPatchOut,
+    ProductCreateIn,
+    ProductOut,
+    ProductUpdateIn,
+    VariantOut,
+)
 from app.schemas.orders import (
     AdminOrderItemsDetailResponse,
     AdminOrderSummaryOut,
@@ -17,6 +37,7 @@ from app.schemas.orders import (
     StaffBoardItemOut,
 )
 from app.services.billing import get_latest_bill_split, to_bill_split_out
+from app.services.cloudflare_r2 import upload_menu_image_to_r2
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -24,6 +45,188 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def _ensure_admin(current_staff: StaffAccount) -> None:
     if current_staff.sector != Sector.ADMIN.value:
         raise HTTPException(status_code=403, detail="Admin only")
+
+
+def _product_out(product: Product) -> ProductOut:
+    return ProductOut(
+        id=product.id,
+        category_id=product.category_id,
+        name=product.name,
+        image_url=product.image_url,
+        description=product.description,
+        base_price=float(product.base_price),
+        fulfillment_sector=product.fulfillment_sector,
+        variants=[
+            VariantOut(id=variant.id, name=variant.name, extra_price=float(variant.extra_price))
+            for variant in sorted(product.variants, key=lambda variant: variant.id)
+        ],
+        active=product.active,
+    )
+
+
+@router.get("/menu/categories", response_model=list[CategoryOut])
+def list_admin_menu_categories(
+    db: Session = Depends(get_db), current_staff: StaffAccount = Depends(get_current_staff)
+) -> list[CategoryOut]:
+    _ensure_admin(current_staff)
+    categories = (
+        db.scalars(
+            select(MenuCategory)
+            .where(MenuCategory.store_id == current_staff.store_id)
+            .order_by(MenuCategory.sort_order.asc(), MenuCategory.id.asc())
+        ).all()
+    )
+    return [
+        CategoryOut(id=category.id, name=category.name, image_url=category.image_url, sort_order=category.sort_order)
+        for category in categories
+    ]
+
+
+@router.get("/menu/products", response_model=list[ProductOut])
+def list_admin_menu_products(
+    db: Session = Depends(get_db), current_staff: StaffAccount = Depends(get_current_staff)
+) -> list[ProductOut]:
+    _ensure_admin(current_staff)
+    products = (
+        db.scalars(
+            select(Product)
+            .where(Product.store_id == current_staff.store_id)
+            .options(joinedload(Product.variants))
+            .order_by(Product.id.asc())
+        ).all()
+    )
+    return [_product_out(product) for product in products]
+
+
+@router.post("/menu/products", response_model=ProductOut, status_code=201)
+def create_admin_product(
+    payload: ProductCreateIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ProductOut:
+    _ensure_admin(current_staff)
+    sector_value = payload.fulfillment_sector.upper()
+    if sector_value not in {value.value for value in FulfillmentSector}:
+        raise HTTPException(status_code=422, detail="Sector inválido")
+
+    if payload.category_id is not None:
+        category = db.scalar(
+            select(MenuCategory).where(
+                MenuCategory.store_id == current_staff.store_id, MenuCategory.id == payload.category_id
+            )
+        )
+        if not category:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+    image_payload = ImageUrlPatchIn(image_url=payload.image_url)
+    product = Product(
+        store_id=current_staff.store_id,
+        name=payload.name.strip(),
+        description=payload.description,
+        base_price=payload.base_price,
+        fulfillment_sector=sector_value,
+        category_id=payload.category_id,
+        image_url=image_payload.image_url,
+        active=payload.active,
+    )
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return _product_out(product)
+
+
+@router.patch("/menu/products/{product_id}", response_model=ProductOut)
+def update_admin_product(
+    product_id: int,
+    payload: ProductUpdateIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ProductOut:
+    _ensure_admin(current_staff)
+    product = db.scalar(select(Product).where(Product.id == product_id, Product.store_id == current_staff.store_id))
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    if payload.name is not None:
+        product.name = payload.name.strip()
+    if payload.description is not None:
+        product.description = payload.description
+    if payload.base_price is not None:
+        product.base_price = payload.base_price
+    if payload.fulfillment_sector:
+        sector_value = payload.fulfillment_sector.upper()
+        if sector_value not in {value.value for value in FulfillmentSector}:
+            raise HTTPException(status_code=422, detail="Sector inválido")
+        product.fulfillment_sector = sector_value
+    if payload.category_id is not None:
+        if payload.category_id:
+            category = db.scalar(
+                select(MenuCategory).where(
+                    MenuCategory.store_id == current_staff.store_id, MenuCategory.id == payload.category_id
+                )
+            )
+            if not category:
+                raise HTTPException(status_code=404, detail="Category not found")
+        product.category_id = payload.category_id
+    if payload.active is not None:
+        product.active = payload.active
+    if payload.image_url is not None:
+        product.image_url = ImageUrlPatchIn(image_url=payload.image_url).image_url
+
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return _product_out(product)
+
+
+@router.post("/menu/images", response_model=ImageUploadOut)
+def upload_menu_image(
+    file: UploadFile = File(...),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ImageUploadOut:
+    _ensure_admin(current_staff)
+    image_url = upload_menu_image_to_r2(file)
+    return ImageUploadOut(image_url=image_url)
+
+
+@router.patch("/menu/categories/{category_id}/image", response_model=ImageUrlPatchOut)
+def patch_category_image_url(
+    category_id: int,
+    payload: ImageUrlPatchIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ImageUrlPatchOut:
+    _ensure_admin(current_staff)
+    category = db.scalar(
+        select(MenuCategory).where(MenuCategory.id == category_id, MenuCategory.store_id == current_staff.store_id)
+    )
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    category.image_url = payload.image_url
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return ImageUrlPatchOut(id=category.id, image_url=category.image_url)
+
+
+@router.patch("/menu/products/{product_id}/image", response_model=ImageUrlPatchOut)
+def patch_product_image_url(
+    product_id: int,
+    payload: ImageUrlPatchIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ImageUrlPatchOut:
+    _ensure_admin(current_staff)
+    product = db.scalar(select(Product).where(Product.id == product_id, Product.store_id == current_staff.store_id))
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    product.image_url = payload.image_url
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return ImageUrlPatchOut(id=product.id, image_url=product.image_url)
 
 
 @router.get("/orders", response_model=AdminOrdersResponse)

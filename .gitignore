@@ -23,8 +23,10 @@ __pycache__/
 # Local runtime
 logs/
 *.pid
+tmp-*.log
 
 # Local DB and env
+comanda_dev.db
 comanda-backend/comanda_dev.db
 *.db-shm
 *.db-wal
@@ -34,6 +36,8 @@ comanda-backend/comanda_dev.db
 # Coverage / caches
 coverage/
 .cache/
+pytest-cache-files-*/
+**/pytest-cache-files-*/
 
 # Temp accidental files
 26.0.1

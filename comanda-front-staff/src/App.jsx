@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchAdminOrderItems,
   fetchAdminOrders,
+  fetchFeedbackSummary,
   fetchStaffBoardItems,
   fetchStaffOrderItems,
   openStaffEvents,
@@ -17,9 +18,13 @@ import { KitchenBoardPage } from "./pages/KitchenBoardPage";
 import { BarBoardPage } from "./pages/BarBoardPage";
 import { WaiterBoardPage } from "./pages/WaiterBoardPage";
 import { OrderDetailPanel } from "./pages/OrderDetailPanel";
+import { FeedbackSummaryPage } from "./pages/FeedbackSummaryPage";
+import { MenuEditorPage } from "./pages/MenuEditorPage";
 import { elapsedMinutes } from "./utils/boardMeta";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
+const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
+const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU"];
 
 function getNextStatusForAction({ currentStatus, sector, actorSector }) {
   if (actorSector === "ADMIN") {
@@ -31,10 +36,14 @@ function getNextStatusForAction({ currentStatus, sector, actorSector }) {
   }
 
   if (actorSector === "KITCHEN") {
-    return currentStatus === "IN_PROGRESS" ? "DONE" : null;
+    if (currentStatus === "RECEIVED") return "IN_PROGRESS";
+    if (currentStatus === "IN_PROGRESS") return "DONE";
+    return null;
   }
   if (actorSector === "BAR") {
-    return currentStatus === "IN_PROGRESS" ? "DONE" : null;
+    if (currentStatus === "RECEIVED") return "IN_PROGRESS";
+    if (currentStatus === "IN_PROGRESS") return "DONE";
+    return null;
   }
   if (actorSector === "WAITER") {
     if (sector === "WAITER" && currentStatus === "RECEIVED") return "DELIVERED";
@@ -85,8 +94,12 @@ export function App() {
   const [boardRows, setBoardRows] = useState([]);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [adminQueueFilter, setAdminQueueFilter] = useState("ACTIVE");
+  const [adminView, setAdminView] = useState("BOARD");
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackSummary, setFeedbackSummary] = useState(null);
   const [advancingKey, setAdvancingKey] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
@@ -147,10 +160,12 @@ export function App() {
     setError("");
     try {
       if (session.staff.sector === "ADMIN") {
+        const backendStatusFilter =
+          statusFilter || (adminQueueFilter === "DELIVERED" ? "DELIVERED" : undefined);
         const data = await fetchAdminOrders({
           token: session.access_token,
           storeId: session.staff.store_id,
-          status: statusFilter || undefined,
+          status: backendStatusFilter,
         });
         setBoardRows(data.items);
       } else {
@@ -166,7 +181,7 @@ export function App() {
     } finally {
       setLoading(false);
     }
-  }, [session, statusFilter]);
+  }, [session, statusFilter, adminQueueFilter]);
 
   const loadOrderDetail = useCallback(async () => {
     if (!selectedOrderId || !session) return;
@@ -190,6 +205,24 @@ export function App() {
       setDetailLoading(false);
     }
   }, [selectedOrderId, session]);
+
+  const loadFeedback = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    setFeedbackLoading(true);
+    setError("");
+    try {
+      const data = await fetchFeedbackSummary({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+        limit: 25,
+      });
+      setFeedbackSummary(data);
+    } catch (err) {
+      setError(err.message || "No se pudo cargar feedback de clientes.");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }, [session]);
 
   useEffect(() => {
     if (!selectedOrderId) {
@@ -313,16 +346,37 @@ export function App() {
       return acc;
     }, {});
 
-    const prioritizedRows = [...boardRows].sort((a, b) => {
-      const am = alertMetaByOrder[a.order_id] || { high: 0, medium: 0 };
-      const bm = alertMetaByOrder[b.order_id] || { high: 0, medium: 0 };
-      if (bm.high !== am.high) return bm.high - am.high;
-      if (bm.medium !== am.medium) return bm.medium - am.medium;
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
-    const visibleRows = alertsOnly
-      ? prioritizedRows.filter((row) => (alertMetaByOrder[row.order_id]?.total || 0) > 0)
-      : prioritizedRows;
+    let visibleRows = [...boardRows];
+    if (staffSector === "ADMIN") {
+      if (adminQueueFilter === "ACTIVE") {
+        visibleRows = visibleRows.filter((row) => row.status_aggregated !== "DELIVERED");
+      } else if (adminQueueFilter === "DELIVERED") {
+        visibleRows = visibleRows.filter((row) => row.status_aggregated === "DELIVERED");
+      }
+      visibleRows.sort((a, b) => {
+        const aActive = a.status_aggregated !== "DELIVERED" ? 1 : 0;
+        const bActive = b.status_aggregated !== "DELIVERED" ? 1 : 0;
+        if (aActive !== bActive) return bActive - aActive;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+    } else {
+      const prioritizedRows = [...boardRows].sort((a, b) => {
+        const am = alertMetaByOrder[a.order_id] || { high: 0, medium: 0 };
+        const bm = alertMetaByOrder[b.order_id] || { high: 0, medium: 0 };
+        if (bm.high !== am.high) return bm.high - am.high;
+        if (bm.medium !== am.medium) return bm.medium - am.medium;
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+      visibleRows = alertsOnly
+        ? prioritizedRows.filter((row) => (alertMetaByOrder[row.order_id]?.total || 0) > 0)
+        : prioritizedRows;
+    }
+
+    const freshByOrder = visibleRows.reduce((acc, row) => {
+      const ageMs = Date.now() - new Date(row.created_at).getTime();
+      acc[row.order_id] = ageMs <= 3 * 60 * 1000;
+      return acc;
+    }, {});
 
     const sharedProps = {
       rows: visibleRows,
@@ -333,27 +387,44 @@ export function App() {
       onSelectOrder: setSelectedOrderId,
       actorSector: staffSector,
       alertMetaByOrder,
+      freshByOrder,
     };
 
-    if (staffSector === "ADMIN") return <AdminBoardPage {...sharedProps} />;
+    if (staffSector === "ADMIN") {
+      if (adminView === "MENU") {
+        return (
+          <MenuEditorPage token={session?.access_token} storeId={session?.staff?.store_id} />
+        );
+      }
+      return <AdminBoardPage {...sharedProps} />;
+    }
     if (staffSector === "KITCHEN") return <KitchenBoardPage {...sharedProps} />;
     if (staffSector === "BAR") return <BarBoardPage {...sharedProps} />;
     if (staffSector === "WAITER") return <WaiterBoardPage {...sharedProps} />;
     return null;
-  }, [boardRows, loading, advancingKey, selectedOrderId, advanceItem, staffSector]);
+  }, [boardRows, loading, advancingKey, selectedOrderId, advanceItem, staffSector, alertsOnly, adminQueueFilter, adminView, session]);
 
   useEffect(() => {
     if (!session) return;
     const poll = async () => {
+      if (session.staff.sector === "ADMIN") {
+        if (adminView === "FEEDBACK") {
+          await loadFeedback();
+          return;
+        }
+        if (adminView === "MENU") {
+          return;
+        }
+      }
       await loadBoard();
     };
     poll();
     const timer = setInterval(poll, 10000);
     return () => clearInterval(timer);
-  }, [session, loadBoard]);
+  }, [session, adminView, loadBoard, loadFeedback]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || (session.staff.sector === "ADMIN" && adminView === "MENU")) return;
 
     const stream = openStaffEvents({
       storeId: session.staff.store_id,
@@ -365,7 +436,11 @@ export function App() {
       if (refreshTimer) return;
       refreshTimer = setTimeout(async () => {
         refreshTimer = null;
-        await loadBoard();
+        if (session.staff.sector === "ADMIN" && adminView === "FEEDBACK") {
+          await loadFeedback();
+        } else {
+          await loadBoard();
+        }
         if (selectedOrderId) {
           await loadOrderDetail();
         }
@@ -405,7 +480,7 @@ export function App() {
       stream.close();
       setLiveConnected(false);
     };
-  }, [session, selectedOrderId, loadBoard, loadOrderDetail, playAlarm]);
+  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, playAlarm]);
 
   useEffect(() => {
     if (!session || session.staff.sector === "ADMIN") return;
@@ -459,22 +534,67 @@ export function App() {
       {staffSector === "ADMIN" && (
         <section className="panel toolbar">
           <label className="field">
-            Filtrar por estado general
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status || "all"} value={status}>
-                  {status || "TODOS"}
+            Vista
+            <select value={adminView} onChange={(e) => setAdminView(e.target.value)}>
+              {ADMIN_VIEW_OPTIONS.map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode === "BOARD"
+                    ? "PEDIDOS"
+                    : mode === "FEEDBACK"
+                    ? "FEEDBACK CLIENTES"
+                    : mode === "MENU"
+                    ? "EDITOR DE MENÚ"
+                    : mode}
                 </option>
               ))}
             </select>
           </label>
-          <button className="btn-primary" onClick={loadBoard} disabled={loading}>
-            {loading ? "Actualizando..." : "Actualizar ahora"}
+
+          {adminView === "BOARD" && (
+            <>
+              <label className="field">
+                Cola
+                <select value={adminQueueFilter} onChange={(e) => setAdminQueueFilter(e.target.value)}>
+                  {ADMIN_QUEUE_OPTIONS.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {mode === "ACTIVE" ? "ACTIVOS (default)" : mode === "ALL" ? "TODOS" : "SOLO ENTREGADOS"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Filtrar por estado general
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status || "all"} value={status}>
+                      {status || "TODOS"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+
+          <button
+            className="btn-primary"
+            onClick={adminView === "FEEDBACK" ? loadFeedback : loadBoard}
+            disabled={adminView === "FEEDBACK" ? feedbackLoading : loading}
+          >
+            {adminView === "FEEDBACK"
+              ? feedbackLoading
+                ? "Actualizando..."
+                : "Actualizar feedback"
+              : loading
+              ? "Actualizando..."
+              : "Actualizar ahora"}
           </button>
-          <label className="field inline-field">
-            <span>Solo alertas</span>
-            <input type="checkbox" checked={alertsOnly} onChange={(e) => setAlertsOnly(e.target.checked)} />
-          </label>
+
+          {adminView === "BOARD" && (
+            <label className="field inline-field">
+              <span>Solo alertas</span>
+              <input type="checkbox" checked={alertsOnly} onChange={(e) => setAlertsOnly(e.target.checked)} />
+            </label>
+          )}
         </section>
       )}
 
@@ -491,23 +611,29 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-      {board}
+      {staffSector === "ADMIN" && adminView === "FEEDBACK" ? (
+        <FeedbackSummaryPage loading={feedbackLoading} summary={feedbackSummary} />
+      ) : (
+        board
+      )}
 
-      <OrderDetailPanel
-        orderDetail={selectedOrderDetail}
-        selectedOrderId={selectedOrderId}
-        loading={detailLoading}
-        error={detailError}
-        actorSector={staffSector}
-        onRefresh={loadOrderDetail}
-        onAdvanceItem={advanceItem}
-        advancingKey={advancingKey}
-        onCloseTable={closeTable}
-        closingTable={closingTable}
-        onCreateSplit={createSplit}
-        onConfirmPart={confirmPart}
-        billingBusy={billingBusy}
-      />
+      {!(staffSector === "ADMIN" && adminView === "FEEDBACK") && (
+        <OrderDetailPanel
+          orderDetail={selectedOrderDetail}
+          selectedOrderId={selectedOrderId}
+          loading={detailLoading}
+          error={detailError}
+          actorSector={staffSector}
+          onRefresh={loadOrderDetail}
+          onAdvanceItem={advanceItem}
+          advancingKey={advancingKey}
+          onCloseTable={closeTable}
+          closingTable={closingTable}
+          onCreateSplit={createSplit}
+          onConfirmPart={confirmPart}
+          billingBusy={billingBusy}
+        />
+      )}
     </main>
   );
 }

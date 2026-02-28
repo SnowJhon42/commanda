@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import ensure_sector_access, get_current_staff
 from app.db.models import (
+    BillPartPaymentStatus,
     BillSplit,
+    BillSplitPart,
     BillSplitStatus,
     ItemStatusEvent,
     Order,
@@ -15,12 +17,16 @@ from app.db.models import (
     Sector,
     StaffAccount,
     Table,
+    TableSessionFeedback,
     TableSession,
     TableSessionStatus,
 )
 from app.db.session import get_db
 from app.schemas.orders import (
     AdminOrderItemsDetailResponse,
+    FeedbackCommentOut,
+    FeedbackDistributionOut,
+    FeedbackSummaryResponse,
     AdminSectorDelayOut,
     ChangeItemStatusRequest,
     ChangeItemStatusResponse,
@@ -38,9 +44,15 @@ router = APIRouter(prefix="/staff", tags=["staff"])
 
 def _board_filter_for_sector(sector: str):
     if sector == Sector.KITCHEN.value:
-        return and_(OrderItem.sector == Sector.KITCHEN.value, OrderItem.status == OrderStatus.IN_PROGRESS.value)
+        return and_(
+            OrderItem.sector == Sector.KITCHEN.value,
+            OrderItem.status.in_([OrderStatus.RECEIVED.value, OrderStatus.IN_PROGRESS.value]),
+        )
     if sector == Sector.BAR.value:
-        return and_(OrderItem.sector == Sector.BAR.value, OrderItem.status == OrderStatus.IN_PROGRESS.value)
+        return and_(
+            OrderItem.sector == Sector.BAR.value,
+            OrderItem.status.in_([OrderStatus.RECEIVED.value, OrderStatus.IN_PROGRESS.value]),
+        )
     if sector == Sector.WAITER.value:
         return or_(
             OrderItem.status == OrderStatus.DONE.value,
@@ -181,6 +193,70 @@ def get_staff_order_items_detail(
     )
 
 
+@router.get("/feedback/summary", response_model=FeedbackSummaryResponse)
+def get_feedback_summary(
+    store_id: int,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> FeedbackSummaryResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    safe_limit = min(max(limit, 1), 100)
+    total_feedbacks = db.scalar(
+        select(func.count()).select_from(TableSessionFeedback).where(TableSessionFeedback.store_id == store_id)
+    ) or 0
+    avg_rating = db.scalar(
+        select(func.avg(TableSessionFeedback.rating)).where(TableSessionFeedback.store_id == store_id)
+    )
+
+    distribution_rows = db.execute(
+        select(TableSessionFeedback.rating, func.count().label("count"))
+        .where(TableSessionFeedback.store_id == store_id)
+        .group_by(TableSessionFeedback.rating)
+    ).all()
+    distribution_by_rating = {int(row[0]): int(row[1]) for row in distribution_rows}
+    distribution = [
+        FeedbackDistributionOut(rating=rating, count=distribution_by_rating.get(rating, 0))
+        for rating in [5, 4, 3, 2, 1]
+    ]
+
+    comments_rows = db.execute(
+        select(TableSessionFeedback, TableSession, Table)
+        .join(TableSession, TableSession.id == TableSessionFeedback.table_session_id)
+        .join(Table, Table.id == TableSession.table_id)
+        .where(
+            TableSessionFeedback.store_id == store_id,
+            TableSessionFeedback.comment.is_not(None),
+            TableSessionFeedback.comment != "",
+        )
+        .order_by(TableSessionFeedback.created_at.desc(), TableSessionFeedback.id.desc())
+        .limit(safe_limit)
+    ).all()
+
+    latest_comments = [
+        FeedbackCommentOut(
+            table_session_id=feedback.table_session_id,
+            table_code=table.code,
+            client_id=feedback.client_id,
+            rating=feedback.rating,
+            comment=feedback.comment or "",
+            created_at=feedback.created_at,
+        )
+        for feedback, _session, table in comments_rows
+    ]
+
+    return FeedbackSummaryResponse(
+        avg_rating=float(avg_rating) if avg_rating is not None else 0.0,
+        total_feedbacks=int(total_feedbacks),
+        distribution=distribution,
+        latest_comments=latest_comments,
+    )
+
+
 @router.patch("/items/{item_id}/status", response_model=ChangeItemStatusResponse)
 def patch_item_status(
     item_id: int,
@@ -281,18 +357,35 @@ def close_table_session(
     if has_open_orders > 0:
         raise HTTPException(status_code=409, detail="Cannot close table session with active non-delivered orders")
 
-    has_open_bill_splits = db.scalar(
+    has_pending_bill_parts = db.scalar(
         select(func.count())
-        .select_from(BillSplit)
+        .select_from(BillSplitPart)
+        .join(BillSplit, BillSplit.id == BillSplitPart.bill_split_id)
         .join(Order, Order.id == BillSplit.order_id)
         .where(
             Order.table_session_id == table_session.id,
             Order.store_id == current_staff.store_id,
             BillSplit.status != BillSplitStatus.CLOSED.value,
+            BillSplitPart.payment_status == BillPartPaymentStatus.PENDING.value,
         )
     ) or 0
-    if has_open_bill_splits > 0:
-        raise HTTPException(status_code=409, detail="Cannot close table session with pending bill split confirmations")
+    if has_pending_bill_parts > 0:
+        raise HTTPException(status_code=409, detail="Cannot close table session with pending bill split payments")
+
+    closable_splits = db.scalars(
+        select(BillSplit)
+        .join(Order, Order.id == BillSplit.order_id)
+        .where(
+            Order.table_session_id == table_session.id,
+            Order.store_id == current_staff.store_id,
+            BillSplit.status == BillSplitStatus.OPEN.value,
+        )
+    ).all()
+    for split in closable_splits:
+        split.status = BillSplitStatus.CLOSED.value
+        if not split.closed_at:
+            split.closed_at = datetime.utcnow()
+        db.add(split)
 
     table_session.status = TableSessionStatus.CLOSED.value
     table_session.closed_at = datetime.utcnow()

@@ -6,6 +6,12 @@
     "comanda-front-staff"
   ],
   "scripts": {
+    "dev:backend": "set DATABASE_URL=sqlite:///./comanda-backend/comanda_dev.db&& comanda-backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir comanda-backend",
+    "backend:up": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action backend-up",
+    "backend:down": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action backend-down",
+    "backend:status": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action backend-status",
+    "backend:restart": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action backend-restart",
+    "staff:static": "comanda-backend\\.venv\\Scripts\\python.exe -m http.server 5174 --directory comanda-front-staff/dist",
     "dev:client": "npm --prefix comanda-front-client run dev -- -H 0.0.0.0 -p 5173",
     "dev:staff": "npm --prefix comanda-front-staff run dev -- -H 0.0.0.0 -p 5174",
     "build:client": "npm --prefix comanda-front-client run build",

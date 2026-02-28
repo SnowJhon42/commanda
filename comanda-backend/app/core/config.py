@@ -16,6 +16,16 @@ class Settings:
         ).split(",")
         if origin.strip()
     ]
+    cloudflare_account_id: str | None = os.getenv("CLOUDFLARE_ACCOUNT_ID")
+    cloudflare_r2_bucket: str | None = os.getenv("CLOUDFLARE_R2_BUCKET")
+    cloudflare_api_token: str | None = os.getenv("CLOUDFLARE_API_TOKEN")
+    cloudflare_public_host: str = os.getenv(
+        "CLOUDFLARE_PUBLIC_HOST", "https://pub-5d4b544badf2444a82ffa24a0f757908.r2.dev"
+    )
+    cors_allow_origin_regex: str = os.getenv(
+        "CORS_ALLOW_ORIGIN_REGEX",
+        r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$",
+    )
 
 
 settings = Settings()
