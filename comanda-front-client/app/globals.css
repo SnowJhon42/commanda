@@ -448,6 +448,19 @@ button:focus {
   gap: 10px;
 }
 
+.checkout-context {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+  display: grid;
+  gap: 8px;
+}
+
+.checkout-context-line {
+  margin: 0;
+}
+
 .summary {
   display: flex;
   justify-content: space-between;
@@ -573,6 +586,37 @@ button:focus {
   border-top: 1px solid var(--border);
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background: #fff;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 14px;
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.modal-card h3 {
+  margin: 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .error-text {

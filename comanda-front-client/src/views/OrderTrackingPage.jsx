@@ -32,8 +32,6 @@ export function OrderTrackingPage({
   const [payerByPart, setPayerByPart] = useState({});
   const [showSplitOptions, setShowSplitOptions] = useState(false);
 
-  const isTwoGuests = Number(guestCount || 0) <= 2;
-
   const sectorCards = useMemo(() => {
     const map = new Map();
     const sectors = order?.sectors || [];
@@ -204,8 +202,8 @@ export function OrderTrackingPage({
   if (!orderId) {
     return (
       <section className="panel" id="tracking-section">
-        <h2>Seguimiento</h2>
-        <p className="muted">Sin pedido activo.</p>
+        <h2>Estado de tu pedido</h2>
+        <p className="muted">Todavia no hiciste un pedido.</p>
       </section>
     );
   }
@@ -213,7 +211,7 @@ export function OrderTrackingPage({
   if (!order) {
     return (
       <section className="panel" id="tracking-section">
-        <h2>Seguimiento</h2>
+        <h2>Estado de tu pedido</h2>
         <p className="muted">Cargando estado...</p>
       </section>
     );
@@ -221,7 +219,7 @@ export function OrderTrackingPage({
 
   return (
     <section className="panel" id="tracking-section">
-      <h2>Seguimiento</h2>
+      <h2>Estado de tu pedido</h2>
       <div className="tracking-head">
         <p>
           Pedido <strong>#{order.id}</strong> - Ticket <strong>{order.ticket_number}</strong>
@@ -229,7 +227,7 @@ export function OrderTrackingPage({
         <span className={statusClass(order.status_aggregated)}>{statusLabel(order.status_aggregated)}</span>
       </div>
       <p className={liveConnected ? "live-pill live-pill-on" : "live-pill"}>
-        {liveConnected ? "Actualizacion en vivo activa" : "Actualizacion en vivo reconectando"}
+        {liveConnected ? "Actualizacion en vivo activa" : "Reconectando actualizacion en vivo"}
       </p>
       {error && <p className="warning-text">{error}</p>}
 
@@ -259,10 +257,10 @@ export function OrderTrackingPage({
         {splitError && <p className="warning-text">{splitError}</p>}
         {splitHint && <p className="muted">{splitHint}</p>}
 
-        {!billSplit && isTwoGuests && (
+        {!billSplit && (
           <div className="split-quick-actions">
             <button type="button" className="btn-primary" onClick={payWithoutSplit} disabled={splitBusy}>
-              {splitBusy ? "Procesando..." : "Pagar sin dividir"}
+              {splitBusy ? "Procesando..." : "Pagar todo"}
             </button>
             <button
               type="button"
@@ -270,12 +268,12 @@ export function OrderTrackingPage({
               onClick={() => setShowSplitOptions((current) => !current)}
               disabled={splitBusy}
             >
-              {showSplitOptions ? "Ocultar division" : "Dividir cuenta (opcional)"}
+              {showSplitOptions ? "Ocultar division" : "Dividir cuenta"}
             </button>
           </div>
         )}
 
-        {(showSplitOptions || !isTwoGuests || billSplit) && !billSplit && (
+        {showSplitOptions && !billSplit && (
           <div className="split-create">
             <label className="field split-field">
               Partes

@@ -1,6 +1,7 @@
 from uuid import uuid4
 from pathlib import Path
 from urllib.parse import urlparse
+import json
 
 import http.client
 from fastapi import HTTPException, UploadFile
@@ -42,9 +43,18 @@ def upload_menu_image_to_r2(file: UploadFile) -> str:
     try:
         conn.request("PUT", parsed.path, body=content, headers=headers)
         response = conn.getresponse()
-        response.read()
+        raw_body = response.read()
         if response.status not in (200, 201):
-            raise HTTPException(status_code=502, detail="Error subiendo la imagen a Cloudflare")
+            detail = "Error subiendo la imagen a Cloudflare"
+            if raw_body:
+                try:
+                    payload = json.loads(raw_body.decode("utf-8", errors="ignore"))
+                    first_error = (payload.get("errors") or [{}])[0].get("message")
+                    if first_error:
+                        detail = f"{detail}: {first_error}"
+                except Exception:
+                    pass
+            raise HTTPException(status_code=502, detail=detail)
     except OSError as exc:
         raise HTTPException(status_code=503, detail="No se pudo conectar con Cloudflare") from exc
     finally:

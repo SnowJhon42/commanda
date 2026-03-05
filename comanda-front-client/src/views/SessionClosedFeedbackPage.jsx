@@ -25,9 +25,9 @@ export function SessionClosedFeedbackPage({
 
   return (
     <section className="panel feedback-panel">
-      <h2>Muchas gracias por visitarnos</h2>
+      <h2>Gracias por visitarnos</h2>
       <p className="muted">
-        La mesa {tableCode || "-"} fue cerrada. Contanos como fue tu experiencia.
+        Cerramos la mesa {tableCode || "-"}. Como fue tu experiencia?
       </p>
 
       <form className="entry-form" onSubmit={submit}>
@@ -61,7 +61,7 @@ export function SessionClosedFeedbackPage({
         {error && <p className="error-text">{error}</p>}
 
         <button type="submit" className="btn-primary btn-full" disabled={saving || !rating}>
-          {saving ? "Enviando..." : "Enviar y cerrar"}
+          {saving ? "Enviando..." : "Enviar opinion"}
         </button>
       </form>
 
@@ -77,7 +77,7 @@ export function SessionClosedFeedbackPage({
           Compartir por WhatsApp
         </button>
         <button type="button" className="btn-secondary" onClick={onRestart}>
-          Volver al inicio
+          Nueva mesa
         </button>
       </div>
     </section>

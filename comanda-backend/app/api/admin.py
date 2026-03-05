@@ -88,12 +88,15 @@ def list_admin_menu_products(
 ) -> list[ProductOut]:
     _ensure_admin(current_staff)
     products = (
-        db.scalars(
+        db.execute(
             select(Product)
             .where(Product.store_id == current_staff.store_id)
             .options(joinedload(Product.variants))
             .order_by(Product.id.asc())
-        ).all()
+        )
+        .unique()
+        .scalars()
+        .all()
     )
     return [_product_out(product) for product in products]
 

@@ -2,6 +2,24 @@ $ErrorActionPreference = "Stop"
 
 Set-Location "$PSScriptRoot\..\comanda-backend"
 
+function Import-EnvFile {
+  param([string]$Path)
+  if (-not (Test-Path $Path)) { return }
+
+  foreach ($line in Get-Content $Path) {
+    $trimmed = $line.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
+    $parts = $trimmed.Split("=", 2)
+    if ($parts.Count -ne 2) { continue }
+    $name = $parts[0].Trim()
+    $value = $parts[1]
+    if (-not $name) { continue }
+    Set-Item -Path "Env:$name" -Value $value
+  }
+}
+
+Import-EnvFile -Path ".env"
+
 $pythonCandidates = @(
   "C:\Users\agust\AppData\Local\Programs\Python\Python312\python.exe",
   "C:\Users\agust\AppData\Local\Python\bin\python.exe",

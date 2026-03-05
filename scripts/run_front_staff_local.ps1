@@ -1,6 +1,7 @@
 ﻿$ErrorActionPreference = "Stop"
 
 Set-Location "$PSScriptRoot\..\comanda-front-staff"
+$env:NODE_PATH = "$PSScriptRoot\..\node_modules;$PSScriptRoot\..\comanda-front-staff\node_modules"
 
 if (-not (Test-Path ".env.local")) {
 @"

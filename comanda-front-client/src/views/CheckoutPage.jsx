@@ -14,8 +14,7 @@ export function CheckoutPage({
   checkoutError,
   submittingOrder,
   lastCreatedOrder,
-  onTableCodeChange,
-  onGuestCountChange,
+  onOpenAdjustGuests,
   onUpdateCartQty,
   onUpdateCartNotes,
   onRemoveCartItem,
@@ -30,7 +29,7 @@ export function CheckoutPage({
   return (
     <section className="panel checkout-panel">
       <div className="section-head">
-        <h2>Checkout</h2>
+        <h2>Confirmar pedido</h2>
         <span className="muted">{cartItems.length} items</span>
       </div>
 
@@ -75,24 +74,16 @@ export function CheckoutPage({
       )}
 
       <form className="checkout-form" onSubmit={submit}>
-        <div className="row">
-          <label className="field">
-            Mesa
-            <input
-              value={tableCode}
-              onChange={(e) => onTableCodeChange(e.target.value)}
-              placeholder="M1"
-            />
-          </label>
-          <label className="field">
-            Comensales
-            <input
-              type="number"
-              min="1"
-              value={guestCount}
-              onChange={(e) => onGuestCountChange(Number(e.target.value) || 1)}
-            />
-          </label>
+        <div className="checkout-context">
+          <p className="muted checkout-context-line">
+            Mesa: <strong>{tableCode || "-"}</strong>
+          </p>
+          <p className="muted checkout-context-line">
+            Personas: <strong>{guestCount}</strong>
+          </p>
+          <button type="button" className="btn-secondary" onClick={onOpenAdjustGuests}>
+            Ajustar personas
+          </button>
         </div>
 
         <div className="summary">
@@ -103,7 +94,7 @@ export function CheckoutPage({
         {checkoutError && <p className="error-text">{checkoutError}</p>}
 
         <button className="btn-primary btn-full" disabled={submittingOrder}>
-          {submittingOrder ? "Enviando..." : "Confirmar pedido"}
+          {submittingOrder ? "Enviando..." : "Enviar pedido"}
         </button>
       </form>
 

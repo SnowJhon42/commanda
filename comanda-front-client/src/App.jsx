@@ -14,9 +14,34 @@ import { MenuPage } from "./views/MenuPage";
 import { CheckoutPage } from "./views/CheckoutPage";
 import { OrderTrackingPage } from "./views/OrderTrackingPage";
 import { SessionClosedFeedbackPage } from "./views/SessionClosedFeedbackPage";
+import { EntryGatePage } from "./views/EntryGatePage";
+import { AdjustGuestsModal } from "./views/AdjustGuestsModal";
 
 const DEFAULT_STORE_ID = 1;
 const SESSION_STATE_KEY = "comanda_client_session_state_v1";
+const MIN_GUESTS = 1;
+const MAX_GUESTS = 20;
+
+function normalizeTableCode(input) {
+  if (typeof input !== "string") return null;
+  const compact = input.trim().toUpperCase().replace(/\s+/g, "");
+  const match = compact.match(/^M?(\d+)$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isInteger(value) || value < 1) return null;
+  return `M${value}`;
+}
+
+function validateGuestCount(input) {
+  const value = Number(input);
+  if (!Number.isInteger(value)) {
+    return { ok: false, error: "Ingresa una cantidad entera de personas." };
+  }
+  if (value < MIN_GUESTS || value > MAX_GUESTS) {
+    return { ok: false, error: `La cantidad debe estar entre ${MIN_GUESTS} y ${MAX_GUESTS}.` };
+  }
+  return { ok: true, value };
+}
 
 function cartKey(productId, variantId) {
   return `${productId}:${variantId ?? "none"}`;
@@ -37,8 +62,10 @@ function getStableClientId() {
 export function App() {
   const [storeId] = useState(DEFAULT_STORE_ID);
   const [clientId] = useState(getStableClientId);
-  const [tableCode, setTableCode] = useState("M1");
+  const [tableCode, setTableCode] = useState("");
   const [guestCount, setGuestCount] = useState(2);
+  const [entryValidated, setEntryValidated] = useState(false);
+  const [entryErrors, setEntryErrors] = useState({ table: "", guests: "" });
 
   const [menu, setMenu] = useState(null);
   const [menuLoading, setMenuLoading] = useState(true);
@@ -55,6 +82,7 @@ export function App() {
   const [closedSession, setClosedSession] = useState(null);
   const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
+  const [isAdjustGuestsOpen, setIsAdjustGuestsOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -63,10 +91,14 @@ export function App() {
       if (!raw) return;
       const saved = JSON.parse(raw);
 
-      if (typeof saved.tableCode === "string" && saved.tableCode.trim()) {
-        setTableCode(saved.tableCode);
+      const normalizedTable = normalizeTableCode(saved.tableCode);
+      if (normalizedTable) {
+        setTableCode(normalizedTable);
       }
-      if (Number(saved.guestCount) > 0) setGuestCount(Number(saved.guestCount));
+      const guestsValidation = validateGuestCount(saved.guestCount);
+      if (guestsValidation.ok) {
+        setGuestCount(guestsValidation.value);
+      }
       if (Number(saved.tableSessionId) > 0) setTableSessionId(Number(saved.tableSessionId));
       if (Number(saved.activeOrderId) > 0) setActiveOrderId(Number(saved.activeOrderId));
       if (Number(saved.connectedClients) > 0) setConnectedClients(Number(saved.connectedClients));
@@ -76,6 +108,8 @@ export function App() {
           tableCode: String(saved.closedSession.tableCode),
         });
       }
+      // Gate obligatorio al abrir: siempre inicia en bienvenida.
+      setEntryValidated(false);
     } catch {
     }
   }, []);
@@ -187,23 +221,24 @@ export function App() {
       setCheckoutError("Agrega al menos un item al carrito.");
       return;
     }
-    if (!tableCode.trim()) {
+    const normalizedTable = normalizeTableCode(tableCode);
+    if (!normalizedTable) {
       setCheckoutError("Ingresa una mesa valida.");
       return;
     }
-    if (!guestCount || Number(guestCount) < 1) {
-      setCheckoutError("La cantidad de comensales debe ser mayor a 0.");
+    const guestsValidation = validateGuestCount(guestCount);
+    if (!guestsValidation.ok) {
+      setCheckoutError(guestsValidation.error);
       return;
     }
-
-    const normalizedTable = tableCode.trim().toUpperCase();
+    setTableCode(normalizedTable);
 
     setSubmittingOrder(true);
     try {
       const opened = await openTableSession({
         store_id: storeId,
         table_code: normalizedTable,
-        guest_count: Number(guestCount),
+        guest_count: guestsValidation.value,
       });
       setTableSessionId(opened.table_session_id);
 
@@ -218,7 +253,7 @@ export function App() {
         tenant_id: 1,
         store_id: storeId,
         table_session_id: opened.table_session_id,
-        guest_count: Number(guestCount),
+        guest_count: guestsValidation.value,
         items: cartItems.map((item) => ({
           product_id: item.product_id,
           variant_id: item.variant_id,
@@ -278,11 +313,36 @@ export function App() {
     };
   }, [tableSessionId]);
 
-  const handleTableCodeChange = (value) => {
+  const handleEntryTableChange = (value) => {
     setTableCode(value);
-    setTableSessionId(null);
-    setConnectedClients(1);
-    setActiveOrderId(null);
+    setEntryErrors((current) => ({ ...current, table: "" }));
+  };
+
+  const handleEntryGuestChange = (value) => {
+    setGuestCount(value);
+    setEntryErrors((current) => ({ ...current, guests: "" }));
+  };
+
+  const completeEntryGate = () => {
+    const normalizedTable = normalizeTableCode(tableCode);
+    const guestsValidation = validateGuestCount(guestCount);
+
+    const nextErrors = {
+      table: normalizedTable ? "" : "Ingresa una mesa valida (ej: 9 o M9).",
+      guests: guestsValidation.ok ? "" : guestsValidation.error,
+    };
+    setEntryErrors(nextErrors);
+    if (!normalizedTable || !guestsValidation.ok) return;
+
+    setTableCode(normalizedTable);
+    setGuestCount(guestsValidation.value);
+    setEntryValidated(true);
+  };
+
+  const saveGuestCount = (nextGuestCount) => {
+    setGuestCount(nextGuestCount);
+    setIsAdjustGuestsOpen(false);
+    setUiToast("Personas actualizadas para proximos pedidos.");
   };
 
   const goToTracking = () => {
@@ -294,8 +354,10 @@ export function App() {
 
   const resetSession = () => {
     setClosedSession(null);
-    setTableCode("M1");
+    setTableCode("");
     setGuestCount(2);
+    setEntryValidated(false);
+    setEntryErrors({ table: "", guests: "" });
     setActiveOrderId(null);
     setTableSessionId(null);
     setConnectedClients(1);
@@ -338,7 +400,7 @@ export function App() {
       <header className="hero">
         <p className="kicker">Mesa digital</p>
         <h1>Comanda Cliente</h1>
-        <p className="muted">Pedido compartido por mesa con seguimiento en vivo.</p>
+        <p className="muted">Hace tu pedido por mesa y segui el estado en vivo.</p>
         <p className="hero-meta">
           Carrito: <strong>{cartItems.reduce((acc, item) => acc + item.qty, 0)}</strong> items
         </p>
@@ -355,7 +417,16 @@ export function App() {
 
       {uiToast && <div className="toast-ok">{uiToast}</div>}
 
-      {closedSession && (
+      {!entryValidated ? (
+        <EntryGatePage
+          tableCode={tableCode}
+          guestCount={guestCount}
+          errors={entryErrors}
+          onTableCodeChange={handleEntryTableChange}
+          onGuestCountChange={handleEntryGuestChange}
+          onContinue={completeEntryGate}
+        />
+      ) : closedSession ? (
         <SessionClosedFeedbackPage
           tableCode={closedSession.tableCode}
           saving={feedbackSaving}
@@ -363,41 +434,49 @@ export function App() {
           onSubmit={submitFeedbackAndReset}
           onRestart={resetSession}
         />
+      ) : (
+        <>
+          <MenuPage
+            menu={menu}
+            loading={menuLoading}
+            error={menuError}
+            onRetry={loadMenu}
+            onAddToCart={addToCart}
+            productQtyInCart={productQtyInCart}
+          />
+
+          <CheckoutPage
+            tableCode={tableCode}
+            guestCount={guestCount}
+            cartItems={cartItems}
+            cartTotal={cartTotal}
+            checkoutError={checkoutError}
+            submittingOrder={submittingOrder}
+            lastCreatedOrder={lastCreatedOrder}
+            onOpenAdjustGuests={() => setIsAdjustGuestsOpen(true)}
+            onUpdateCartQty={updateCartQty}
+            onUpdateCartNotes={updateCartNotes}
+            onRemoveCartItem={removeCartItem}
+            onSubmitOrder={submitOrder}
+            onGoToTracking={goToTracking}
+          />
+
+          <OrderTrackingPage
+            orderId={activeOrderId}
+            guestCount={guestCount}
+            tableCode={tableCode}
+            clientId={clientId}
+            feedbackLocked={Boolean(tableSessionId)}
+          />
+
+          <AdjustGuestsModal
+            open={isAdjustGuestsOpen}
+            initialGuestCount={guestCount}
+            onClose={() => setIsAdjustGuestsOpen(false)}
+            onSave={saveGuestCount}
+          />
+        </>
       )}
-
-      <MenuPage
-        menu={menu}
-        loading={menuLoading}
-        error={menuError}
-        onRetry={loadMenu}
-        onAddToCart={addToCart}
-        productQtyInCart={productQtyInCart}
-      />
-
-      <CheckoutPage
-        tableCode={tableCode}
-        guestCount={guestCount}
-        cartItems={cartItems}
-        cartTotal={cartTotal}
-        checkoutError={checkoutError}
-        submittingOrder={submittingOrder}
-        lastCreatedOrder={lastCreatedOrder}
-        onTableCodeChange={handleTableCodeChange}
-        onGuestCountChange={setGuestCount}
-        onUpdateCartQty={updateCartQty}
-        onUpdateCartNotes={updateCartNotes}
-        onRemoveCartItem={removeCartItem}
-        onSubmitOrder={submitOrder}
-        onGoToTracking={goToTracking}
-      />
-
-      <OrderTrackingPage
-        orderId={activeOrderId}
-        guestCount={guestCount}
-        tableCode={tableCode}
-        clientId={clientId}
-        feedbackLocked={Boolean(tableSessionId)}
-      />
     </main>
   );
 }

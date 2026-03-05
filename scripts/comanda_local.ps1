@@ -71,6 +71,24 @@ function Ensure-EnvFile {
   }
 }
 
+function Load-BackendEnv {
+  $envPath = Join-Path $backendPath ".env"
+  if (-not (Test-Path $envPath)) { return }
+
+  foreach ($line in Get-Content $envPath) {
+    $trimmed = $line.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
+
+    $parts = $trimmed.Split("=", 2)
+    if ($parts.Count -ne 2) { continue }
+
+    $name = $parts[0].Trim()
+    $value = $parts[1]
+    if (-not $name) { continue }
+    Set-Item -Path "Env:$name" -Value $value
+  }
+}
+
 function Get-ListeningPidsForPort {
   param([int]$Port)
   $lines = netstat -ano | Select-String ":$Port "
@@ -202,9 +220,19 @@ function Action-BackendStatus {
   }
 }
 
+function Build-NodePath {
+  param([string]$ProjectPath)
+  $paths = @(
+    (Join-Path $root "node_modules"),
+    (Join-Path $ProjectPath "node_modules")
+  )
+  return ($paths -join ";")
+}
+
 function Action-BackendUp {
   Action-BackendDown
   $pythonCommand = Resolve-PythonCommand
+  Load-BackendEnv
   $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
   Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
 
@@ -218,14 +246,18 @@ function Action-Up {
   Action-Down
 
   $pythonCommand = Resolve-PythonCommand
+  Load-BackendEnv
   Ensure-EnvFile -ProjectPath $clientPath
   Ensure-EnvFile -ProjectPath $staffPath
   Ensure-NodeModules -ProjectPath $clientPath -Label "Client"
   Ensure-NodeModules -ProjectPath $staffPath -Label "Staff"
 
   $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
-  $clientProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm.cmd run dev -- -H 0.0.0.0 -p 5173" -WorkingDirectory $clientPath -RedirectStandardOutput (Join-Path $logsDir "front-client.out.log") -RedirectStandardError (Join-Path $logsDir "front-client.err.log") -PassThru
-  $staffProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm.cmd run dev -- -H 0.0.0.0 -p 5174" -WorkingDirectory $staffPath -RedirectStandardOutput (Join-Path $logsDir "front-staff.out.log") -RedirectStandardError (Join-Path $logsDir "front-staff.err.log") -PassThru
+  $clientNodePath = Build-NodePath -ProjectPath $clientPath
+  $staffNodePath = Build-NodePath -ProjectPath $staffPath
+
+  $clientProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c set NODE_PATH=$clientNodePath&& npm.cmd run dev -- -H 0.0.0.0 -p 5173" -WorkingDirectory $clientPath -RedirectStandardOutput (Join-Path $logsDir "front-client.out.log") -RedirectStandardError (Join-Path $logsDir "front-client.err.log") -PassThru
+  $staffProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c set NODE_PATH=$staffNodePath&& npm.cmd run dev -- -H 0.0.0.0 -p 5174" -WorkingDirectory $staffPath -RedirectStandardOutput (Join-Path $logsDir "front-staff.out.log") -RedirectStandardError (Join-Path $logsDir "front-staff.err.log") -PassThru
 
   Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
   Write-PidFile -Path $clientPidFile -ProcessId $clientProc.Id

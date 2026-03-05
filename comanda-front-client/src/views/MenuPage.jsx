@@ -114,7 +114,7 @@ export function MenuPage({ menu, loading, error, onRetry, onAddToCart, productQt
       </div>
 
       {filteredProducts.length === 0 ? (
-        <p className="muted">No hay productos en esta categoria.</p>
+        <p className="muted">No hay productos en esta categoria. Proba otra.</p>
       ) : (
         <div className="product-grid">
           {filteredProducts.map((product) => {
@@ -128,6 +128,11 @@ export function MenuPage({ menu, loading, error, onRetry, onAddToCart, productQt
                 className={isSelected ? "product-card product-card-selected" : "product-card"}
                 key={product.id}
               >
+                {product.image_url ? (
+                  <img className="product-image" src={product.image_url} alt={product.name} loading="lazy" />
+                ) : (
+                  <div className="image-fallback product-image-fallback">Sin imagen</div>
+                )}
                 <div className="product-title-row">
                   <h3>{product.name}</h3>
                   <div className="product-badges">
