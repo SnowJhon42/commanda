@@ -18,6 +18,7 @@ from app.db.models import (
     StaffAccount,
     Table,
     TableSessionFeedback,
+    TableSessionCashRequest,
     TableSession,
     TableSessionStatus,
 )
@@ -189,6 +190,25 @@ def get_staff_order_items_detail(
             ).all()
         ],
         bill_split=to_bill_split_out(db, get_latest_bill_split(db, order.id)),
+        cash_requests=[
+            {
+                "id": req.id,
+                "table_session_id": req.table_session_id,
+                "order_id": req.order_id,
+                "client_id": req.client_id,
+                "payer_label": req.payer_label,
+                "note": req.note,
+                "status": req.status,
+                "created_at": req.created_at,
+                "resolved_at": req.resolved_at,
+                "resolved_by_staff_id": req.resolved_by_staff_id,
+            }
+            for req in db.scalars(
+                select(TableSessionCashRequest)
+                .where(TableSessionCashRequest.order_id == order.id)
+                .order_by(TableSessionCashRequest.created_at.desc(), TableSessionCashRequest.id.desc())
+            ).all()
+        ],
         created_at=order.created_at,
     )
 

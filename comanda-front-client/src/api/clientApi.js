@@ -174,6 +174,22 @@ export async function createEqualSplit({ orderId, partsCount }) {
   }
 }
 
+export async function createConsumptionSplit({ orderId }) {
+  try {
+    const res = await fetch(`${API_URL}/billing/orders/${orderId}/split-consumption`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo crear la division por consumo.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo crear la division por consumo.");
+  }
+}
+
 export async function reportSplitPartPayment({ partId, payerLabel }) {
   try {
     const res = await fetch(`${API_URL}/billing/split-parts/${partId}/report`, {
@@ -187,6 +203,26 @@ export async function reportSplitPartPayment({ partId, payerLabel }) {
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudo reportar el pago.");
+  }
+}
+
+export async function requestCashPayment({ orderId, clientId, payerLabel, note }) {
+  try {
+    const res = await fetch(`${API_URL}/billing/orders/${orderId}/request-cash`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: clientId,
+        payer_label: payerLabel,
+        note: note?.trim() || undefined,
+      }),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo pedir asistencia para pago en efectivo.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo pedir asistencia para pago en efectivo.");
   }
 }
 

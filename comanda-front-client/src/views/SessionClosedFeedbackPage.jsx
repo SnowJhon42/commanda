@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 export function SessionClosedFeedbackPage({
   tableCode,
+  clientUrl = "",
   saving,
   error,
   onSubmit,
@@ -11,11 +12,12 @@ export function SessionClosedFeedbackPage({
   const [comment, setComment] = useState("");
 
   const whatsappUrl = useMemo(() => {
+    const menuUrl = clientUrl || (typeof window !== "undefined" ? window.location.origin : "");
     const text = encodeURIComponent(
-      `Hola! Quiero compartir mi experiencia en COMANDA (mesa ${tableCode || "-"}).`
+      `Estuve en COMANDA (mesa ${tableCode || "-"}) y esta muy bueno! Venite que esta muy bueno.\n\nPodes ver el menu aca:\n${menuUrl}`
     );
     return `https://wa.me/?text=${text}`;
-  }, [tableCode]);
+  }, [tableCode, clientUrl]);
 
   const submit = (e) => {
     e.preventDefault();

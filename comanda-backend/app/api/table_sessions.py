@@ -47,7 +47,7 @@ def _active_order_for_table(db: Session, *, store_id: int, table_id: int) -> Ord
     )
 
 
-def _add_items_to_order(db: Session, *, store_id: int, order: Order, items: list) -> set[str]:
+def _add_items_to_order(db: Session, *, store_id: int, order: Order, items: list, client_id: str | None = None) -> set[str]:
     sectors_present = {row[0] for row in db.execute(select(OrderItem.sector).where(OrderItem.order_id == order.id)).all()}
 
     for raw_item in items:
@@ -77,6 +77,7 @@ def _add_items_to_order(db: Session, *, store_id: int, order: Order, items: list
                 order_id=order.id,
                 product_id=product.id,
                 variant_id=raw_item.variant_id,
+                created_by_client_id=client_id,
                 qty=raw_item.qty,
                 unit_price=float(product.base_price) + variant_price,
                 notes=raw_item.notes,
@@ -259,6 +260,15 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
         raise HTTPException(status_code=409, detail="Table session is closed")
     if table_session.store_id != payload.store_id:
         raise HTTPException(status_code=403, detail="Store mismatch in table session")
+    if payload.client_id:
+        joined_client = db.scalar(
+            select(TableSessionClient).where(
+                TableSessionClient.table_session_id == payload.table_session_id,
+                TableSessionClient.client_id == payload.client_id,
+            )
+        )
+        if not joined_client:
+            raise HTTPException(status_code=409, detail="Client must join table session before ordering")
 
     table = db.scalar(select(Table).where(Table.id == table_session.table_id))
     if not table or not table.active:
@@ -287,7 +297,9 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
         db.add(order)
         db.flush()
 
-    sectors_present = _add_items_to_order(db, store_id=payload.store_id, order=order, items=payload.items)
+    sectors_present = _add_items_to_order(
+        db, store_id=payload.store_id, order=order, items=payload.items, client_id=payload.client_id
+    )
     order.status_aggregated = recompute_order_status_from_items(db, order.id)
     db.add(order)
     db.commit()

@@ -10,6 +10,7 @@ import {
   closeTableSession,
   confirmSplitPart,
   createEqualSplit,
+  resolveCashRequest,
   patchItemStatus,
 } from "./api/staffApi";
 import { LoginPage } from "./pages/LoginPage";
@@ -312,6 +313,24 @@ export function App() {
         await loadBoard();
       } catch (err) {
         setError(err.message || "No se pudo confirmar el pago.");
+      } finally {
+        setBillingBusy(false);
+      }
+    },
+    [session, loadOrderDetail, loadBoard]
+  );
+
+  const resolveCash = useCallback(
+    async (cashRequestId) => {
+      if (!session) return;
+      setError("");
+      setBillingBusy(true);
+      try {
+        await resolveCashRequest({ token: session.access_token, cashRequestId });
+        await loadOrderDetail();
+        await loadBoard();
+      } catch (err) {
+        setError(err.message || "No se pudo resolver la solicitud de efectivo.");
       } finally {
         setBillingBusy(false);
       }
@@ -631,6 +650,7 @@ export function App() {
           closingTable={closingTable}
           onCreateSplit={createSplit}
           onConfirmPart={confirmPart}
+          onResolveCashRequest={resolveCash}
           billingBusy={billingBusy}
         />
       )}

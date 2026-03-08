@@ -48,6 +48,7 @@ class UpsertOrderByTableRequest(BaseModel):
     tenant_id: int
     store_id: int
     table_session_id: int
+    client_id: str | None = Field(default=None, min_length=1, max_length=120)
     guest_count: int = Field(..., gt=0)
     items: list[CreateOrderItemIn]
 
@@ -108,8 +109,31 @@ class CreateEqualBillSplitRequest(BaseModel):
     parts_count: int = Field(..., ge=1, le=20)
 
 
+class CreateConsumptionBillSplitRequest(BaseModel):
+    fallback_label: str = Field(default="Consumo compartido", min_length=1, max_length=120)
+
+
 class ReportBillPartPaymentRequest(BaseModel):
     payer_label: str = Field(..., min_length=1, max_length=120)
+
+
+class RequestCashPaymentRequest(BaseModel):
+    client_id: str = Field(..., min_length=1, max_length=120)
+    payer_label: str = Field(..., min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=250)
+
+
+class TableSessionCashRequestOut(BaseModel):
+    id: int
+    table_session_id: int
+    order_id: int | None = None
+    client_id: str
+    payer_label: str
+    note: str | None = None
+    status: str
+    created_at: datetime
+    resolved_at: datetime | None = None
+    resolved_by_staff_id: int | None = None
 
 
 class BillSplitPartOut(BaseModel):
@@ -281,4 +305,5 @@ class AdminOrderItemsDetailResponse(BaseModel):
     items: list[StaffBoardItemOut]
     events: list[ItemStatusEventOut]
     bill_split: BillSplitOut | None = None
+    cash_requests: list[TableSessionCashRequestOut] = []
     created_at: datetime

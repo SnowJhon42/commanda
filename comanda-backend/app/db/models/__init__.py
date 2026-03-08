@@ -4,6 +4,7 @@ from app.db.models.entities import (
     BillSplit,
     BillSplitPart,
     BillSplitStatus,
+    CashRequestStatus,
     ItemStatusEvent,
     MenuCategory,
     Order,
@@ -18,6 +19,7 @@ from app.db.models.entities import (
     Store,
     Table,
     TableSession,
+    TableSessionCashRequest,
     TableSessionFeedback,
     TableSessionClient,
     TableSessionStatus,
@@ -47,5 +49,7 @@ __all__ = [
     "OrderStatus",
     "BillSplitStatus",
     "BillPartPaymentStatus",
+    "CashRequestStatus",
     "TableSessionStatus",
+    "TableSessionCashRequest",
 ]

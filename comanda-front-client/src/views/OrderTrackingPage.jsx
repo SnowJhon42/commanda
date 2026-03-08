@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createEqualSplit, fetchOrder, fetchOrderSplit, openOrderEvents, reportSplitPartPayment } from "../api/clientApi";
+import {
+  createConsumptionSplit,
+  createEqualSplit,
+  fetchOrder,
+  fetchOrderSplit,
+  openOrderEvents,
+  reportSplitPartPayment,
+  requestCashPayment,
+} from "../api/clientApi";
 import { statusLabel } from "../utils/statusLabels";
 
 function statusClass(status) {
@@ -16,7 +24,6 @@ function toMoney(value) {
 
 export function OrderTrackingPage({
   orderId,
-  guestCount = 2,
   tableCode = "",
   clientId = "",
   feedbackLocked = false,
@@ -28,9 +35,8 @@ export function OrderTrackingPage({
   const [splitError, setSplitError] = useState("");
   const [splitBusy, setSplitBusy] = useState(false);
   const [splitHint, setSplitHint] = useState("");
-  const [partsCount, setPartsCount] = useState(2);
+  const [cashNote, setCashNote] = useState("");
   const [payerByPart, setPayerByPart] = useState({});
-  const [showSplitOptions, setShowSplitOptions] = useState(false);
 
   const sectorCards = useMemo(() => {
     const map = new Map();
@@ -126,24 +132,17 @@ export function OrderTrackingPage({
     };
   }, [orderId, loadSplit]);
 
-  useEffect(() => {
-    setPartsCount(Math.max(2, Math.min(20, Number(guestCount) || 2)));
-  }, [guestCount]);
-
-  const createSplit = async () => {
+  const createSplitByConsumption = async () => {
     if (!orderId || splitBusy) return;
     setSplitBusy(true);
     setSplitError("");
     setSplitHint("");
     try {
-      const payload = await createEqualSplit({
-        orderId,
-        partsCount: Math.max(2, Math.min(20, Number(partsCount) || 2)),
-      });
+      const payload = await createConsumptionSplit({ orderId });
       setBillSplit(payload);
-      setShowSplitOptions(true);
+      setSplitHint("Division por consumo creada.");
     } catch (err) {
-      setSplitError(err.message || "No se pudo crear la division.");
+      setSplitError(err.message || "No se pudo crear la division por consumo.");
     } finally {
       setSplitBusy(false);
     }
@@ -191,9 +190,30 @@ export function OrderTrackingPage({
       const payload = await reportSplitPartPayment({ partId: pendingPart.id, payerLabel });
       setBillSplit(payload);
       setSplitHint("Pago reportado. El staff debe validarlo y cerrar la mesa.");
-      setShowSplitOptions(false);
     } catch (err) {
       setSplitError(err.message || "No se pudo reportar el pago.");
+    } finally {
+      setSplitBusy(false);
+    }
+  };
+
+  const requestCash = async () => {
+    if (!orderId || splitBusy) return;
+    const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
+    setSplitBusy(true);
+    setSplitError("");
+    setSplitHint("");
+    try {
+      await requestCashPayment({
+        orderId,
+        clientId,
+        payerLabel,
+        note: cashNote,
+      });
+      setSplitHint("Aviso enviado: un mozo se acerca para cobrar en efectivo.");
+      setCashNote("");
+    } catch (err) {
+      setSplitError(err.message || "No se pudo solicitar pago en efectivo.");
     } finally {
       setSplitBusy(false);
     }
@@ -262,34 +282,26 @@ export function OrderTrackingPage({
             <button type="button" className="btn-primary" onClick={payWithoutSplit} disabled={splitBusy}>
               {splitBusy ? "Procesando..." : "Pagar todo"}
             </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => setShowSplitOptions((current) => !current)}
-              disabled={splitBusy}
-            >
-              {showSplitOptions ? "Ocultar division" : "Dividir cuenta"}
+            <button type="button" className="btn-secondary" onClick={createSplitByConsumption} disabled={splitBusy}>
+              {splitBusy ? "Creando..." : "Dividir por consumo"}
+            </button>
+            <button type="button" className="btn-secondary" onClick={requestCash} disabled={splitBusy}>
+              {splitBusy ? "..." : "Llamar mozo (efectivo)"}
             </button>
           </div>
         )}
-
-        {showSplitOptions && !billSplit && (
-          <div className="split-create">
-            <label className="field split-field">
-              Partes
-              <input
-                type="number"
-                min="2"
-                max="20"
-                value={partsCount}
-                onChange={(e) => setPartsCount(Number(e.target.value) || 2)}
-              />
-            </label>
-            <button type="button" className="btn-primary" onClick={createSplit} disabled={splitBusy}>
-              {splitBusy ? "Creando..." : "Crear division"}
-            </button>
-          </div>
-        )}
+        <div className="split-create">
+          <label className="field split-field">
+            Nota para cobro en efectivo (opcional)
+            <input
+              type="text"
+              maxLength="250"
+              value={cashNote}
+              onChange={(e) => setCashNote(e.target.value)}
+              placeholder="Ej: pagar en caja / necesito vuelto"
+            />
+          </label>
+        </div>
 
         {billSplit && (
           <div className="split-body">

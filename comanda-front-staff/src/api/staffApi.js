@@ -164,6 +164,19 @@ export async function confirmSplitPart({ token, partId }) {
   }
 }
 
+export async function resolveCashRequest({ token, cashRequestId }) {
+  try {
+    const res = await fetch(`${API_URL}/billing/cash-requests/${cashRequestId}/resolve`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo resolver el aviso de efectivo.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo resolver el aviso de efectivo.");
+  }
+}
+
 export async function fetchAdminMenuCategories({ token }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/categories`, {

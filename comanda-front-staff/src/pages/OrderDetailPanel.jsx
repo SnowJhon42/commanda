@@ -49,6 +49,7 @@ export function OrderDetailPanel({
   closingTable = false,
   onCreateSplit,
   onConfirmPart,
+  onResolveCashRequest = () => {},
   billingBusy = false,
 }) {
   return (
@@ -191,6 +192,33 @@ export function OrderDetailPanel({
                           : part.reported_at
                             ? new Date(part.reported_at).toLocaleTimeString("es-AR")
                             : "-"}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article className="detail-card">
+            <h4>Solicitud de efectivo</h4>
+            {!orderDetail.cash_requests || orderDetail.cash_requests.length === 0 ? (
+              <p className="muted">Sin solicitudes activas.</p>
+            ) : (
+              <div className="sector-list">
+                {orderDetail.cash_requests.map((req) => (
+                  <div className="sector-row" key={req.id}>
+                    <span>
+                      {req.payer_label} {req.note ? `- ${req.note}` : ""}
+                    </span>
+                    <span className={billBadgeClass(req.status === "RESOLVED" ? "CONFIRMED" : "PENDING")}>{req.status}</span>
+                    {req.status === "PENDING" && actorSector === "ADMIN" ? (
+                      <button className="btn-primary" onClick={() => onResolveCashRequest(req.id)} disabled={billingBusy}>
+                        {billingBusy ? "..." : "Marcar atendido"}
+                      </button>
+                    ) : (
+                      <span className="muted">
+                        {req.resolved_at ? new Date(req.resolved_at).toLocaleTimeString("es-AR") : "-"}
                       </span>
                     )}
                   </div>

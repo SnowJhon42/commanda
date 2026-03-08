@@ -43,6 +43,11 @@ class BillPartPaymentStatus(str, Enum):
     CONFIRMED = "CONFIRMED"
 
 
+class CashRequestStatus(str, Enum):
+    PENDING = "PENDING"
+    RESOLVED = "RESOLVED"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -206,6 +211,7 @@ class OrderItem(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
     variant_id: Mapped[int | None] = mapped_column(ForeignKey("product_variants.id"))
+    created_by_client_id: Mapped[str | None] = mapped_column(String(120))
     qty: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -289,3 +295,19 @@ class BillSplitPart(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     bill_split: Mapped["BillSplit"] = relationship(back_populates="parts")
+
+
+class TableSessionCashRequest(Base):
+    __tablename__ = "table_session_cash_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_session_id: Mapped[int] = mapped_column(ForeignKey("table_sessions.id"), nullable=False)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    payer_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default=CashRequestStatus.PENDING.value, nullable=False)
+    resolved_by_staff_id: Mapped[int | None] = mapped_column(ForeignKey("staff_accounts.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)

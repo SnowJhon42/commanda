@@ -111,6 +111,29 @@ def _ensure_runtime_schema_migrations() -> None:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS table_session_cash_requests (
+                  id INTEGER PRIMARY KEY,
+                  table_session_id INTEGER NOT NULL,
+                  order_id INTEGER NULL,
+                  store_id INTEGER NOT NULL,
+                  client_id TEXT NOT NULL,
+                  payer_label TEXT NOT NULL,
+                  note TEXT NULL,
+                  status TEXT NOT NULL DEFAULT 'PENDING',
+                  resolved_by_staff_id INTEGER NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  resolved_at DATETIME NULL,
+                  FOREIGN KEY(table_session_id) REFERENCES table_sessions(id),
+                  FOREIGN KEY(order_id) REFERENCES orders(id),
+                  FOREIGN KEY(store_id) REFERENCES stores(id),
+                  FOREIGN KEY(resolved_by_staff_id) REFERENCES staff_accounts(id)
+                )
+                """
+            )
+        )
 
         orders_sql_row = conn.execute(
             text("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'")
@@ -163,6 +186,8 @@ def _ensure_runtime_schema_migrations() -> None:
         column_names = {row[1] for row in columns}
         if "status" not in column_names:
             conn.execute(text("ALTER TABLE order_items ADD COLUMN status TEXT NOT NULL DEFAULT 'RECEIVED'"))
+        if "created_by_client_id" not in column_names:
+            conn.execute(text("ALTER TABLE order_items ADD COLUMN created_by_client_id TEXT NULL"))
         if "updated_at" not in column_names:
             conn.execute(text("ALTER TABLE order_items ADD COLUMN updated_at DATETIME NULL"))
             conn.execute(

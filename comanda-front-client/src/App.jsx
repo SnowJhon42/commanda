@@ -87,11 +87,12 @@ export function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tableFromUrl = normalizeTableCode(urlParams.get("mesa") || "");
       const raw = window.localStorage.getItem(SESSION_STATE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
+      const saved = raw ? JSON.parse(raw) : {};
 
-      const normalizedTable = normalizeTableCode(saved.tableCode);
+      const normalizedTable = tableFromUrl || normalizeTableCode(saved.tableCode);
       if (normalizedTable) {
         setTableCode(normalizedTable);
       }
@@ -253,6 +254,7 @@ export function App() {
         tenant_id: 1,
         store_id: storeId,
         table_session_id: opened.table_session_id,
+        client_id: clientId,
         guest_count: guestsValidation.value,
         items: cartItems.map((item) => ({
           product_id: item.product_id,
@@ -429,6 +431,11 @@ export function App() {
       ) : closedSession ? (
         <SessionClosedFeedbackPage
           tableCode={closedSession.tableCode}
+          clientUrl={
+            typeof window !== "undefined"
+              ? `${window.location.origin}/?mesa=${encodeURIComponent(closedSession.tableCode || "")}`
+              : ""
+          }
           saving={feedbackSaving}
           error={feedbackError}
           onSubmit={submitFeedbackAndReset}
