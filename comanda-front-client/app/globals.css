@@ -20,6 +20,7 @@ body {
   color: var(--text);
   background: radial-gradient(circle at 0% 0%, #dff8f5 0%, transparent 45%), var(--bg);
   font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  overflow-x: hidden;
 }
 
 .app-shell {
@@ -28,6 +29,7 @@ body {
   padding: 12px 12px 108px;
   display: grid;
   gap: 12px;
+  width: 100%;
 }
 
 .desktop-note {
@@ -185,13 +187,33 @@ body {
 }
 
 .category-card {
-  display: grid;
-  gap: 8px;
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 8px;
   background: #fff;
   text-align: left;
+  cursor: pointer;
+  appearance: none;
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+
+.category-card:hover {
+  border-color: #94a3b8;
+}
+
+.menu-category-head {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.menu-category-head h3 {
+  margin: 0;
+  font-size: 20px;
 }
 
 .category-image {
@@ -780,7 +802,44 @@ button:focus {
 
 @media (max-width: 680px) {
   .app-shell {
+    max-width: 100%;
     padding: 12px 10px 100px;
+  }
+
+  .menu-category-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .menu-category-head h3 {
+    font-size: 18px;
+  }
+
+  .category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .category-tabs {
+    overflow: visible;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+
+  .tab {
+    padding: 7px 11px;
+    font-size: 13px;
+  }
+
+  .product-card {
+    padding: 10px;
+  }
+
+  .product-title-row {
+    align-items: start;
+  }
+
+  .product-title-row h3 {
+    font-size: 16px;
   }
 
   .row {
