@@ -92,6 +92,37 @@ export async function fetchStaffBoardItems({ token, storeId, sector }) {
   }
 }
 
+export async function fetchTableSessions({ token, storeId, onlyWithoutOrder = false }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    if (onlyWithoutOrder) qs.append("only_without_order", "true");
+    const res = await fetch(`${API_URL}/staff/table-sessions?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron cargar las mesas ocupadas.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron cargar las mesas ocupadas.");
+  }
+}
+
+export async function patchTableSessionStatus({ token, tableSessionId, toStatus }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/table-sessions/${tableSessionId}/status`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ to_status: toStatus }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo actualizar el estado de la mesa.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar el estado de la mesa.");
+  }
+}
+
 export async function fetchFeedbackSummary({ token, storeId, limit = 20 }) {
   try {
     const qs = new URLSearchParams({ store_id: String(storeId), limit: String(limit) });

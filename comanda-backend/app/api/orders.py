@@ -19,6 +19,11 @@ from app.services.table_code import normalize_table_code
 from app.services.ticket_generator import next_ticket_number
 
 router = APIRouter(tags=["orders"])
+ACTIVE_TABLE_SESSION_STATUSES = (
+    TableSessionStatus.OPEN.value,
+    TableSessionStatus.MESA_OCUPADA.value,
+    TableSessionStatus.CON_PEDIDO.value,
+)
 
 
 @router.post("/orders", response_model=CreateOrderResponse, status_code=201)
@@ -38,7 +43,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         .where(
             TableSession.store_id == payload.store_id,
             TableSession.table_id == table.id,
-            TableSession.status == TableSessionStatus.OPEN.value,
+            TableSession.status.in_(ACTIVE_TABLE_SESSION_STATUSES),
         )
         .order_by(TableSession.id.desc())
         .limit(1)
@@ -91,6 +96,10 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         )
 
     order.status_aggregated = recompute_order_status_from_items(db, order.id)
+    if open_table_session:
+        open_table_session.guest_count = max(int(open_table_session.guest_count or 1), int(payload.guest_count))
+        open_table_session.status = TableSessionStatus.CON_PEDIDO.value
+        db.add(open_table_session)
 
     db.commit()
     event_bus.publish(
@@ -115,6 +124,18 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
             "reason": "order_created",
         },
     )
+    if open_table_session:
+        event_bus.publish(
+            "table.session.updated",
+            {
+                "table_session_id": open_table_session.id,
+                "store_id": order.store_id,
+                "table_code": normalized_table_code,
+                "guest_count": open_table_session.guest_count,
+                "status": open_table_session.status,
+                "active_order_id": order.id,
+            },
+        )
     return CreateOrderResponse(
         order_id=order.id,
         ticket_number=order.ticket_number,

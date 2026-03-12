@@ -31,7 +31,8 @@ def _ensure_runtime_schema_migrations() -> None:
                   id INTEGER PRIMARY KEY,
                   store_id INTEGER NOT NULL,
                   table_id INTEGER NOT NULL,
-                  status TEXT NOT NULL DEFAULT 'OPEN',
+                  guest_count INTEGER NOT NULL DEFAULT 1,
+                  status TEXT NOT NULL DEFAULT 'MESA_OCUPADA',
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   closed_at DATETIME NULL,
                   FOREIGN KEY(store_id) REFERENCES stores(id),
@@ -219,6 +220,13 @@ def _ensure_runtime_schema_migrations() -> None:
         category_column_names = {row[1] for row in category_columns}
         if "image_url" not in category_column_names:
             conn.execute(text("ALTER TABLE menu_categories ADD COLUMN image_url TEXT NULL"))
+
+        table_session_columns = conn.execute(text("PRAGMA table_info(table_sessions)")).fetchall()
+        table_session_column_names = {row[1] for row in table_session_columns}
+        if "guest_count" not in table_session_column_names:
+            conn.execute(text("ALTER TABLE table_sessions ADD COLUMN guest_count INTEGER NOT NULL DEFAULT 1"))
+        conn.execute(text("UPDATE table_sessions SET guest_count = COALESCE(NULLIF(guest_count, 0), 1)"))
+        conn.execute(text("UPDATE table_sessions SET status = 'MESA_OCUPADA' WHERE status = 'OPEN'"))
 
         product_columns = conn.execute(text("PRAGMA table_info(products)")).fetchall()
         product_column_names = {row[1] for row in product_columns}

@@ -29,6 +29,29 @@ CREATE TABLE IF NOT EXISTS tables (
   UNIQUE (store_id, code)
 );
 
+CREATE TABLE IF NOT EXISTS table_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id INTEGER NOT NULL,
+  table_id INTEGER NOT NULL,
+  guest_count INTEGER NOT NULL DEFAULT 1 CHECK (guest_count > 0),
+  status TEXT NOT NULL CHECK (status IN ('OPEN', 'MESA_OCUPADA', 'CON_PEDIDO', 'CLOSED', 'SE_RETIRARON')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  closed_at TEXT,
+  FOREIGN KEY (store_id) REFERENCES stores(id),
+  FOREIGN KEY (table_id) REFERENCES tables(id)
+);
+
+CREATE TABLE IF NOT EXISTS table_session_clients (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_session_id INTEGER NOT NULL,
+  client_id TEXT NOT NULL,
+  alias TEXT,
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (table_session_id) REFERENCES table_sessions(id),
+  UNIQUE (table_session_id, client_id)
+);
+
 CREATE TABLE IF NOT EXISTS menu_categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   store_id INTEGER NOT NULL,
@@ -83,14 +106,16 @@ CREATE TABLE IF NOT EXISTS orders (
   tenant_id INTEGER NOT NULL,
   store_id INTEGER NOT NULL,
   table_id INTEGER NOT NULL,
+  table_session_id INTEGER,
   guest_count INTEGER NOT NULL DEFAULT 1 CHECK (guest_count > 0),
   ticket_number INTEGER NOT NULL,
-  status_aggregated TEXT NOT NULL CHECK (status_aggregated IN ('RECEIVED', 'IN_PROGRESS', 'DONE', 'DELIVERED')),
+  status_aggregated TEXT NOT NULL CHECK (status_aggregated IN ('RECEIVED', 'IN_PROGRESS', 'DONE', 'PARCIAL', 'DELIVERED')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id),
   FOREIGN KEY (store_id) REFERENCES stores(id),
   FOREIGN KEY (table_id) REFERENCES tables(id),
+  FOREIGN KEY (table_session_id) REFERENCES table_sessions(id),
   UNIQUE (store_id, ticket_number)
 );
 
@@ -164,6 +189,9 @@ CREATE INDEX IF NOT EXISTS idx_products_store_active_sector
 
 CREATE INDEX IF NOT EXISTS idx_products_store_category
   ON products (store_id, category_id);
+
+CREATE INDEX IF NOT EXISTS idx_table_sessions_store_status_created
+  ON table_sessions (store_id, status, created_at DESC);
 
 CREATE TRIGGER IF NOT EXISTS trg_orders_updated_at
 AFTER UPDATE ON orders

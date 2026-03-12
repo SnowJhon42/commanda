@@ -1,6 +1,7 @@
 export function EntryGatePage({
   tableCode,
   guestCount,
+  submitting = false,
   errors,
   onTableCodeChange,
   onGuestCountChange,
@@ -41,8 +42,8 @@ export function EntryGatePage({
           {errors?.guests ? <span className="error-text field-error">{errors.guests}</span> : null}
         </label>
 
-        <button className="btn-primary btn-full" type="submit">
-          Ver menu
+        <button className="btn-primary btn-full" type="submit" disabled={submitting}>
+          {submitting ? "Registrando mesa..." : "Ver menu"}
         </button>
       </form>
     </section>

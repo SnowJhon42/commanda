@@ -29,7 +29,10 @@ class OrderStatus(str, Enum):
 
 class TableSessionStatus(str, Enum):
     OPEN = "OPEN"
+    MESA_OCUPADA = "MESA_OCUPADA"
+    CON_PEDIDO = "CON_PEDIDO"
     CLOSED = "CLOSED"
+    SE_RETIRARON = "SE_RETIRARON"
 
 
 class BillSplitStatus(str, Enum):
@@ -80,11 +83,13 @@ class Table(Base):
 
 class TableSession(Base):
     __tablename__ = "table_sessions"
+    __table_args__ = (CheckConstraint("guest_count > 0", name="ck_table_sessions_guest_count_positive"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
     table_id: Mapped[int] = mapped_column(ForeignKey("tables.id"), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default=TableSessionStatus.OPEN.value, nullable=False)
+    guest_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default=TableSessionStatus.MESA_OCUPADA.value, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
 

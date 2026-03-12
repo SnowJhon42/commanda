@@ -20,11 +20,14 @@ from app.db.models import (
     TableSessionFeedback,
     TableSessionCashRequest,
     TableSession,
+    TableSessionClient,
     TableSessionStatus,
 )
 from app.db.session import get_db
 from app.schemas.orders import (
     AdminOrderItemsDetailResponse,
+    ChangeTableSessionStatusRequest,
+    ChangeTableSessionStatusResponse,
     FeedbackCommentOut,
     FeedbackDistributionOut,
     FeedbackSummaryResponse,
@@ -35,12 +38,19 @@ from app.schemas.orders import (
     ItemStatusEventOut,
     StaffBoardItemOut,
     StaffBoardItemsResponse,
+    StaffTableSessionOut,
+    StaffTableSessionsResponse,
 )
 from app.services.billing import get_latest_bill_split, to_bill_split_out
 from app.services.item_status import change_item_status
 from app.services.realtime import event_bus
 
 router = APIRouter(prefix="/staff", tags=["staff"])
+ACTIVE_TABLE_SESSION_STATUSES = (
+    TableSessionStatus.OPEN.value,
+    TableSessionStatus.MESA_OCUPADA.value,
+    TableSessionStatus.CON_PEDIDO.value,
+)
 
 
 def _board_filter_for_sector(sector: str):
@@ -107,6 +117,165 @@ def list_staff_items_board(
             )
             for item, order, table in rows
         ],
+    )
+
+
+@router.get("/table-sessions", response_model=StaffTableSessionsResponse)
+def list_staff_table_sessions(
+    store_id: int,
+    only_without_order: bool = False,
+    limit: int = 200,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StaffTableSessionsResponse:
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    safe_limit = min(max(limit, 1), 300)
+    active_order_exists = (
+        select(func.count())
+        .select_from(Order)
+        .where(
+            Order.table_session_id == TableSession.id,
+            Order.store_id == store_id,
+            Order.status_aggregated != OrderStatus.DELIVERED.value,
+        )
+        .correlate(TableSession)
+        .scalar_subquery()
+    )
+    connected_clients_subq = (
+        select(func.count())
+        .select_from(TableSessionClient)
+        .where(TableSessionClient.table_session_id == TableSession.id)
+        .correlate(TableSession)
+        .scalar_subquery()
+    )
+
+    base_query = (
+        select(
+            TableSession,
+            Table,
+            active_order_exists.label("active_order_count"),
+            connected_clients_subq.label("connected_clients"),
+        )
+        .join(Table, Table.id == TableSession.table_id)
+        .where(
+            TableSession.store_id == store_id,
+            TableSession.status.in_(ACTIVE_TABLE_SESSION_STATUSES),
+        )
+    )
+    if only_without_order:
+        base_query = base_query.where(active_order_exists == 0)
+
+    total = db.scalar(select(func.count()).select_from(base_query.subquery())) or 0
+    rows = db.execute(
+        base_query
+        .order_by(TableSession.created_at.desc(), TableSession.id.desc())
+        .limit(safe_limit)
+        .offset(offset)
+    ).all()
+
+    items = []
+    for table_session, table, _active_count, connected_clients in rows:
+        active_order = db.scalar(
+            select(Order.id)
+            .where(
+                Order.table_session_id == table_session.id,
+                Order.store_id == store_id,
+                Order.status_aggregated != OrderStatus.DELIVERED.value,
+            )
+            .order_by(Order.created_at.desc(), Order.id.desc())
+            .limit(1)
+        )
+        items.append(
+            StaffTableSessionOut(
+                table_session_id=table_session.id,
+                table_code=table.code,
+                guest_count=table_session.guest_count,
+                status=table_session.status,
+                connected_clients=int(connected_clients or 0),
+                active_order_id=int(active_order) if active_order else None,
+                created_at=table_session.created_at,
+            )
+        )
+
+    return StaffTableSessionsResponse(total=int(total), items=items)
+
+
+@router.patch("/table-sessions/{table_session_id}/status", response_model=ChangeTableSessionStatusResponse)
+def patch_table_session_status(
+    table_session_id: int,
+    payload: ChangeTableSessionStatusRequest,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ChangeTableSessionStatusResponse:
+    table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
+    if not table_session:
+        raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.store_id != current_staff.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    previous_status = table_session.status
+    target_status = (payload.to_status or "").strip().upper()
+    valid_targets = {
+        TableSessionStatus.MESA_OCUPADA.value,
+        TableSessionStatus.CON_PEDIDO.value,
+        TableSessionStatus.CLOSED.value,
+        TableSessionStatus.SE_RETIRARON.value,
+    }
+    if target_status not in valid_targets:
+        raise HTTPException(status_code=422, detail="Unsupported table session status")
+
+    if target_status in {TableSessionStatus.CLOSED.value, TableSessionStatus.SE_RETIRARON.value}:
+        if target_status == TableSessionStatus.CLOSED.value:
+            has_open_orders = db.scalar(
+                select(func.count())
+                .select_from(Order)
+                .where(
+                    Order.table_session_id == table_session.id,
+                    Order.store_id == current_staff.store_id,
+                    Order.status_aggregated != OrderStatus.DELIVERED.value,
+                )
+            ) or 0
+            if has_open_orders > 0:
+                raise HTTPException(status_code=409, detail="Cannot close table session with active non-delivered orders")
+        table_session.closed_at = datetime.utcnow()
+    else:
+        table_session.closed_at = None
+
+    table_session.status = target_status
+    db.add(table_session)
+    db.commit()
+    db.refresh(table_session)
+
+    table_code = db.scalar(select(Table.code).where(Table.id == table_session.table_id)) or "-"
+    event_bus.publish(
+        "table.session.updated",
+        {
+            "table_session_id": table_session.id,
+            "store_id": table_session.store_id,
+            "table_code": table_code,
+            "guest_count": table_session.guest_count,
+            "status": table_session.status,
+        },
+    )
+    if table_session.status == TableSessionStatus.CLOSED.value:
+        event_bus.publish(
+            "table.session.closed",
+            {
+                "table_session_id": table_session.id,
+                "store_id": table_session.store_id,
+                "table_code": table_code,
+                "closed_at": table_session.closed_at.isoformat() if table_session.closed_at else None,
+            },
+        )
+
+    return ChangeTableSessionStatusResponse(
+        table_session_id=table_session.id,
+        previous_status=previous_status,
+        current_status=table_session.status,
+        updated_by_staff_id=current_staff.id,
     )
 
 
@@ -357,7 +526,7 @@ def close_table_session(
         .where(
             TableSession.store_id == current_staff.store_id,
             TableSession.table_id == table.id,
-            TableSession.status == TableSessionStatus.OPEN.value,
+            TableSession.status.in_(ACTIVE_TABLE_SESSION_STATUSES),
         )
         .order_by(TableSession.id.desc())
         .limit(1)

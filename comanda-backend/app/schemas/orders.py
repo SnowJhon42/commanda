@@ -28,6 +28,7 @@ class OpenTableSessionResponse(BaseModel):
     table_session_id: int
     store_id: int
     table_code: str
+    guest_count: int
     status: str
     active_order_id: int | None = None
 
@@ -57,9 +58,36 @@ class TableSessionStateResponse(BaseModel):
     table_session_id: int
     store_id: int
     table_code: str
+    guest_count: int
     status: str
     connected_clients: int
     active_order_id: int | None = None
+
+
+class StaffTableSessionOut(BaseModel):
+    table_session_id: int
+    table_code: str
+    guest_count: int
+    status: str
+    connected_clients: int
+    active_order_id: int | None = None
+    created_at: datetime
+
+
+class StaffTableSessionsResponse(BaseModel):
+    total: int
+    items: list[StaffTableSessionOut]
+
+
+class ChangeTableSessionStatusRequest(BaseModel):
+    to_status: str
+
+
+class ChangeTableSessionStatusResponse(BaseModel):
+    table_session_id: int
+    previous_status: str
+    current_status: str
+    updated_by_staff_id: int
 
 
 class CloseTableSessionResponse(BaseModel):

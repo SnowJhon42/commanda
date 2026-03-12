@@ -65,6 +65,7 @@ export function App() {
   const [tableCode, setTableCode] = useState("");
   const [guestCount, setGuestCount] = useState(2);
   const [entryValidated, setEntryValidated] = useState(false);
+  const [entrySubmitting, setEntrySubmitting] = useState(false);
   const [entryErrors, setEntryErrors] = useState({ table: "", guests: "" });
 
   const [menu, setMenu] = useState(null);
@@ -236,24 +237,28 @@ export function App() {
 
     setSubmittingOrder(true);
     try {
-      const opened = await openTableSession({
-        store_id: storeId,
-        table_code: normalizedTable,
-        guest_count: guestsValidation.value,
-      });
-      setTableSessionId(opened.table_session_id);
+      let resolvedTableSessionId = tableSessionId;
+      if (!resolvedTableSessionId) {
+        const opened = await openTableSession({
+          store_id: storeId,
+          table_code: normalizedTable,
+          guest_count: guestsValidation.value,
+        });
+        resolvedTableSessionId = opened.table_session_id;
+        setTableSessionId(opened.table_session_id);
 
-      const joined = await joinTableSession({
-        tableSessionId: opened.table_session_id,
-        clientId,
-        alias: `Mesa-${normalizedTable}-${clientId.slice(-4)}`,
-      });
-      setConnectedClients(joined.connected_clients || 1);
+        const joined = await joinTableSession({
+          tableSessionId: opened.table_session_id,
+          clientId,
+          alias: `Mesa-${normalizedTable}-${clientId.slice(-4)}`,
+        });
+        setConnectedClients(joined.connected_clients || 1);
+      }
 
       const created = await upsertOrderByTable({
         tenant_id: 1,
         store_id: storeId,
-        table_session_id: opened.table_session_id,
+        table_session_id: resolvedTableSessionId,
         client_id: clientId,
         guest_count: guestsValidation.value,
         items: cartItems.map((item) => ({
@@ -326,6 +331,7 @@ export function App() {
   };
 
   const completeEntryGate = () => {
+    if (entrySubmitting) return;
     const normalizedTable = normalizeTableCode(tableCode);
     const guestsValidation = validateGuestCount(guestCount);
 
@@ -336,9 +342,37 @@ export function App() {
     setEntryErrors(nextErrors);
     if (!normalizedTable || !guestsValidation.ok) return;
 
-    setTableCode(normalizedTable);
-    setGuestCount(guestsValidation.value);
-    setEntryValidated(true);
+    const openSession = async () => {
+      setEntrySubmitting(true);
+      try {
+        const opened = await openTableSession({
+          store_id: storeId,
+          table_code: normalizedTable,
+          guest_count: guestsValidation.value,
+        });
+        setTableSessionId(opened.table_session_id);
+        const joined = await joinTableSession({
+          tableSessionId: opened.table_session_id,
+          clientId,
+          alias: `Mesa-${normalizedTable}-${clientId.slice(-4)}`,
+        });
+        setConnectedClients(joined.connected_clients || 1);
+        setTableCode(normalizedTable);
+        setGuestCount(guestsValidation.value);
+        setClosedSession(null);
+        setEntryValidated(true);
+        setUiToast("Mesa registrada. Avisamos al staff.");
+      } catch (error) {
+        setEntryErrors((current) => ({
+          ...current,
+          table: error.message || "No se pudo registrar la mesa.",
+        }));
+      } finally {
+        setEntrySubmitting(false);
+      }
+    };
+
+    void openSession();
   };
 
   const saveGuestCount = (nextGuestCount) => {
@@ -423,6 +457,7 @@ export function App() {
         <EntryGatePage
           tableCode={tableCode}
           guestCount={guestCount}
+          submitting={entrySubmitting}
           errors={entryErrors}
           onTableCodeChange={handleEntryTableChange}
           onGuestCountChange={handleEntryGuestChange}

@@ -5,6 +5,7 @@ import {
   fetchAdminOrders,
   fetchFeedbackSummary,
   fetchStaffBoardItems,
+  fetchTableSessions,
   fetchStaffOrderItems,
   openStaffEvents,
   closeTableSession,
@@ -12,6 +13,7 @@ import {
   createEqualSplit,
   resolveCashRequest,
   patchItemStatus,
+  patchTableSessionStatus,
 } from "./api/staffApi";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminBoardPage } from "./pages/AdminBoardPage";
@@ -21,6 +23,7 @@ import { WaiterBoardPage } from "./pages/WaiterBoardPage";
 import { OrderDetailPanel } from "./pages/OrderDetailPanel";
 import { FeedbackSummaryPage } from "./pages/FeedbackSummaryPage";
 import { MenuEditorPage } from "./pages/MenuEditorPage";
+import { TableSessionsPanel } from "./pages/TableSessionsPanel";
 import { elapsedMinutes } from "./utils/boardMeta";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
@@ -102,6 +105,9 @@ export function App() {
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackSummary, setFeedbackSummary] = useState(null);
   const [advancingKey, setAdvancingKey] = useState("");
+  const [tableSessionsRows, setTableSessionsRows] = useState([]);
+  const [tableSessionsLoading, setTableSessionsLoading] = useState(false);
+  const [tableSessionBusyId, setTableSessionBusyId] = useState(null);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -206,6 +212,23 @@ export function App() {
       setDetailLoading(false);
     }
   }, [selectedOrderId, session]);
+
+  const loadTableSessions = useCallback(async () => {
+    if (!session) return;
+    setTableSessionsLoading(true);
+    try {
+      const data = await fetchTableSessions({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+        onlyWithoutOrder: true,
+      });
+      setTableSessionsRows(data.items || []);
+    } catch (err) {
+      setError(err.message || "No se pudieron cargar mesas ocupadas.");
+    } finally {
+      setTableSessionsLoading(false);
+    }
+  }, [session]);
 
   const loadFeedback = useCallback(async () => {
     if (!session || session.staff.sector !== "ADMIN") return;
@@ -338,6 +361,28 @@ export function App() {
     [session, loadOrderDetail, loadBoard]
   );
 
+  const markTableSession = useCallback(
+    async (tableSessionId, toStatus) => {
+      if (!session || !tableSessionId) return;
+      setError("");
+      setTableSessionBusyId(tableSessionId);
+      try {
+        await patchTableSessionStatus({
+          token: session.access_token,
+          tableSessionId,
+          toStatus,
+        });
+        await loadTableSessions();
+        await loadBoard();
+      } catch (err) {
+        setError(err.message || "No se pudo actualizar la mesa.");
+      } finally {
+        setTableSessionBusyId(null);
+      }
+    },
+    [session, loadTableSessions, loadBoard]
+  );
+
   const board = useMemo(() => {
     const alertMetaByOrder = boardRows.reduce((acc, row) => {
       const mediumThreshold = mediumThresholdBySector(staffSector);
@@ -429,18 +474,30 @@ export function App() {
       if (session.staff.sector === "ADMIN") {
         if (adminView === "FEEDBACK") {
           await loadFeedback();
+          await loadTableSessions();
+          if (selectedOrderId) {
+            await loadOrderDetail();
+          }
           return;
         }
         if (adminView === "MENU") {
+          await loadTableSessions();
+          if (selectedOrderId) {
+            await loadOrderDetail();
+          }
           return;
         }
       }
       await loadBoard();
+      await loadTableSessions();
+      if (selectedOrderId) {
+        await loadOrderDetail();
+      }
     };
     poll();
     const timer = setInterval(poll, 10000);
     return () => clearInterval(timer);
-  }, [session, adminView, loadBoard, loadFeedback]);
+  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail]);
 
   useEffect(() => {
     if (!session || (session.staff.sector === "ADMIN" && adminView === "MENU")) return;
@@ -460,6 +517,7 @@ export function App() {
         } else {
           await loadBoard();
         }
+        await loadTableSessions();
         if (selectedOrderId) {
           await loadOrderDetail();
         }
@@ -493,13 +551,15 @@ export function App() {
     stream.addEventListener("order.created", scheduleRefresh);
     stream.addEventListener("table.session.closed", scheduleRefresh);
     stream.addEventListener("bill.split.updated", scheduleRefresh);
+    stream.addEventListener("bill.cash.requested", scheduleRefresh);
+    stream.addEventListener("bill.cash.resolved", scheduleRefresh);
 
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       stream.close();
       setLiveConnected(false);
     };
-  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, playAlarm]);
+  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, loadTableSessions, playAlarm]);
 
   useEffect(() => {
     if (!session || session.staff.sector === "ADMIN") return;
@@ -630,6 +690,14 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
+      <TableSessionsPanel
+        rows={tableSessionsRows}
+        loading={tableSessionsLoading}
+        actorSector={staffSector}
+        busyId={tableSessionBusyId}
+        onMarkRetired={(id) => markTableSession(id, "SE_RETIRARON")}
+        onClose={(id) => markTableSession(id, "CLOSED")}
+      />
       {staffSector === "ADMIN" && adminView === "FEEDBACK" ? (
         <FeedbackSummaryPage loading={feedbackLoading} summary={feedbackSummary} />
       ) : (

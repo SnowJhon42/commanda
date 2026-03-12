@@ -36,6 +36,11 @@ from app.services.table_code import normalize_table_code
 from app.services.ticket_generator import next_ticket_number
 
 router = APIRouter(tags=["table-session"])
+ACTIVE_TABLE_SESSION_STATUSES = (
+    TableSessionStatus.OPEN.value,
+    TableSessionStatus.MESA_OCUPADA.value,
+    TableSessionStatus.CON_PEDIDO.value,
+)
 
 
 def _active_order_for_table(db: Session, *, store_id: int, table_id: int) -> Order | None:
@@ -103,27 +108,43 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
         .where(
             TableSession.store_id == payload.store_id,
             TableSession.table_id == table.id,
-            TableSession.status == TableSessionStatus.OPEN.value,
+            TableSession.status.in_(ACTIVE_TABLE_SESSION_STATUSES),
         )
         .order_by(TableSession.id.desc())
         .limit(1)
     )
+    active_order = _active_order_for_table(db, store_id=payload.store_id, table_id=table.id)
     if not table_session:
         table_session = TableSession(
             store_id=payload.store_id,
             table_id=table.id,
-            status=TableSessionStatus.OPEN.value,
+            guest_count=payload.guest_count,
+            status=TableSessionStatus.CON_PEDIDO.value if active_order else TableSessionStatus.MESA_OCUPADA.value,
         )
         db.add(table_session)
         db.flush()
-
-    active_order = _active_order_for_table(db, store_id=payload.store_id, table_id=table.id)
+    else:
+        table_session.guest_count = payload.guest_count
+        table_session.status = TableSessionStatus.CON_PEDIDO.value if active_order else TableSessionStatus.MESA_OCUPADA.value
+        db.add(table_session)
     db.commit()
+    event_bus.publish(
+        "table.session.opened",
+        {
+            "table_session_id": table_session.id,
+            "store_id": payload.store_id,
+            "table_code": table.code,
+            "guest_count": table_session.guest_count,
+            "status": table_session.status,
+            "active_order_id": active_order.id if active_order else None,
+        },
+    )
 
     return OpenTableSessionResponse(
         table_session_id=table_session.id,
         store_id=payload.store_id,
         table_code=table.code,
+        guest_count=table_session.guest_count,
         status=table_session.status,
         active_order_id=active_order.id if active_order else None,
     )
@@ -138,7 +159,7 @@ def join_table_session(
     session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
     if not session:
         raise HTTPException(status_code=404, detail="Table session not found")
-    if session.status != TableSessionStatus.OPEN.value:
+    if session.status not in ACTIVE_TABLE_SESSION_STATUSES:
         raise HTTPException(status_code=409, detail="Table session is closed")
 
     client = db.scalar(
@@ -198,6 +219,7 @@ def get_table_session_state(table_session_id: int, db: Session = Depends(get_db)
         table_session_id=table_session.id,
         store_id=table_session.store_id,
         table_code=table.code if table else "-",
+        guest_count=table_session.guest_count,
         status=table_session.status,
         connected_clients=int(connected_clients),
         active_order_id=active_order.id if active_order else None,
@@ -256,7 +278,7 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
     table_session = db.scalar(select(TableSession).where(TableSession.id == payload.table_session_id))
     if not table_session:
         raise HTTPException(status_code=404, detail="Table session not found")
-    if table_session.status != TableSessionStatus.OPEN.value:
+    if table_session.status not in ACTIVE_TABLE_SESSION_STATUSES:
         raise HTTPException(status_code=409, detail="Table session is closed")
     if table_session.store_id != payload.store_id:
         raise HTTPException(status_code=403, detail="Store mismatch in table session")
@@ -300,6 +322,9 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
     sectors_present = _add_items_to_order(
         db, store_id=payload.store_id, order=order, items=payload.items, client_id=payload.client_id
     )
+    table_session.guest_count = max(int(table_session.guest_count or 1), int(payload.guest_count))
+    table_session.status = TableSessionStatus.CON_PEDIDO.value
+    db.add(table_session)
     order.status_aggregated = recompute_order_status_from_items(db, order.id)
     db.add(order)
     db.commit()
@@ -327,6 +352,17 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
             "item_status": OrderStatus.RECEIVED.value,
             "status_aggregated": order.status_aggregated,
             "reason": "items_appended",
+        },
+    )
+    event_bus.publish(
+        "table.session.updated",
+        {
+            "table_session_id": table_session.id,
+            "store_id": payload.store_id,
+            "table_code": table.code,
+            "guest_count": table_session.guest_count,
+            "status": table_session.status,
+            "active_order_id": order.id,
         },
     )
 
