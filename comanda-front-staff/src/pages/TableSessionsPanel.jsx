@@ -6,27 +6,27 @@ function sessionStatusLabel(status) {
   return status || "-";
 }
 
-function elapsedLabel(createdAt) {
-  const diffMs = Date.now() - new Date(createdAt).getTime();
-  const minutes = Math.max(0, Math.floor(diffMs / 60000));
+function elapsedLabel(minutesValue) {
+  const minutes = Number(minutesValue);
+  if (!Number.isFinite(minutes) || minutes < 0) return "-";
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   const rem = minutes % 60;
   return `${hours}h ${rem}m`;
 }
 
-export function TableSessionsPanel({ rows, loading, actorSector, busyId, onMarkRetired, onClose }) {
+export function TableSessionsPanel({ rows, loading, actorSector, busyId, onMarkRetired }) {
   const canUpdate = actorSector === "ADMIN" || actorSector === "WAITER";
 
   return (
     <section className="panel">
       <div className="section-head">
-        <h3>Mesas ocupadas</h3>
+        <h3>Mesas activas</h3>
         <span className="muted">{rows.length} activas</span>
       </div>
       {loading && <p className="muted">Actualizando mesas...</p>}
       {rows.length === 0 ? (
-        <p className="muted">No hay mesas ocupadas sin pedido.</p>
+        <p className="muted">No hay mesas activas.</p>
       ) : (
         <div className="table-wrap">
           <table className="admin-table">
@@ -34,6 +34,8 @@ export function TableSessionsPanel({ rows, loading, actorSector, busyId, onMarkR
               <tr>
                 <th>Mesa</th>
                 <th>Personas</th>
+                <th>Conectados</th>
+                <th>Pedido activo</th>
                 <th>Estado</th>
                 <th>Tiempo</th>
                 <th>Acciones</th>
@@ -41,27 +43,25 @@ export function TableSessionsPanel({ rows, loading, actorSector, busyId, onMarkR
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.table_session_id}>
+                <tr key={row.table_session_id} className={row.active_order_id ? "table-session-has-order" : ""}>
                   <td>{row.table_code}</td>
                   <td>{row.guest_count}</td>
+                  <td>{row.connected_clients || 0}</td>
+                  <td>{row.active_order_id ? `#${row.active_order_id}` : "-"}</td>
                   <td>{sessionStatusLabel(row.status)}</td>
-                  <td>{elapsedLabel(row.created_at)}</td>
+                  <td>{elapsedLabel(row.elapsed_minutes)}</td>
                   <td>
                     <div className="order-actions">
-                      <button
-                        className="btn-secondary"
-                        disabled={!canUpdate || busyId === row.table_session_id}
-                        onClick={() => onMarkRetired(row.table_session_id)}
-                      >
-                        Se retiraron
-                      </button>
-                      <button
-                        className="btn-secondary"
-                        disabled={!canUpdate || busyId === row.table_session_id}
-                        onClick={() => onClose(row.table_session_id)}
-                      >
-                        Cerrar mesa
-                      </button>
+                      {!row.active_order_id && (
+                        <button
+                          className="btn-secondary"
+                          disabled={!canUpdate || busyId === row.table_session_id}
+                          onClick={() => onMarkRetired(row.table_session_id)}
+                        >
+                          Se retiraron
+                        </button>
+                      )}
+                      {row.active_order_id && <span className="muted">Mesa con pedido en curso</span>}
                     </div>
                   </td>
                 </tr>

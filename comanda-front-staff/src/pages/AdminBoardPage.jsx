@@ -16,9 +16,9 @@ function formatMoney(value) {
   );
 }
 
-function elapsedLabel(createdAt) {
-  const diffMs = Date.now() - new Date(createdAt).getTime();
-  const minutes = Math.max(0, Math.floor(diffMs / 60000));
+function elapsedLabel(minutesValue) {
+  const minutes = Number(minutesValue);
+  if (!Number.isFinite(minutes) || minutes < 0) return "-";
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   const rem = minutes % 60;
@@ -95,7 +95,7 @@ export function AdminBoardPage({
                       ))}
                     </div>
                   </td>
-                  <td>{elapsedLabel(row.created_at)}</td>
+                  <td>{elapsedLabel(row.elapsed_minutes)}</td>
                   <td>{formatMoney(row.total_amount)}</td>
                   <td>
                     <button

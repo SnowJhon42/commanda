@@ -122,6 +122,7 @@ def _ensure_runtime_schema_migrations() -> None:
                   store_id INTEGER NOT NULL,
                   client_id TEXT NOT NULL,
                   payer_label TEXT NOT NULL,
+                  request_kind TEXT NOT NULL DEFAULT 'CASH_PAYMENT',
                   note TEXT NULL,
                   status TEXT NOT NULL DEFAULT 'PENDING',
                   resolved_by_staff_id INTEGER NULL,
@@ -131,6 +132,21 @@ def _ensure_runtime_schema_migrations() -> None:
                   FOREIGN KEY(order_id) REFERENCES orders(id),
                   FOREIGN KEY(store_id) REFERENCES stores(id),
                   FOREIGN KEY(resolved_by_staff_id) REFERENCES staff_accounts(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS product_extra_options (
+                  id INTEGER PRIMARY KEY,
+                  product_id INTEGER NOT NULL,
+                  name TEXT NOT NULL,
+                  extra_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+                  active INTEGER NOT NULL DEFAULT 1,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  FOREIGN KEY(product_id) REFERENCES products(id)
                 )
                 """
             )
@@ -221,10 +237,22 @@ def _ensure_runtime_schema_migrations() -> None:
         if "image_url" not in category_column_names:
             conn.execute(text("ALTER TABLE menu_categories ADD COLUMN image_url TEXT NULL"))
 
+        store_columns = conn.execute(text("PRAGMA table_info(stores)")).fetchall()
+        store_column_names = {row[1] for row in store_columns}
+        if "show_live_total_to_client" not in store_column_names:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN show_live_total_to_client INTEGER NOT NULL DEFAULT 1"))
+
         table_session_columns = conn.execute(text("PRAGMA table_info(table_sessions)")).fetchall()
         table_session_column_names = {row[1] for row in table_session_columns}
         if "guest_count" not in table_session_column_names:
             conn.execute(text("ALTER TABLE table_sessions ADD COLUMN guest_count INTEGER NOT NULL DEFAULT 1"))
+
+        cash_request_columns = conn.execute(text("PRAGMA table_info(table_session_cash_requests)")).fetchall()
+        cash_request_column_names = {row[1] for row in cash_request_columns}
+        if "request_kind" not in cash_request_column_names:
+            conn.execute(
+                text("ALTER TABLE table_session_cash_requests ADD COLUMN request_kind TEXT NOT NULL DEFAULT 'CASH_PAYMENT'")
+            )
         conn.execute(text("UPDATE table_sessions SET guest_count = COALESCE(NULLIF(guest_count, 0), 1)"))
         conn.execute(text("UPDATE table_sessions SET status = 'MESA_OCUPADA' WHERE status = 'OPEN'"))
 

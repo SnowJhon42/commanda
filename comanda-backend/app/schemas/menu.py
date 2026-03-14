@@ -16,6 +16,13 @@ class VariantOut(BaseModel):
     extra_price: float
 
 
+class ExtraOptionOut(BaseModel):
+    id: int
+    name: str
+    extra_price: float
+    active: bool
+
+
 class ProductOut(BaseModel):
     id: int
     category_id: int | None = None
@@ -25,11 +32,13 @@ class ProductOut(BaseModel):
     base_price: float
     fulfillment_sector: str
     variants: list[VariantOut]
+    extra_options: list[ExtraOptionOut]
     active: bool
 
 
 class MenuResponse(BaseModel):
     store_id: int
+    show_live_total_to_client: bool = True
     categories: list[CategoryOut]
     products: list[ProductOut]
 
@@ -94,3 +103,49 @@ class ImageUrlPatchOut(BaseModel):
 
 class ImageUploadOut(BaseModel):
     image_url: str
+
+
+class ExtraOptionCreateIn(BaseModel):
+    name: str
+    extra_price: float = 0
+    active: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("name is required")
+        return candidate
+
+    @field_validator("extra_price")
+    @classmethod
+    def validate_extra_price(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("extra_price cannot be negative")
+        return value
+
+
+class ExtraOptionUpdateIn(BaseModel):
+    name: str | None = None
+    extra_price: float | None = None
+    active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("name cannot be empty")
+        return candidate
+
+    @field_validator("extra_price")
+    @classmethod
+    def validate_extra_price(cls, value: float | None) -> float | None:
+        if value is None:
+            return value
+        if value < 0:
+            raise ValueError("extra_price cannot be negative")
+        return value

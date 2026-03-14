@@ -60,11 +60,14 @@ export function WaiterBoardPage({
                   const alertClass = itemAlertClass(item, "WAITER");
                   return (
                     <div className={`sector-row ${alertClass}`} key={item.item_id}>
-                      <span className="row-main">
-                        {item.qty}x {item.item_name}
-                        <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
-                        <span className="muted row-age">{elapsedMinutes(item.updated_at || item.created_at)} min</span>
-                      </span>
+                      <div className="row-main-wrap">
+                        <span className="row-main">
+                          {item.qty}x {item.item_name}
+                          <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
+                          <span className="muted row-age">{elapsedMinutes(item.updated_at || item.created_at)} min</span>
+                        </span>
+                        {item.notes ? <span className="row-note">{item.notes}</span> : null}
+                      </div>
                       <span className={badgeClass(item.status)}>{statusLabel(item.status)}</span>
                       <button
                         className="btn-primary"

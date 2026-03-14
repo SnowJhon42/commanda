@@ -16,6 +16,7 @@ from app.db.models import (
     OrderStatus,
     Sector,
     StaffAccount,
+    Store,
     Table,
     TableSessionFeedback,
     TableSessionCashRequest,
@@ -38,8 +39,10 @@ from app.schemas.orders import (
     ItemStatusEventOut,
     StaffBoardItemOut,
     StaffBoardItemsResponse,
+    StoreClientVisibilityResponse,
     StaffTableSessionOut,
     StaffTableSessionsResponse,
+    UpdateStoreClientVisibilityRequest,
 )
 from app.services.billing import get_latest_bill_split, to_bill_split_out
 from app.services.item_status import change_item_status
@@ -110,6 +113,8 @@ def list_staff_items_board(
                 guest_count=order.guest_count,
                 item_name=item.product.name if item.product else f"Item {item.id}",
                 qty=item.qty,
+                unit_price=float(item.unit_price),
+                notes=item.notes,
                 sector=item.sector,
                 status=item.status,
                 created_at=item.created_at,
@@ -117,6 +122,55 @@ def list_staff_items_board(
             )
             for item, order, table in rows
         ],
+    )
+
+
+@router.get("/store-settings/client-visibility", response_model=StoreClientVisibilityResponse)
+def get_store_client_visibility(
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StoreClientVisibilityResponse:
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    return StoreClientVisibilityResponse(
+        store_id=store.id,
+        show_live_total_to_client=bool(store.show_live_total_to_client),
+    )
+
+
+@router.patch("/store-settings/client-visibility", response_model=StoreClientVisibilityResponse)
+def patch_store_client_visibility(
+    payload: UpdateStoreClientVisibilityRequest,
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StoreClientVisibilityResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    store.show_live_total_to_client = bool(payload.show_live_total_to_client)
+    db.add(store)
+    db.commit()
+    db.refresh(store)
+    event_bus.publish(
+        "store.settings.updated",
+        {
+            "store_id": store.id,
+            "show_live_total_to_client": bool(store.show_live_total_to_client),
+        },
+    )
+    return StoreClientVisibilityResponse(
+        store_id=store.id,
+        show_live_total_to_client=bool(store.show_live_total_to_client),
     )
 
 
@@ -177,9 +231,10 @@ def list_staff_table_sessions(
     ).all()
 
     items = []
+    now_utc = datetime.now(tz=timezone.utc)
     for table_session, table, _active_count, connected_clients in rows:
         active_order = db.scalar(
-            select(Order.id)
+            select(Order)
             .where(
                 Order.table_session_id == table_session.id,
                 Order.store_id == store_id,
@@ -188,6 +243,9 @@ def list_staff_table_sessions(
             .order_by(Order.created_at.desc(), Order.id.desc())
             .limit(1)
         )
+        reference_dt = active_order.created_at if active_order else table_session.created_at
+        reference_aware = reference_dt.replace(tzinfo=timezone.utc) if reference_dt.tzinfo is None else reference_dt
+        elapsed_minutes = max(0, int((now_utc - reference_aware).total_seconds() // 60))
         items.append(
             StaffTableSessionOut(
                 table_session_id=table_session.id,
@@ -195,7 +253,9 @@ def list_staff_table_sessions(
                 guest_count=table_session.guest_count,
                 status=table_session.status,
                 connected_clients=int(connected_clients or 0),
-                active_order_id=int(active_order) if active_order else None,
+                active_order_id=int(active_order.id) if active_order else None,
+                active_order_created_at=active_order.created_at if active_order else None,
+                elapsed_minutes=elapsed_minutes,
                 created_at=table_session.created_at,
             )
         )
@@ -335,6 +395,8 @@ def get_staff_order_items_detail(
                 guest_count=order.guest_count,
                 item_name=item.product.name,
                 qty=item.qty,
+                unit_price=float(item.unit_price),
+                notes=item.notes,
                 sector=item.sector,
                 status=item.status,
                 created_at=item.created_at,
@@ -366,6 +428,7 @@ def get_staff_order_items_detail(
                 "order_id": req.order_id,
                 "client_id": req.client_id,
                 "payer_label": req.payer_label,
+                "request_kind": req.request_kind,
                 "note": req.note,
                 "status": req.status,
                 "created_at": req.created_at,

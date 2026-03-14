@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class CreateOrderItemIn(BaseModel):
     product_id: int
     variant_id: int | None = None
+    extra_option_ids: list[int] = Field(default_factory=list)
     qty: int = Field(..., gt=0)
     notes: str | None = None
 
@@ -71,6 +72,8 @@ class StaffTableSessionOut(BaseModel):
     status: str
     connected_clients: int
     active_order_id: int | None = None
+    active_order_created_at: datetime | None = None
+    elapsed_minutes: int = 0
     created_at: datetime
 
 
@@ -88,6 +91,15 @@ class ChangeTableSessionStatusResponse(BaseModel):
     previous_status: str
     current_status: str
     updated_by_staff_id: int
+
+
+class StoreClientVisibilityResponse(BaseModel):
+    store_id: int
+    show_live_total_to_client: bool
+
+
+class UpdateStoreClientVisibilityRequest(BaseModel):
+    show_live_total_to_client: bool
 
 
 class CloseTableSessionResponse(BaseModel):
@@ -148,6 +160,7 @@ class ReportBillPartPaymentRequest(BaseModel):
 class RequestCashPaymentRequest(BaseModel):
     client_id: str = Field(..., min_length=1, max_length=120)
     payer_label: str = Field(..., min_length=1, max_length=120)
+    request_kind: str = Field(default="CASH_PAYMENT", pattern="^(WAITER_CALL|CASH_PAYMENT)$")
     note: str | None = Field(default=None, max_length=250)
 
 
@@ -157,6 +170,7 @@ class TableSessionCashRequestOut(BaseModel):
     order_id: int | None = None
     client_id: str
     payer_label: str
+    request_kind: str = "CASH_PAYMENT"
     note: str | None = None
     status: str
     created_at: datetime
@@ -202,6 +216,8 @@ class OrderItemOut(BaseModel):
     id: int
     product_name: str
     qty: int
+    unit_price: float
+    notes: str | None = None
     sector: str
     status: str
 
@@ -262,7 +278,9 @@ class AdminOrderSummaryOut(BaseModel):
     total_amount: float
     status_aggregated: str
     sectors: list[SectorStatusOut]
+    elapsed_minutes: int = 0
     created_at: datetime
+    updated_at: datetime
 
 
 class AdminOrdersResponse(BaseModel):
@@ -277,6 +295,8 @@ class StaffBoardItemOut(BaseModel):
     guest_count: int
     item_name: str
     qty: int
+    unit_price: float = 0
+    notes: str | None = None
     sector: str
     status: str
     created_at: datetime

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function toMoney(value) {
   return new Intl.NumberFormat("es-AR", {
@@ -8,25 +8,27 @@ function toMoney(value) {
   }).format(value);
 }
 
-function sectorPillClass(sector) {
-  if (sector === "KITCHEN") return "sector-pill sector-pill-kitchen";
-  if (sector === "BAR") return "sector-pill sector-pill-bar";
-  if (sector === "WAITER") return "sector-pill sector-pill-waiter";
-  return "sector-pill";
-}
-
-export function MenuPage({ menu, loading, error, onRetry, onAddToCart, productQtyInCart = {} }) {
+export function MenuPage({
+  menu,
+  loading,
+  error,
+  onRetry,
+  onAddToCart,
+  onDecrementProductInCart,
+  productQtyInCart = {},
+  resetToCategoriesSignal = 0,
+}) {
   const [activeCategoryId, setActiveCategoryId] = useState(null);
   const [qtyByProduct, setQtyByProduct] = useState({});
   const [variantByProduct, setVariantByProduct] = useState({});
-  const [pulseByProduct, setPulseByProduct] = useState({});
-  const previousQtyRef = useRef({});
+  const [commentByProduct, setCommentByProduct] = useState({});
+  const [extraOptionsByProduct, setExtraOptionsByProduct] = useState({});
+  const [previewProduct, setPreviewProduct] = useState(null);
 
   const categories = menu?.categories ?? [];
   const products = menu?.products ?? [];
 
   const activeCategory = categories.find((category) => category.id === activeCategoryId) || null;
-
   const filteredProducts = useMemo(
     () => products.filter((product) => product.category_id === activeCategoryId),
     [products, activeCategoryId]
@@ -47,41 +49,31 @@ export function MenuPage({ menu, loading, error, onRetry, onAddToCart, productQt
     return map;
   }, [categories, products]);
 
-  const addProduct = (product) => {
+  useEffect(() => {
+    setActiveCategoryId(null);
+    setPreviewProduct(null);
+  }, [resetToCategoriesSignal]);
+
+  const addProduct = (product, forcedQty = null) => {
     const selectedVariantId = variantByProduct[product.id];
     const selectedVariant = product.variants.find((variant) => variant.id === Number(selectedVariantId));
-    const qty = Number(qtyByProduct[product.id] ?? 1);
-    onAddToCart({ product, variant: selectedVariant, qty });
-    setQtyByProduct((current) => ({ ...current, [product.id]: 1 }));
-  };
-
-  useEffect(() => {
-    const prev = previousQtyRef.current;
-    const changedProductIds = Object.keys(productQtyInCart).filter(
-      (id) => (prev[id] || 0) !== (productQtyInCart[id] || 0)
-    );
-    if (changedProductIds.length > 0) {
-      setPulseByProduct((current) => {
-        const next = { ...current };
-        changedProductIds.forEach((id) => {
-          next[id] = true;
-        });
-        return next;
-      });
-      const timer = setTimeout(() => {
-        setPulseByProduct((current) => {
-          const next = { ...current };
-          changedProductIds.forEach((id) => {
-            next[id] = false;
-          });
-          return next;
-        });
-      }, 300);
-      previousQtyRef.current = { ...productQtyInCart };
-      return () => clearTimeout(timer);
+    const requestedQty = Number(qtyByProduct[product.id] ?? 0);
+    const qty = forcedQty ? Number(forcedQty) : requestedQty > 0 ? requestedQty : 1;
+    const comment = String(commentByProduct[product.id] || "").trim();
+    const selectedExtraIds = extraOptionsByProduct[product.id] || [];
+    const selectedExtras = (product.extra_options || []).filter((extra) => selectedExtraIds.includes(extra.id));
+    onAddToCart({
+      product,
+      variant: selectedVariant,
+      qty: Math.max(1, qty || 1),
+      notes: comment || undefined,
+      extraOptionIds: selectedExtras.map((extra) => extra.id),
+      extraOptionLabels: selectedExtras.map((extra) => extra.name),
+    });
+    if (!forcedQty) {
+      setQtyByProduct((current) => ({ ...current, [product.id]: qty }));
     }
-    previousQtyRef.current = { ...productQtyInCart };
-  }, [productQtyInCart]);
+  };
 
   if (loading) {
     return (
@@ -117,7 +109,7 @@ export function MenuPage({ menu, loading, error, onRetry, onAddToCart, productQt
 
       {!activeCategory ? (
         <>
-          <p className="muted">Elegi una categoria para ver productos.</p>
+          <p className="muted">Elegi una categoria para ver la carta.</p>
           <div className="category-grid">
             {categories.map((category) => (
               <button
@@ -164,47 +156,110 @@ export function MenuPage({ menu, loading, error, onRetry, onAddToCart, productQt
           {filteredProducts.length === 0 ? (
             <p className="muted">No hay productos en esta categoria. Proba otra.</p>
           ) : (
-            <div className="product-list">
+            <div className="menu-lines">
               {filteredProducts.map((product) => {
-                const selectedVariantId = variantByProduct[product.id] ?? "";
-                const qty = qtyByProduct[product.id] ?? 1;
+                const qty = qtyByProduct[product.id] ?? 0;
                 const inCartQty = productQtyInCart[product.id] || 0;
-                const isSelected = inCartQty > 0;
-                const pulse = pulseByProduct[String(product.id)];
+                const buttonQtyLabel = inCartQty > 0 ? String(inCartQty) : qty > 0 ? String(qty) : "Agregar";
+                const selectedVariantId = variantByProduct[product.id] ?? "";
+                const comment = commentByProduct[product.id] ?? "";
+                const selectedExtraIds = extraOptionsByProduct[product.id] || [];
+                const toggleExtra = (extraId) =>
+                  setExtraOptionsByProduct((current) => {
+                    const currentIds = current[product.id] || [];
+                    const exists = currentIds.includes(extraId);
+                    return {
+                      ...current,
+                      [product.id]: exists
+                        ? currentIds.filter((id) => id !== extraId)
+                        : [...currentIds, extraId],
+                    };
+                  });
+                const decreaseQty = () => onDecrementProductInCart?.(product.id);
+                const increaseQty = () =>
+                  addProduct(product, 1);
                 return (
-                  <article
-                    className={isSelected ? "product-card product-card-selected" : "product-card"}
-                    key={product.id}
-                  >
-                    {product.image_url ? (
-                      <img className="product-image" src={product.image_url} alt={product.name} loading="lazy" />
-                    ) : (
-                      <div className="image-fallback product-image-fallback">Sin imagen</div>
-                    )}
-                    <div className="product-title-row">
-                      <h3>{product.name}</h3>
-                      <div className="product-badges">
-                        {isSelected && (
-                          <span className={pulse ? "product-count-badge product-count-pulse" : "product-count-badge"}>
-                            x{inCartQty}
-                          </span>
-                        )}
-                        <span className={sectorPillClass(product.fulfillment_sector)}>{product.fulfillment_sector}</span>
+                  <article className="menu-product-row" key={product.id}>
+                    <div className="menu-product-head">
+                      <button
+                        type="button"
+                        className="menu-line-name-btn"
+                        onClick={() => setPreviewProduct(product)}
+                      >
+                        {product.name}
+                      </button>
+                      <div className="menu-product-head-right">
+                        <p className="menu-line-price">{toMoney(product.base_price)}</p>
                       </div>
                     </div>
-                    <p className="muted">{product.description || "Sin descripcion"}</p>
-                    <p className="price">{toMoney(product.base_price)}</p>
-
+                    <div className="menu-product-controls">
+                      <button type="button" className="btn-secondary qty-btn" onClick={decreaseQty}>
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        className={inCartQty > 0 || qty > 0 ? "menu-qty-pill menu-qty-pill-active" : "menu-qty-pill"}
+                        onClick={() => addProduct(product)}
+                      >
+                        {buttonQtyLabel}
+                      </button>
+                      <button type="button" className="btn-secondary qty-btn" onClick={increaseQty}>
+                        +
+                      </button>
+                    </div>
+                    {qty > 0 && (
+                      <div className="menu-notes-wrap">
+                        <label className="field">
+                          Comentario
+                          <input
+                            type="text"
+                            maxLength="120"
+                            value={comment}
+                            onChange={(e) =>
+                              setCommentByProduct((current) => ({
+                                ...current,
+                                [product.id]: e.target.value,
+                              }))
+                            }
+                            placeholder="Ej: sin cebolla"
+                          />
+                        </label>
+                        {product.extra_options?.length > 0 && (
+                          <div className="field">
+                            Extra
+                            <div className="menu-extra-options">
+                              {product.extra_options.map((extra) => (
+                                <button
+                                  key={extra.id}
+                                  type="button"
+                                  className={
+                                    selectedExtraIds.includes(extra.id)
+                                      ? "menu-extra-chip menu-extra-chip-active"
+                                      : "menu-extra-chip"
+                                  }
+                                  onClick={() => toggleExtra(extra.id)}
+                                >
+                                  {extra.name}
+                                  {Number(extra.extra_price || 0) > 0
+                                    ? ` (+${toMoney(Number(extra.extra_price))})`
+                                    : ""}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {product.variants.length > 0 && (
-                      <label className="field">
-                        Variante
+                      <label className="field menu-variant-field">
+                        Extra
                         <select
                           value={selectedVariantId}
                           onChange={(e) =>
                             setVariantByProduct((current) => ({ ...current, [product.id]: e.target.value }))
                           }
                         >
-                          <option value="">Sin variante</option>
+                          <option value="">Sin extra</option>
                           {product.variants.map((variant) => (
                             <option key={variant.id} value={variant.id}>
                               {variant.name} ({toMoney(variant.extra_price)})
@@ -213,29 +268,39 @@ export function MenuPage({ menu, loading, error, onRetry, onAddToCart, productQt
                         </select>
                       </label>
                     )}
-
-                    <div className="row product-actions-row">
-                      <label className="field qty-field">
-                        Cantidad
-                        <input
-                          type="number"
-                          min="1"
-                          value={qty}
-                          onChange={(e) =>
-                            setQtyByProduct((current) => ({ ...current, [product.id]: Number(e.target.value) || 1 }))
-                          }
-                        />
-                      </label>
-                      <button className="btn-primary" onClick={() => addProduct(product)}>
-                        Agregar
-                      </button>
-                    </div>
                   </article>
                 );
               })}
             </div>
           )}
         </>
+      )}
+
+      {previewProduct && (
+        <div className="menu-preview-overlay" onClick={() => setPreviewProduct(null)}>
+          <article className="menu-preview-popup" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="menu-preview-close"
+              aria-label="Cerrar detalle"
+              onClick={() => setPreviewProduct(null)}
+            >
+              ×
+            </button>
+            {previewProduct.image_url ? (
+              <img
+                className="menu-preview-popup-image"
+                src={previewProduct.image_url}
+                alt={previewProduct.name}
+                loading="lazy"
+              />
+            ) : (
+              <div className="menu-preview-popup-empty">Sin imagen</div>
+            )}
+            <h4>{previewProduct.name}</h4>
+            <p className="muted">{previewProduct.description || "Sin descripcion."}</p>
+          </article>
+        </div>
       )}
     </section>
   );

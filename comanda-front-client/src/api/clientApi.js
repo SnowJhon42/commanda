@@ -206,7 +206,7 @@ export async function reportSplitPartPayment({ partId, payerLabel }) {
   }
 }
 
-export async function requestCashPayment({ orderId, clientId, payerLabel, note }) {
+export async function requestCashPayment({ orderId, clientId, payerLabel, note, requestKind = "CASH_PAYMENT" }) {
   try {
     const res = await fetch(`${API_URL}/billing/orders/${orderId}/request-cash`, {
       method: "POST",
@@ -214,6 +214,7 @@ export async function requestCashPayment({ orderId, clientId, payerLabel, note }
       body: JSON.stringify({
         client_id: clientId,
         payer_label: payerLabel,
+        request_kind: requestKind,
         note: note?.trim() || undefined,
       }),
     });

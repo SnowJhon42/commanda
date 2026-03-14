@@ -51,6 +51,11 @@ class CashRequestStatus(str, Enum):
     RESOLVED = "RESOLVED"
 
 
+class CashRequestKind(str, Enum):
+    WAITER_CALL = "WAITER_CALL"
+    CASH_PAYMENT = "CASH_PAYMENT"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -65,6 +70,7 @@ class Store(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    show_live_total_to_client: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -153,6 +159,7 @@ class Product(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     variants: Mapped[list["ProductVariant"]] = relationship(back_populates="product")
+    extra_options: Mapped[list["ProductExtraOption"]] = relationship(back_populates="product")
 
 
 class ProductVariant(Base):
@@ -166,6 +173,19 @@ class ProductVariant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     product: Mapped["Product"] = relationship(back_populates="variants")
+
+
+class ProductExtraOption(Base):
+    __tablename__ = "product_extra_options"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    extra_price: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    product: Mapped["Product"] = relationship(back_populates="extra_options")
 
 
 class StaffAccount(Base):
@@ -311,6 +331,7 @@ class TableSessionCashRequest(Base):
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
     client_id: Mapped[str] = mapped_column(String(120), nullable=False)
     payer_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_kind: Mapped[str] = mapped_column(String(20), default=CashRequestKind.CASH_PAYMENT.value, nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default=CashRequestStatus.PENDING.value, nullable=False)
     resolved_by_staff_id: Mapped[int | None] = mapped_column(ForeignKey("staff_accounts.id"))

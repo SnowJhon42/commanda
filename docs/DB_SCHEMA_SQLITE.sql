@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS stores (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tenant_id INTEGER NOT NULL,
   name TEXT NOT NULL,
+  show_live_total_to_client INTEGER NOT NULL DEFAULT 1 CHECK (show_live_total_to_client IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id)
 );
@@ -80,6 +81,16 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 CREATE TABLE IF NOT EXISTS product_variants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  extra_price NUMERIC NOT NULL DEFAULT 0 CHECK (extra_price >= 0),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+CREATE TABLE IF NOT EXISTS product_extra_options (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL,
   name TEXT NOT NULL,

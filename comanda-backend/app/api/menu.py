@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import MenuCategory, Product, ProductVariant, Store
+from app.db.models import MenuCategory, Product, ProductExtraOption, ProductVariant, Store
 from app.db.session import get_db
-from app.schemas.menu import CategoryOut, MenuResponse, ProductOut, VariantOut
+from app.schemas.menu import CategoryOut, ExtraOptionOut, MenuResponse, ProductOut, VariantOut
 
 router = APIRouter(tags=["menu"])
 
@@ -21,16 +21,39 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
         )
     ).all()
     products = db.scalars(select(Product).where(Product.store_id == store_id, Product.active == True)).all()
-    variants = db.scalars(select(ProductVariant).where(ProductVariant.active == True)).all()
+    product_ids = [p.id for p in products]
+    variants = (
+        db.scalars(
+            select(ProductVariant).where(ProductVariant.product_id.in_(product_ids), ProductVariant.active == True)
+        ).all()
+        if product_ids
+        else []
+    )
+    extra_options = (
+        db.scalars(
+            select(ProductExtraOption).where(
+                ProductExtraOption.product_id.in_(product_ids),
+                ProductExtraOption.active == True,
+            )
+        ).all()
+        if product_ids
+        else []
+    )
 
     variants_by_product: dict[int, list[VariantOut]] = {}
     for variant in variants:
         variants_by_product.setdefault(variant.product_id, []).append(
             VariantOut(id=variant.id, name=variant.name, extra_price=float(variant.extra_price))
         )
+    extras_by_product: dict[int, list[ExtraOptionOut]] = {}
+    for extra in extra_options:
+        extras_by_product.setdefault(extra.product_id, []).append(
+            ExtraOptionOut(id=extra.id, name=extra.name, extra_price=float(extra.extra_price), active=bool(extra.active))
+        )
 
     return MenuResponse(
         store_id=store_id,
+        show_live_total_to_client=bool(store.show_live_total_to_client),
         categories=[CategoryOut(id=c.id, name=c.name, image_url=c.image_url, sort_order=c.sort_order) for c in categories],
         products=[
             ProductOut(
@@ -42,6 +65,7 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
                 base_price=float(p.base_price),
                 fulfillment_sector=p.fulfillment_sector,
                 variants=variants_by_product.get(p.id, []),
+                extra_options=extras_by_product.get(p.id, []),
                 active=p.active,
             )
             for p in products

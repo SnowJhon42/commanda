@@ -2,7 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.db.models import Order, OrderItem, OrderStatus, Product, ProductVariant, Table, TableSession, TableSessionStatus
+from app.db.models import (
+    Order,
+    OrderItem,
+    OrderStatus,
+    Product,
+    ProductExtraOption,
+    ProductVariant,
+    Table,
+    TableSession,
+    TableSessionStatus,
+)
 from app.db.session import get_db
 from app.schemas.orders import (
     CreateOrderRequest,
@@ -79,6 +89,28 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
             if not variant:
                 raise HTTPException(status_code=404, detail=f"Variant {raw_item.variant_id} not found")
             variant_price = float(variant.extra_price)
+        extra_option_ids = sorted({int(extra_id) for extra_id in (raw_item.extra_option_ids or [])})
+        extras_total = 0.0
+        extra_names: list[str] = []
+        if extra_option_ids:
+            extras = db.scalars(
+                select(ProductExtraOption).where(
+                    ProductExtraOption.product_id == product.id,
+                    ProductExtraOption.id.in_(extra_option_ids),
+                    ProductExtraOption.active == True,
+                )
+            ).all()
+            if len(extras) != len(extra_option_ids):
+                raise HTTPException(status_code=422, detail="One or more extras are invalid for this product")
+            extras_total = sum(float(extra.extra_price) for extra in extras)
+            extra_names = [extra.name for extra in sorted(extras, key=lambda row: row.id)]
+
+        notes_parts: list[str] = []
+        if raw_item.notes and raw_item.notes.strip():
+            notes_parts.append(raw_item.notes.strip())
+        if extra_names:
+            notes_parts.append(f"Extras: {', '.join(extra_names)}")
+        merged_notes = " | ".join(notes_parts) if notes_parts else None
 
         sector = route_item_to_sector(product)
         sectors_present.add(sector)
@@ -88,8 +120,8 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
                 product_id=product.id,
                 variant_id=raw_item.variant_id,
                 qty=raw_item.qty,
-                unit_price=float(product.base_price) + variant_price,
-                notes=raw_item.notes,
+                unit_price=float(product.base_price) + variant_price + extras_total,
+                notes=merged_notes,
                 sector=sector,
                 status=OrderStatus.RECEIVED.value,
             )
@@ -167,7 +199,15 @@ def get_order(order_id: int, db: Session = Depends(get_db)) -> OrderDetailRespon
             for i in sorted(order.items, key=lambda row: (row.sector, row.id))
         ],
         items=[
-            OrderItemOut(id=i.id, product_name=i.product.name, qty=i.qty, sector=i.sector, status=i.status)
+            OrderItemOut(
+                id=i.id,
+                product_name=i.product.name,
+                qty=i.qty,
+                unit_price=float(i.unit_price),
+                notes=i.notes,
+                sector=i.sector,
+                status=i.status,
+            )
             for i in order.items
         ],
         created_at=order.created_at,

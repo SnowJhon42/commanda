@@ -1,13 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  createConsumptionSplit,
-  createEqualSplit,
-  fetchOrder,
-  fetchOrderSplit,
-  openOrderEvents,
-  reportSplitPartPayment,
-  requestCashPayment,
-} from "../api/clientApi";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fetchOrder, openOrderEvents } from "../api/clientApi";
 import { statusLabel } from "../utils/statusLabels";
 
 function statusClass(status) {
@@ -18,65 +10,39 @@ function statusClass(status) {
   return "badge";
 }
 
-function toMoney(value) {
-  return `$${Math.round(Number(value || 0)).toLocaleString("es-AR")}`;
+function statusIcon(status) {
+  if (status === "RECEIVED") return "🧾";
+  if (status === "IN_PROGRESS") return "🍳";
+  if (status === "DONE") return "✅";
+  if (status === "DELIVERED") return "🍽️";
+  return "•";
 }
 
-export function OrderTrackingPage({
-  orderId,
-  tableCode = "",
-  clientId = "",
-  feedbackLocked = false,
-}) {
+function sectorLabel(sector) {
+  if (sector === "WAITER") return "Mozo";
+  if (sector === "BAR") return "Bar";
+  if (sector === "KITCHEN") return "Cocina";
+  return sector || "Sector";
+}
+
+function formatShortDate(value) {
+  if (!value) return "-";
+  try {
+    return new Date(value).toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "-";
+  }
+}
+
+export function OrderTrackingPage({ orderId }) {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
   const [liveConnected, setLiveConnected] = useState(false);
-  const [billSplit, setBillSplit] = useState(null);
-  const [splitError, setSplitError] = useState("");
-  const [splitBusy, setSplitBusy] = useState(false);
-  const [splitHint, setSplitHint] = useState("");
-  const [cashNote, setCashNote] = useState("");
-  const [payerByPart, setPayerByPart] = useState({});
-
-  const sectorCards = useMemo(() => {
-    const map = new Map();
-    const sectors = order?.sectors || [];
-    sectors.forEach((sector) => {
-      const key = String(sector.sector || "").trim().toUpperCase();
-      const previous = map.get(key);
-      if (!previous) {
-        map.set(key, { ...sector, sector: key });
-        return;
-      }
-      const prevTs = new Date(previous.updated_at || 0).getTime();
-      const nextTs = new Date(sector.updated_at || 0).getTime();
-      if (nextTs >= prevTs) {
-        map.set(key, { ...sector, sector: key });
-      }
-    });
-    return Array.from(map.values());
-  }, [order?.sectors]);
-
-  const loadSplit = useCallback(async () => {
-    if (!orderId) {
-      setBillSplit(null);
-      setSplitError("");
-      return;
-    }
-    try {
-      const split = await fetchOrderSplit(orderId);
-      setBillSplit(split);
-      setSplitError("");
-      setSplitHint("");
-    } catch (err) {
-      if (err?.status === 404) {
-        setBillSplit(null);
-        setSplitError("");
-        return;
-      }
-      setSplitError(err.message || "No se pudo cargar el estado de pago.");
-    }
-  }, [orderId]);
+  const [recentlyChangedIds, setRecentlyChangedIds] = useState({});
+  const previousStatusByItemRef = useRef({});
 
   useEffect(() => {
     if (!orderId) {
@@ -100,9 +66,7 @@ export function OrderTrackingPage({
     };
 
     tick();
-    loadSplit();
     const timer = setInterval(tick, 7000);
-    const splitTimer = setInterval(loadSplit, 9000);
     const stream = openOrderEvents(orderId);
     let refreshTimer = null;
 
@@ -111,7 +75,6 @@ export function OrderTrackingPage({
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
         tick();
-        loadSplit();
       }, 200);
     };
 
@@ -120,109 +83,96 @@ export function OrderTrackingPage({
     stream.onmessage = scheduleRefresh;
     stream.addEventListener("items.changed", scheduleRefresh);
     stream.addEventListener("order.created", scheduleRefresh);
-    stream.addEventListener("bill.split.updated", scheduleRefresh);
 
     return () => {
       mounted = false;
       clearInterval(timer);
-      clearInterval(splitTimer);
       if (refreshTimer) clearTimeout(refreshTimer);
       stream.close();
       setLiveConnected(false);
     };
-  }, [orderId, loadSplit]);
+  }, [orderId]);
 
-  const createSplitByConsumption = async () => {
-    if (!orderId || splitBusy) return;
-    setSplitBusy(true);
-    setSplitError("");
-    setSplitHint("");
-    try {
-      const payload = await createConsumptionSplit({ orderId });
-      setBillSplit(payload);
-      setSplitHint("Division por consumo creada.");
-    } catch (err) {
-      setSplitError(err.message || "No se pudo crear la division por consumo.");
-    } finally {
-      setSplitBusy(false);
-    }
-  };
+  const summary = useMemo(() => {
+    const items = order?.items || [];
+    const totalQty = items.reduce((acc, item) => acc + Number(item.qty || 0), 0);
+    const deliveredQty = items.reduce(
+      (acc, item) => acc + (item.status === "DELIVERED" ? Number(item.qty || 0) : 0),
+      0
+    );
+    const doneQty = items.reduce(
+      (acc, item) =>
+        acc + (item.status === "DONE" || item.status === "DELIVERED" ? Number(item.qty || 0) : 0),
+      0
+    );
+    const progress = totalQty > 0 ? Math.round((deliveredQty / totalQty) * 100) : 0;
+    const prepProgress = totalQty > 0 ? Math.round((doneQty / totalQty) * 100) : 0;
+    return { totalQty, deliveredQty, doneQty, progress, prepProgress };
+  }, [order?.items]);
 
-  const reportPart = async (partId) => {
-    if (splitBusy) return;
-    const fallback = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
-    const payerLabel = (payerByPart[partId] || fallback).trim();
-    if (!payerLabel) return;
+  const sectorCards = useMemo(() => {
+    const items = order?.items || [];
+    const map = new Map();
+    items.forEach((item) => {
+      const sector = String(item.sector || "").toUpperCase() || "OTHER";
+      const prev = map.get(sector) || { sector, total: 0, delivered: 0, done: 0 };
+      prev.total += Number(item.qty || 0);
+      if (item.status === "DELIVERED") prev.delivered += Number(item.qty || 0);
+      if (item.status === "DONE" || item.status === "DELIVERED") prev.done += Number(item.qty || 0);
+      map.set(sector, prev);
+    });
+    const orderBySector = { WAITER: 0, BAR: 1, KITCHEN: 2 };
+    return Array.from(map.values()).sort(
+      (a, b) => (orderBySector[a.sector] ?? 99) - (orderBySector[b.sector] ?? 99)
+    );
+  }, [order?.items]);
 
-    setSplitBusy(true);
-    setSplitError("");
-    setSplitHint("");
-    try {
-      const payload = await reportSplitPartPayment({ partId, payerLabel });
-      setBillSplit(payload);
-      setSplitHint("Pago reportado. El staff debe validarlo y cerrar la mesa.");
-    } catch (err) {
-      setSplitError(err.message || "No se pudo reportar el pago.");
-    } finally {
-      setSplitBusy(false);
-    }
-  };
+  const sortedItems = useMemo(() => {
+    const statusOrder = { IN_PROGRESS: 0, RECEIVED: 1, DONE: 2, DELIVERED: 3 };
+    return [...(order?.items || [])].sort((a, b) => {
+      const aKey = statusOrder[a.status] ?? 99;
+      const bKey = statusOrder[b.status] ?? 99;
+      if (aKey !== bKey) return aKey - bKey;
+      return String(a.product_name || "").localeCompare(String(b.product_name || ""), "es");
+    });
+  }, [order?.items]);
 
-  const payWithoutSplit = async () => {
-    if (!orderId || splitBusy) return;
-    setSplitBusy(true);
-    setSplitError("");
-    setSplitHint("");
-    try {
-      let activeSplit = billSplit;
-      if (!activeSplit) {
-        activeSplit = await createEqualSplit({ orderId, partsCount: 1 });
+  useEffect(() => {
+    const items = order?.items || [];
+    if (items.length === 0) return;
+
+    const previous = previousStatusByItemRef.current;
+    const changed = {};
+
+    items.forEach((item) => {
+      const currentStatus = String(item.status || "");
+      const previousStatus = previous[item.id];
+      if (previousStatus && previousStatus !== currentStatus) {
+        changed[item.id] = Date.now();
       }
+      previous[item.id] = currentStatus;
+    });
 
-      const pendingPart = (activeSplit.parts || []).find((part) => part.payment_status === "PENDING");
-      if (!pendingPart) {
-        setSplitHint("El pago ya fue reportado. Queda pendiente validacion del staff.");
-        setBillSplit(activeSplit);
-        return;
-      }
+    if (Object.keys(changed).length === 0) return;
 
-      const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
-      const payload = await reportSplitPartPayment({ partId: pendingPart.id, payerLabel });
-      setBillSplit(payload);
-      setSplitHint("Pago reportado. El staff debe validarlo y cerrar la mesa.");
-    } catch (err) {
-      setSplitError(err.message || "No se pudo reportar el pago.");
-    } finally {
-      setSplitBusy(false);
-    }
-  };
-
-  const requestCash = async () => {
-    if (!orderId || splitBusy) return;
-    const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
-    setSplitBusy(true);
-    setSplitError("");
-    setSplitHint("");
-    try {
-      await requestCashPayment({
-        orderId,
-        clientId,
-        payerLabel,
-        note: cashNote,
+    setRecentlyChangedIds((current) => ({ ...current, ...changed }));
+    const timer = setTimeout(() => {
+      setRecentlyChangedIds((current) => {
+        const next = { ...current };
+        Object.keys(changed).forEach((id) => {
+          delete next[id];
+        });
+        return next;
       });
-      setSplitHint("Aviso enviado: un mozo se acerca para cobrar en efectivo.");
-      setCashNote("");
-    } catch (err) {
-      setSplitError(err.message || "No se pudo solicitar pago en efectivo.");
-    } finally {
-      setSplitBusy(false);
-    }
-  };
+    }, 1400);
+
+    return () => clearTimeout(timer);
+  }, [order?.items]);
 
   if (!orderId) {
     return (
       <section className="panel" id="tracking-section">
-        <h2>Estado de tu pedido</h2>
+        <h2>Estado del pedido</h2>
         <p className="muted">Todavia no hiciste un pedido.</p>
       </section>
     );
@@ -231,123 +181,90 @@ export function OrderTrackingPage({
   if (!order) {
     return (
       <section className="panel" id="tracking-section">
-        <h2>Estado de tu pedido</h2>
+        <h2>Estado del pedido</h2>
         <p className="muted">Cargando estado...</p>
       </section>
     );
   }
 
   return (
-    <section className="panel" id="tracking-section">
-      <h2>Estado de tu pedido</h2>
+    <section className="panel tracking-compact" id="tracking-section">
       <div className="tracking-head">
         <p>
-          Pedido <strong>#{order.id}</strong> - Ticket <strong>{order.ticket_number}</strong>
+          Pedido <strong>#{order.id}</strong>
         </p>
-        <span className={statusClass(order.status_aggregated)}>{statusLabel(order.status_aggregated)}</span>
+        <span className={statusClass(order.status_aggregated)}>
+          {statusIcon(order.status_aggregated)} {statusLabel(order.status_aggregated)}
+        </span>
       </div>
+
       <p className={liveConnected ? "live-pill live-pill-on" : "live-pill"}>
-        {liveConnected ? "Actualizacion en vivo activa" : "Reconectando actualizacion en vivo"}
+        {liveConnected ? "En vivo" : "Reconectando"}
       </p>
       {error && <p className="warning-text">{error}</p>}
 
-      <div className="tracking-grid">
-        {sectorCards.map((sector, idx) => (
-          <article className="tracking-card" key={`${sector.sector}:${idx}`}>
-            <p className="muted">{sector.sector}</p>
-            <p>
-              <span className={statusClass(sector.status)}>{statusLabel(sector.status)}</span>
-            </p>
-            <p className="muted">{new Date(sector.updated_at).toLocaleString("es-AR")}</p>
+      <div className="tracking-progress-card">
+        <div className="tracking-progress-row">
+          <span>Preparacion</span>
+          <strong>
+            {summary.doneQty}/{summary.totalQty}
+          </strong>
+        </div>
+        <div className="tracking-progress-bar">
+          <div className="tracking-progress-fill tracking-progress-fill-prep" style={{ width: `${summary.prepProgress}%` }} />
+        </div>
+        <div className="tracking-progress-row">
+          <span>Entregado</span>
+          <strong>
+            {summary.deliveredQty}/{summary.totalQty}
+          </strong>
+        </div>
+        <div className="tracking-progress-bar">
+          <div className="tracking-progress-fill" style={{ width: `${summary.progress}%` }} />
+        </div>
+      </div>
+
+      <div className="tracking-sector-list">
+        {sectorCards.map((sector) => (
+          <article className="tracking-sector-chip" key={sector.sector}>
+            <p>{sectorLabel(sector.sector)}</p>
+            <strong>
+              {sector.delivered}/{sector.total}
+            </strong>
           </article>
         ))}
       </div>
 
-      <h3>Items</h3>
-      <ul className="tracking-items">
-        {order.items.map((item) => (
-          <li key={item.id}>
-            {item.qty}x {item.product_name} <span className="muted">({item.sector})</span>
-          </li>
-        ))}
-      </ul>
-
-      <article className="split-card">
-        <h3>Pago</h3>
-        {splitError && <p className="warning-text">{splitError}</p>}
-        {splitHint && <p className="muted">{splitHint}</p>}
-
-        {!billSplit && (
-          <div className="split-quick-actions">
-            <button type="button" className="btn-primary" onClick={payWithoutSplit} disabled={splitBusy}>
-              {splitBusy ? "Procesando..." : "Pagar todo"}
-            </button>
-            <button type="button" className="btn-secondary" onClick={createSplitByConsumption} disabled={splitBusy}>
-              {splitBusy ? "Creando..." : "Dividir por consumo"}
-            </button>
-            <button type="button" className="btn-secondary" onClick={requestCash} disabled={splitBusy}>
-              {splitBusy ? "..." : "Llamar mozo (efectivo)"}
-            </button>
-          </div>
-        )}
-        <div className="split-create">
-          <label className="field split-field">
-            Nota para cobro en efectivo (opcional)
-            <input
-              type="text"
-              maxLength="250"
-              value={cashNote}
-              onChange={(e) => setCashNote(e.target.value)}
-              placeholder="Ej: pagar en caja / necesito vuelto"
-            />
-          </label>
-        </div>
-
-        {billSplit && (
-          <div className="split-body">
-            <p className="muted">
-              Estado: <strong>{billSplit.status}</strong> | Total: <strong>{toMoney(billSplit.total_amount)}</strong>
-            </p>
-            <div className="split-parts">
-              {billSplit.parts?.map((part) => (
-                <div className="split-part" key={part.id}>
-                  <div className="split-part-head">
-                    <strong>{part.label}</strong>
-                    <span className="badge">{part.payment_status}</span>
-                  </div>
-                  <p className="muted">{toMoney(part.amount)}</p>
-                  {part.payment_status === "PENDING" && (
-                    <div className="split-part-actions">
-                      <input
-                        value={payerByPart[part.id] ?? ""}
-                        onChange={(e) => setPayerByPart((current) => ({ ...current, [part.id]: e.target.value }))}
-                        placeholder={tableCode ? `Mesa ${tableCode}` : "Tu nombre"}
-                      />
-                      <button type="button" className="btn-secondary" onClick={() => reportPart(part.id)} disabled={splitBusy}>
-                        {splitBusy ? "..." : "Reportar pago"}
-                      </button>
-                    </div>
-                  )}
-                  {part.payment_status !== "PENDING" && (
-                    <p className="muted">
-                      {part.payment_status === "REPORTED" ? "Reportado" : "Confirmado"} por {part.reported_by || "-"}
-                    </p>
-                  )}
-                </div>
-              ))}
+      <div className="tracking-items-compact">
+        {sortedItems.map((item) => (
+          <article
+            key={item.id}
+            className={[
+              "tracking-item-row",
+              item.status === "DELIVERED" ? "tracking-item-row-delivered" : "",
+              recentlyChangedIds[item.id]
+                ? item.status === "DELIVERED"
+                  ? "tracking-item-row-updated-delivered"
+                  : "tracking-item-row-updated-prep"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <div className="tracking-item-main">
+              <h4>
+                {item.qty}x {item.product_name}
+              </h4>
+              <p className="muted">
+                {sectorLabel(item.sector)} | {formatShortDate(item.updated_at)}
+              </p>
             </div>
-          </div>
-        )}
-      </article>
-
-      <article className="split-card">
-        <h3>Feedback</h3>
-        {feedbackLocked ? (
-          <p className="muted">Cuando el staff cierre la mesa se abrira la pantalla de estrellas y comentario.</p>
-        ) : (
-          <p className="muted">Mesa cerrada. Ya podes puntuar y dejar comentario.</p>
-        )}
-      </article>
+            <span className={statusClass(item.status)}>
+              {statusIcon(item.status)} {statusLabel(item.status)}
+            </span>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

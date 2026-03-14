@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  createAdminProductExtraOption,
   createAdminProduct,
   fetchAdminMenuCategories,
   fetchAdminMenuProducts,
+  patchAdminProductExtraOption,
   patchAdminProduct,
   uploadMenuImage,
 } from "../api/staffApi";
@@ -31,6 +33,7 @@ export function MenuEditorPage({ token, storeId }) {
   const [imageUploading, setImageUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [extraForm, setExtraForm] = useState({ name: "", extra_price: "0" });
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -55,6 +58,7 @@ export function MenuEditorPage({ token, storeId }) {
 
   const resetForm = useCallback(() => {
     setForm(DEFAULT_FORM);
+    setExtraForm({ name: "", extra_price: "0" });
     setEditingId(null);
     setMessage("");
     setError("");
@@ -72,10 +76,16 @@ export function MenuEditorPage({ token, storeId }) {
         active: product.active,
       });
       setEditingId(product.id);
+      setExtraForm({ name: "", extra_price: "0" });
       setMessage("");
       setError("");
     },
     []
+  );
+
+  const activeProduct = useMemo(
+    () => products.find((product) => product.id === editingId) || null,
+    [products, editingId]
   );
 
   const handleFileChange = useCallback(
@@ -149,6 +159,56 @@ export function MenuEditorPage({ token, storeId }) {
         await loadData();
       } catch (err) {
         setError(err.message || "No se pudo actualizar el estado.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [token, loadData]
+  );
+
+  const createExtraOption = useCallback(async () => {
+    if (!editingId) return;
+    const name = extraForm.name.trim();
+    if (!name) {
+      setError("El nombre del extra es obligatorio.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await createAdminProductExtraOption({
+        token,
+        productId: editingId,
+        payload: {
+          name,
+          extra_price: Number(extraForm.extra_price || 0),
+          active: true,
+        },
+      });
+      setExtraForm({ name: "", extra_price: "0" });
+      setMessage("Extra agregado.");
+      await loadData();
+    } catch (err) {
+      setError(err.message || "No se pudo crear el extra.");
+    } finally {
+      setSaving(false);
+    }
+  }, [editingId, extraForm, loadData, token]);
+
+  const toggleExtraOption = useCallback(
+    async (extra) => {
+      setSaving(true);
+      setError("");
+      try {
+        await patchAdminProductExtraOption({
+          token,
+          extraOptionId: extra.id,
+          payload: { active: !extra.active },
+        });
+        await loadData();
+      } catch (err) {
+        setError(err.message || "No se pudo actualizar el extra.");
       } finally {
         setSaving(false);
       }
@@ -274,6 +334,57 @@ export function MenuEditorPage({ token, storeId }) {
         {error && <p className="error-text">{error}</p>}
       </form>
 
+      {editingId && (
+        <div className="menu-list">
+          <h4>Extras del producto</h4>
+          <p className="muted">
+            Producto: <strong>{activeProduct?.name || `#${editingId}`}</strong>
+          </p>
+          <div className="form-grid">
+            <label className="field">
+              Nombre extra
+              <input
+                value={extraForm.name}
+                onChange={(event) => setExtraForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Doble queso"
+              />
+            </label>
+            <label className="field">
+              Precio extra
+              <input
+                type="number"
+                min="0"
+                step="10"
+                value={extraForm.extra_price}
+                onChange={(event) => setExtraForm((prev) => ({ ...prev, extra_price: event.target.value }))}
+              />
+            </label>
+          </div>
+          <div className="form-actions">
+            <button className="btn-primary" type="button" onClick={createExtraOption} disabled={saving || loading}>
+              Agregar extra
+            </button>
+          </div>
+          <div className="menu-products">
+            {(activeProduct?.extra_options || []).map((extra) => (
+              <article key={extra.id} className="menu-product">
+                <div className="menu-product-meta">
+                  <strong>{extra.name}</strong>
+                  <span>+$ {extra.extra_price}</span>
+                  <span className="muted">{extra.active ? "Activo" : "Inactivo"}</span>
+                </div>
+                <div className="menu-product-actions">
+                  <button className="btn-secondary small" onClick={() => toggleExtraOption(extra)}>
+                    {extra.active ? "Desactivar" : "Activar"}
+                  </button>
+                </div>
+              </article>
+            ))}
+            {!activeProduct?.extra_options?.length && <p className="muted">Este producto no tiene extras.</p>}
+          </div>
+        </div>
+      )}
+
       <div className="menu-list">
         <h4>Productos ({products.length})</h4>
         {loading ? (
@@ -286,7 +397,11 @@ export function MenuEditorPage({ token, storeId }) {
                   <strong>{product.name}</strong>
                   <span className="muted">{product.fulfillment_sector}</span>
                   <span>{product.description}</span>
-                  <span>₱ {product.base_price}</span>
+                  <span>$ {product.base_price}</span>
+                  <span className="muted">
+                    Extras: {(product.extra_options || []).filter((extra) => extra.active).length} activos /{" "}
+                    {(product.extra_options || []).length} total
+                  </span>
                 </div>
                 <div className="menu-product-actions">
                   <button className="btn-secondary small" onClick={() => handleEdit(product)}>

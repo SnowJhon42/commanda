@@ -9,6 +9,7 @@ from app.db.models import (
     OrderItem,
     OrderStatus,
     Product,
+    ProductExtraOption,
     ProductVariant,
     Table,
     TableSession,
@@ -74,6 +75,28 @@ def _add_items_to_order(db: Session, *, store_id: int, order: Order, items: list
             if not variant:
                 raise HTTPException(status_code=404, detail=f"Variant {raw_item.variant_id} not found")
             variant_price = float(variant.extra_price)
+        extra_option_ids = sorted({int(extra_id) for extra_id in (raw_item.extra_option_ids or [])})
+        extras_total = 0.0
+        extra_names: list[str] = []
+        if extra_option_ids:
+            extras = db.scalars(
+                select(ProductExtraOption).where(
+                    ProductExtraOption.product_id == product.id,
+                    ProductExtraOption.id.in_(extra_option_ids),
+                    ProductExtraOption.active == True,
+                )
+            ).all()
+            if len(extras) != len(extra_option_ids):
+                raise HTTPException(status_code=422, detail="One or more extras are invalid for this product")
+            extras_total = sum(float(extra.extra_price) for extra in extras)
+            extra_names = [extra.name for extra in sorted(extras, key=lambda row: row.id)]
+
+        notes_parts: list[str] = []
+        if raw_item.notes and raw_item.notes.strip():
+            notes_parts.append(raw_item.notes.strip())
+        if extra_names:
+            notes_parts.append(f"Extras: {', '.join(extra_names)}")
+        merged_notes = " | ".join(notes_parts) if notes_parts else None
 
         sector = route_item_to_sector(product)
         sectors_present.add(sector)
@@ -84,8 +107,8 @@ def _add_items_to_order(db: Session, *, store_id: int, order: Order, items: list
                 variant_id=raw_item.variant_id,
                 created_by_client_id=client_id,
                 qty=raw_item.qty,
-                unit_price=float(product.base_price) + variant_price,
-                notes=raw_item.notes,
+                unit_price=float(product.base_price) + variant_price + extras_total,
+                notes=merged_notes,
                 sector=sector,
                 status=OrderStatus.RECEIVED.value,
             )

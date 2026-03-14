@@ -7,10 +7,12 @@ import {
   fetchStaffBoardItems,
   fetchTableSessions,
   fetchStaffOrderItems,
+  fetchStoreClientVisibility,
   openStaffEvents,
   closeTableSession,
   confirmSplitPart,
   createEqualSplit,
+  patchStoreClientVisibility,
   resolveCashRequest,
   patchItemStatus,
   patchTableSessionStatus,
@@ -104,6 +106,8 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackSummary, setFeedbackSummary] = useState(null);
+  const [showLiveTotalToClient, setShowLiveTotalToClient] = useState(true);
+  const [updatingClientVisibility, setUpdatingClientVisibility] = useState(false);
   const [advancingKey, setAdvancingKey] = useState("");
   const [tableSessionsRows, setTableSessionsRows] = useState([]);
   const [tableSessionsLoading, setTableSessionsLoading] = useState(false);
@@ -220,7 +224,7 @@ export function App() {
       const data = await fetchTableSessions({
         token: session.access_token,
         storeId: session.staff.store_id,
-        onlyWithoutOrder: true,
+        onlyWithoutOrder: false,
       });
       setTableSessionsRows(data.items || []);
     } catch (err) {
@@ -245,6 +249,19 @@ export function App() {
       setError(err.message || "No se pudo cargar feedback de clientes.");
     } finally {
       setFeedbackLoading(false);
+    }
+  }, [session]);
+
+  const loadStoreClientVisibility = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    try {
+      const data = await fetchStoreClientVisibility({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+      });
+      setShowLiveTotalToClient(Boolean(data.show_live_total_to_client));
+    } catch (err) {
+      setError(err.message || "No se pudo cargar visibilidad de total para cliente.");
     }
   }, [session]);
 
@@ -383,6 +400,24 @@ export function App() {
     [session, loadTableSessions, loadBoard]
   );
 
+  const toggleClientTotalVisibility = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    setUpdatingClientVisibility(true);
+    setError("");
+    try {
+      const data = await patchStoreClientVisibility({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+        showLiveTotalToClient: !showLiveTotalToClient,
+      });
+      setShowLiveTotalToClient(Boolean(data.show_live_total_to_client));
+    } catch (err) {
+      setError(err.message || "No se pudo actualizar visibilidad de total para cliente.");
+    } finally {
+      setUpdatingClientVisibility(false);
+    }
+  }, [session, showLiveTotalToClient]);
+
   const board = useMemo(() => {
     const alertMetaByOrder = boardRows.reduce((acc, row) => {
       const mediumThreshold = mediumThresholdBySector(staffSector);
@@ -495,9 +530,12 @@ export function App() {
       }
     };
     poll();
+    if (session.staff.sector === "ADMIN") {
+      loadStoreClientVisibility();
+    }
     const timer = setInterval(poll, 10000);
     return () => clearInterval(timer);
-  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail]);
+  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility]);
 
   useEffect(() => {
     if (!session || (session.staff.sector === "ADMIN" && adminView === "MENU")) return;
@@ -674,6 +712,15 @@ export function App() {
               <input type="checkbox" checked={alertsOnly} onChange={(e) => setAlertsOnly(e.target.checked)} />
             </label>
           )}
+          <label className="field inline-field">
+            <span>Total visible cliente</span>
+            <input
+              type="checkbox"
+              checked={showLiveTotalToClient}
+              onChange={toggleClientTotalVisibility}
+              disabled={updatingClientVisibility}
+            />
+          </label>
         </section>
       )}
 
@@ -696,7 +743,6 @@ export function App() {
         actorSector={staffSector}
         busyId={tableSessionBusyId}
         onMarkRetired={(id) => markTableSession(id, "SE_RETIRARON")}
-        onClose={(id) => markTableSession(id, "CLOSED")}
       />
       {staffSector === "ADMIN" && adminView === "FEEDBACK" ? (
         <FeedbackSummaryPage loading={feedbackLoading} summary={feedbackSummary} />

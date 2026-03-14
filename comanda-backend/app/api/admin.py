@@ -12,6 +12,7 @@ from app.db.models import (
     OrderItem,
     OrderStatus,
     Product,
+    ProductExtraOption,
     Sector,
     StaffAccount,
     Table,
@@ -20,6 +21,9 @@ from app.db.models import (
 from app.db.session import get_db
 from app.schemas.menu import (
     CategoryOut,
+    ExtraOptionCreateIn,
+    ExtraOptionOut,
+    ExtraOptionUpdateIn,
     ImageUploadOut,
     ImageUrlPatchIn,
     ImageUrlPatchOut,
@@ -61,6 +65,15 @@ def _product_out(product: Product) -> ProductOut:
             VariantOut(id=variant.id, name=variant.name, extra_price=float(variant.extra_price))
             for variant in sorted(product.variants, key=lambda variant: variant.id)
         ],
+        extra_options=[
+            ExtraOptionOut(
+                id=extra.id,
+                name=extra.name,
+                extra_price=float(extra.extra_price),
+                active=bool(extra.active),
+            )
+            for extra in sorted(product.extra_options, key=lambda extra: extra.id)
+        ],
         active=product.active,
     )
 
@@ -92,7 +105,7 @@ def list_admin_menu_products(
         db.execute(
             select(Product)
             .where(Product.store_id == current_staff.store_id)
-            .options(joinedload(Product.variants))
+            .options(joinedload(Product.variants), joinedload(Product.extra_options))
             .order_by(Product.id.asc())
         )
         .unique()
@@ -136,6 +149,7 @@ def create_admin_product(
     db.add(product)
     db.commit()
     db.refresh(product)
+    db.refresh(product, attribute_names=["variants", "extra_options"])
     return _product_out(product)
 
 
@@ -180,7 +194,61 @@ def update_admin_product(
     db.add(product)
     db.commit()
     db.refresh(product)
+    db.refresh(product, attribute_names=["variants", "extra_options"])
     return _product_out(product)
+
+
+@router.post("/menu/products/{product_id}/extra-options", response_model=ExtraOptionOut, status_code=201)
+def create_product_extra_option(
+    product_id: int,
+    payload: ExtraOptionCreateIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ExtraOptionOut:
+    _ensure_admin(current_staff)
+    product = db.scalar(select(Product).where(Product.id == product_id, Product.store_id == current_staff.store_id))
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    extra = ProductExtraOption(
+        product_id=product.id,
+        name=payload.name.strip(),
+        extra_price=payload.extra_price,
+        active=payload.active,
+    )
+    db.add(extra)
+    db.commit()
+    db.refresh(extra)
+    return ExtraOptionOut(id=extra.id, name=extra.name, extra_price=float(extra.extra_price), active=bool(extra.active))
+
+
+@router.patch("/menu/extra-options/{extra_option_id}", response_model=ExtraOptionOut)
+def update_product_extra_option(
+    extra_option_id: int,
+    payload: ExtraOptionUpdateIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ExtraOptionOut:
+    _ensure_admin(current_staff)
+    extra = db.scalar(
+        select(ProductExtraOption)
+        .join(Product, Product.id == ProductExtraOption.product_id)
+        .where(ProductExtraOption.id == extra_option_id, Product.store_id == current_staff.store_id)
+    )
+    if not extra:
+        raise HTTPException(status_code=404, detail="Extra option not found")
+
+    if payload.name is not None:
+        extra.name = payload.name.strip()
+    if payload.extra_price is not None:
+        extra.extra_price = payload.extra_price
+    if payload.active is not None:
+        extra.active = payload.active
+
+    db.add(extra)
+    db.commit()
+    db.refresh(extra)
+    return ExtraOptionOut(id=extra.id, name=extra.name, extra_price=float(extra.extra_price), active=bool(extra.active))
 
 
 @router.post("/menu/images", response_model=ImageUploadOut)
@@ -256,6 +324,7 @@ def list_admin_orders(
         query = query.where(Order.status_aggregated == status)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     orders_with_table = db.execute(query.order_by(Order.created_at.desc()).limit(limit).offset(offset)).unique().all()
+    now_utc = datetime.now(tz=timezone.utc)
 
     return AdminOrdersResponse(
         total=total,
@@ -272,7 +341,30 @@ def list_admin_orders(
                     SectorStatusOut(sector=item.sector, status=item.status)
                     for item in sorted(order.items, key=lambda row: (row.sector, row.id))
                 ],
+                elapsed_minutes=max(
+                    0,
+                    int(
+                        (
+                            (
+                                now_utc
+                                if order.status_aggregated != OrderStatus.DELIVERED.value
+                                else (
+                                    order.updated_at.replace(tzinfo=timezone.utc)
+                                    if order.updated_at.tzinfo is None
+                                    else order.updated_at
+                                )
+                            )
+                            - (
+                                order.created_at.replace(tzinfo=timezone.utc)
+                                if order.created_at.tzinfo is None
+                                else order.created_at
+                            )
+                        ).total_seconds()
+                        // 60
+                    ),
+                ),
                 created_at=order.created_at,
+                updated_at=order.updated_at,
             )
             for order, table in orders_with_table
         ],
@@ -336,6 +428,8 @@ def get_admin_order_items_detail(
                 guest_count=order.guest_count,
                 item_name=item.product.name,
                 qty=item.qty,
+                unit_price=float(item.unit_price),
+                notes=item.notes,
                 sector=item.sector,
                 status=item.status,
                 created_at=item.created_at,
@@ -367,6 +461,7 @@ def get_admin_order_items_detail(
                 "order_id": req.order_id,
                 "client_id": req.client_id,
                 "payer_label": req.payer_label,
+                "request_kind": req.request_kind,
                 "note": req.note,
                 "status": req.status,
                 "created_at": req.created_at,

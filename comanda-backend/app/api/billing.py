@@ -11,6 +11,7 @@ from app.db.models import (
     BillSplit,
     BillSplitPart,
     BillSplitStatus,
+    CashRequestKind,
     CashRequestStatus,
     Order,
     OrderItem,
@@ -67,6 +68,7 @@ def _cash_request_out(req: TableSessionCashRequest) -> TableSessionCashRequestOu
         order_id=req.order_id,
         client_id=req.client_id,
         payer_label=req.payer_label,
+        request_kind=req.request_kind or CashRequestKind.CASH_PAYMENT.value,
         note=req.note,
         status=req.status,
         created_at=req.created_at,
@@ -200,18 +202,22 @@ def request_cash_payment(
     if not order.table_session_id:
         raise HTTPException(status_code=409, detail="Order is not linked to table session")
 
-    existing = db.scalar(
-        select(TableSessionCashRequest)
-        .where(
-            TableSessionCashRequest.order_id == order_id,
-            TableSessionCashRequest.client_id == payload.client_id,
-            TableSessionCashRequest.status == CashRequestStatus.PENDING.value,
+    # Waiter call is an operational alert and should be re-emittable each tap.
+    # Cash payment request remains deduplicated while pending.
+    if (payload.request_kind or CashRequestKind.CASH_PAYMENT.value) == CashRequestKind.CASH_PAYMENT.value:
+        existing = db.scalar(
+            select(TableSessionCashRequest)
+            .where(
+                TableSessionCashRequest.order_id == order_id,
+                TableSessionCashRequest.client_id == payload.client_id,
+                TableSessionCashRequest.request_kind == CashRequestKind.CASH_PAYMENT.value,
+                TableSessionCashRequest.status == CashRequestStatus.PENDING.value,
+            )
+            .order_by(TableSessionCashRequest.id.desc())
+            .limit(1)
         )
-        .order_by(TableSessionCashRequest.id.desc())
-        .limit(1)
-    )
-    if existing:
-        return _cash_request_out(existing)
+        if existing:
+            return _cash_request_out(existing)
 
     cash_request = TableSessionCashRequest(
         table_session_id=order.table_session_id,
@@ -219,6 +225,7 @@ def request_cash_payment(
         store_id=order.store_id,
         client_id=payload.client_id,
         payer_label=payload.payer_label.strip(),
+        request_kind=payload.request_kind or CashRequestKind.CASH_PAYMENT.value,
         note=payload.note.strip() if payload.note else None,
         status=CashRequestStatus.PENDING.value,
         created_at=datetime.utcnow(),
@@ -235,6 +242,7 @@ def request_cash_payment(
             "table_session_id": order.table_session_id,
             "store_id": order.store_id,
             "payer_label": cash_request.payer_label,
+            "request_kind": cash_request.request_kind,
         },
     )
     return _cash_request_out(cash_request)
@@ -272,6 +280,7 @@ def resolve_cash_payment_request(
             "order_id": cash_request.order_id,
             "table_session_id": cash_request.table_session_id,
             "store_id": cash_request.store_id,
+            "request_kind": cash_request.request_kind,
         },
     )
     return _cash_request_out(cash_request)

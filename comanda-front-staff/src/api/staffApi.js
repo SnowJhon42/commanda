@@ -136,6 +136,37 @@ export async function fetchFeedbackSummary({ token, storeId, limit = 20 }) {
   }
 }
 
+export async function fetchStoreClientVisibility({ token, storeId }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/client-visibility?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar configuracion de visibilidad.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar configuracion de visibilidad.");
+  }
+}
+
+export async function patchStoreClientVisibility({ token, storeId, showLiveTotalToClient }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/client-visibility?${qs.toString()}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ show_live_total_to_client: Boolean(showLiveTotalToClient) }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo actualizar configuracion de visibilidad.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar configuracion de visibilidad.");
+  }
+}
+
 export async function patchItemStatus({ token, itemId, toStatus }) {
   try {
     const res = await fetch(`${API_URL}/staff/items/${itemId}/status`, {
@@ -263,6 +294,40 @@ export async function patchAdminProduct({ token, productId, payload }) {
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudo actualizar el producto.");
+  }
+}
+
+export async function createAdminProductExtraOption({ token, productId, payload }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/products/${productId}/extra-options`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo crear el extra.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo crear el extra.");
+  }
+}
+
+export async function patchAdminProductExtraOption({ token, extraOptionId, payload }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/extra-options/${extraOptionId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo actualizar el extra.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar el extra.");
   }
 }
 
