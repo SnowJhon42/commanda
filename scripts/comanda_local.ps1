@@ -179,6 +179,52 @@ function Wait-Url {
   return $false
 }
 
+function Test-ProcessAlive {
+  param([int]$ProcessId)
+  if (-not $ProcessId) { return $false }
+  try {
+    $null = Get-Process -Id $ProcessId -ErrorAction Stop
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Wait-Services {
+  param(
+    [array]$Checks,
+    [int]$MaxSeconds = 40
+  )
+
+  $deadline = (Get-Date).AddSeconds($MaxSeconds)
+  $pending = @{}
+  foreach ($check in $Checks) {
+    $pending[$check.Name] = $check
+  }
+
+  while ($pending.Count -gt 0 -and (Get-Date) -lt $deadline) {
+    foreach ($name in @($pending.Keys)) {
+      $check = $pending[$name]
+
+      if ($check.ProcessId -and -not (Test-ProcessAlive -ProcessId $check.ProcessId)) {
+        return $false
+      }
+
+      try {
+        $null = Invoke-WebRequest -UseBasicParsing $check.Url -TimeoutSec 3
+        $pending.Remove($name)
+      } catch {
+      }
+    }
+
+    if ($pending.Count -gt 0) {
+      Start-Sleep -Milliseconds 1200
+    }
+  }
+
+  return $pending.Count -eq 0
+}
+
 function Ensure-NodeModules {
   param([string]$ProjectPath, [string]$Label)
   $nm = Join-Path $ProjectPath "node_modules"
@@ -236,7 +282,9 @@ function Action-BackendUp {
   $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
   Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
 
-  $backendUp = Wait-Url -Url "http://localhost:8000/health" -MaxSeconds 40
+  $backendUp = Wait-Services -Checks @(
+    @{ Name = "Backend"; Url = "http://localhost:8000/health"; ProcessId = $backendProc.Id }
+  ) -MaxSeconds 40
   $null = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
   if (-not $backendUp) {
     exit 1
@@ -263,9 +311,11 @@ function Action-Up {
   Write-PidFile -Path $clientPidFile -ProcessId $clientProc.Id
   Write-PidFile -Path $staffPidFile -ProcessId $staffProc.Id
 
-  $backendUp = Wait-Url -Url "http://localhost:8000/health" -MaxSeconds 40
-  $clientUp = Wait-Url -Url "http://localhost:5173" -MaxSeconds 40
-  $staffUp = Wait-Url -Url "http://localhost:5174" -MaxSeconds 40
+  $allUp = Wait-Services -Checks @(
+    @{ Name = "Backend"; Url = "http://localhost:8000/health"; ProcessId = $backendProc.Id },
+    @{ Name = "Client"; Url = "http://localhost:5173"; ProcessId = $clientProc.Id },
+    @{ Name = "Staff"; Url = "http://localhost:5174"; ProcessId = $staffProc.Id }
+  ) -MaxSeconds 45
 
   Write-Host "Servicios iniciados."
   $null = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
@@ -273,7 +323,7 @@ function Action-Up {
   $null = Check-Url -Name "Staff" -Url "http://localhost:5174"
   Write-Host "Logs en: $logsDir"
 
-  if (-not ($backendUp -and $clientUp -and $staffUp)) {
+  if (-not $allUp) {
     exit 1
   }
 }
