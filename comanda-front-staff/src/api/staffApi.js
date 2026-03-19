@@ -226,6 +226,21 @@ export async function confirmSplitPart({ token, partId }) {
   }
 }
 
+export async function forceCloseTableSession({ token, tableCode }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/tables/${encodeURIComponent(tableCode)}/force-close-session`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo forzar el cierre de la mesa.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo forzar el cierre de la mesa.");
+  }
+}
+
 export async function resolveCashRequest({ token, cashRequestId }) {
   try {
     const res = await fetch(`${API_URL}/billing/cash-requests/${cashRequestId}/resolve`, {

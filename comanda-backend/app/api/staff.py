@@ -36,6 +36,7 @@ from app.schemas.orders import (
     ChangeItemStatusRequest,
     ChangeItemStatusResponse,
     CloseTableSessionResponse,
+    ForceCloseTableSessionResponse,
     ItemStatusEventOut,
     StaffBoardItemOut,
     StaffBoardItemsResponse,
@@ -660,4 +661,113 @@ def close_table_session(
         table_code=table.code,
         status=table_session.status,
         closed_at=table_session.closed_at or datetime.utcnow(),
+    )
+
+
+@router.post("/tables/{table_code}/force-close-session", response_model=ForceCloseTableSessionResponse)
+def force_close_table_session(
+    table_code: str,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ForceCloseTableSessionResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    normalized_table = table_code.strip().upper()
+    table = db.scalar(select(Table).where(Table.store_id == current_staff.store_id, Table.code == normalized_table))
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    table_session = db.scalar(
+        select(TableSession)
+        .where(
+            TableSession.store_id == current_staff.store_id,
+            TableSession.table_id == table.id,
+            TableSession.status.in_(ACTIVE_TABLE_SESSION_STATUSES),
+        )
+        .order_by(TableSession.id.desc())
+        .limit(1)
+    )
+    latest_order = db.scalar(
+        select(Order)
+        .where(
+            Order.store_id == current_staff.store_id,
+            Order.table_id == table.id,
+        )
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .limit(1)
+    )
+
+    if not table_session and not latest_order:
+        raise HTTPException(status_code=404, detail="No active session or order found for this table")
+
+    open_split_query = (
+        select(BillSplit)
+        .join(Order, Order.id == BillSplit.order_id)
+        .where(
+            Order.store_id == current_staff.store_id,
+        )
+    )
+    if table_session:
+        open_split_query = open_split_query.where(Order.table_session_id == table_session.id)
+    else:
+        open_split_query = open_split_query.where(Order.table_id == table.id)
+
+    related_splits = db.scalars(open_split_query).all()
+    for split in related_splits:
+        split_parts = db.scalars(
+            select(BillSplitPart).where(BillSplitPart.bill_split_id == split.id)
+        ).all()
+        for part in split_parts:
+            if part.payment_status != BillPartPaymentStatus.CONFIRMED.value:
+                part.payment_status = BillPartPaymentStatus.CONFIRMED.value
+                if not part.confirmed_at:
+                    part.confirmed_at = datetime.utcnow()
+                if not part.confirmed_by_staff_id:
+                    part.confirmed_by_staff_id = current_staff.id
+                db.add(part)
+
+        split.status = BillSplitStatus.CLOSED.value
+        if not split.closed_at:
+            split.closed_at = datetime.utcnow()
+        db.add(split)
+
+    if table_session:
+        pending_requests = db.scalars(
+            select(TableSessionCashRequest).where(
+                TableSessionCashRequest.table_session_id == table_session.id,
+                TableSessionCashRequest.status == "PENDING",
+            )
+        ).all()
+        for req in pending_requests:
+            req.status = "RESOLVED"
+            req.resolved_by_staff_id = current_staff.id
+            req.resolved_at = datetime.utcnow()
+            db.add(req)
+
+        table_session.status = TableSessionStatus.CLOSED.value
+        table_session.closed_at = datetime.utcnow()
+        db.add(table_session)
+
+    db.commit()
+    if table_session:
+        db.refresh(table_session)
+
+        event_bus.publish(
+            "table.session.closed",
+            {
+                "table_session_id": table_session.id,
+                "store_id": current_staff.store_id,
+                "table_code": table.code,
+                "closed_at": table_session.closed_at.isoformat() if table_session.closed_at else None,
+                "forced": True,
+            },
+        )
+
+    return ForceCloseTableSessionResponse(
+        table_session_id=table_session.id if table_session else (latest_order.table_session_id or 0),
+        table_code=table.code,
+        status=TableSessionStatus.CLOSED.value,
+        closed_at=(table_session.closed_at if table_session else datetime.utcnow()) or datetime.utcnow(),
+        forced=True,
     )

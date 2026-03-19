@@ -846,9 +846,25 @@ button:focus {
 }
 
 .table-consumption-note {
-  margin: 0;
+  margin: 2px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid #f6d365;
+  background: #fff3c4;
   font-size: 13px;
-  color: #64748b;
+  color: #7c2d12;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.table-consumption-note strong {
+  color: #9a3412;
 }
 
 .checkout-form {

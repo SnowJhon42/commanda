@@ -19,8 +19,9 @@ function elapsedLabel(minutesValue) {
 function statusText(status) {
   if (status === "SIN_PEDIDO") return "Sin pedido";
   if (status === "EN_PROCESO") return "En proceso";
-  if (status === "CUENTA_SOLICITADA") return "Pide cuenta";
-  if (status === "LISTO_CUENTA") return "Listo para cuenta";
+  if (status === "PAGO_SOLICITADO") return "Pago solicitado";
+  if (status === "PAGO_TOMADO") return "Pago tomado";
+  if (status === "LISTO_CUENTA") return "Listo para cobrar";
   if (status === "PAGO_REPORTADO") return "Pago reportado";
   return status;
 }
@@ -28,7 +29,8 @@ function statusText(status) {
 function statusClass(status) {
   if (status === "SIN_PEDIDO") return "badge";
   if (status === "EN_PROCESO") return "badge badge-progress";
-  if (status === "CUENTA_SOLICITADA") return "badge badge-received";
+  if (status === "PAGO_SOLICITADO") return "badge badge-received";
+  if (status === "PAGO_TOMADO") return "badge badge-done";
   if (status === "LISTO_CUENTA") return "badge badge-done";
   if (status === "PAGO_REPORTADO") return "badge badge-delivered";
   return "badge";
@@ -41,6 +43,50 @@ function itemStatusLabel(status) {
   if (status === "DELIVERED") return "Entregado";
   if (status === "PARCIAL") return "Parcial";
   return status;
+}
+
+function itemLabelWithNotes(item) {
+  const notes = String(item?.notes || "").trim();
+  return notes ? `${item.qty}x ${item.item_name} (${notes})` : `${item.qty}x ${item.item_name}`;
+}
+
+function batchKeyForItem(item, fallbackOrderId) {
+  const orderId = String(item?.order_id || fallbackOrderId || "0");
+  const createdAt = String(item?.created_at || "");
+  return `${orderId}:${createdAt}`;
+}
+
+function buildSectorLots(items = [], fallbackOrderId = null) {
+  const lotsMap = items.reduce((acc, item) => {
+    const key = batchKeyForItem(item, fallbackOrderId);
+    if (!acc[key]) {
+      acc[key] = {
+        key,
+        orderId: String(item?.order_id || fallbackOrderId || "0"),
+        createdAt: item?.created_at || null,
+        items: [],
+      };
+    }
+    acc[key].items.push(item);
+    return acc;
+  }, {});
+
+  return Object.values(lotsMap)
+    .map((lot, index) => ({
+      ...lot,
+      state: lotStateFromItems(lot.items),
+      elapsed: elapsedMinutes(lot.createdAt || lot.items[0]?.created_at),
+      sequence: index + 1,
+    }))
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+}
+
+function batchLabel(createdAt) {
+  if (!createdAt) return "Ingreso";
+  return `Ingreso ${new Date(createdAt).toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
 }
 
 function Modal({ title, subtitle, children, onClose }) {
@@ -130,6 +176,7 @@ export function AdminBoardPage({
   advancingKey = "",
   actorSector = "ADMIN",
   onCloseTableByCode = () => {},
+  onForceCloseTableByCode = () => {},
   closingTable = false,
   onRequestWaiterCalls = async () => [],
   onResolveWaiterCall = async () => {},
@@ -145,6 +192,7 @@ export function AdminBoardPage({
   const [cashSignals, setCashSignals] = useState({});
   const [takingCallId, setTakingCallId] = useState(null);
   const [acceptingCashRequestId, setAcceptingCashRequestId] = useState(null);
+  const [forceCloseTarget, setForceCloseTarget] = useState(null);
   const seenCashAlarmRef = useRef("");
 
   const tableRows = useMemo(() => {
@@ -178,6 +226,7 @@ export function AdminBoardPage({
         const hasPendingPayment = effectiveOrders.some((order) => Boolean(order.has_pending_payment));
         const cashSignal = tableSession?.table_session_id ? cashSignals[tableSession.table_session_id] : null;
         const hasPendingCashPayment = Number(cashSignal?.pending || 0) > 0;
+        const hasAcceptedCashPayment = Boolean(cashSignal?.latestResolved);
         const sectorList = [
           ...new Set(
             effectiveOrders.flatMap((order) =>
@@ -191,11 +240,13 @@ export function AdminBoardPage({
           qty === 0
             ? "SIN_PEDIDO"
             : hasPendingCashPayment
-            ? "CUENTA_SOLICITADA"
-            : delivered < qty
-            ? "EN_PROCESO"
+            ? "PAGO_SOLICITADO"
             : hasPendingPayment
             ? "PAGO_REPORTADO"
+            : hasAcceptedCashPayment
+            ? "PAGO_TOMADO"
+            : delivered < qty
+            ? "EN_PROCESO"
             : "LISTO_CUENTA";
         const referenceDate = tableSession?.created_at || leadOrder?.created_at || null;
 
@@ -243,6 +294,7 @@ export function AdminBoardPage({
             const cash = (requests || []).filter((request) => request.request_kind === "CASH_PAYMENT");
             const pending = waiter.filter((request) => request.status === "PENDING").length;
             const pendingCash = cash.filter((request) => request.status === "PENDING");
+            const resolvedCash = cash.filter((request) => request.status === "RESOLVED");
             return [
               row.table_session_id,
               {
@@ -251,6 +303,7 @@ export function AdminBoardPage({
                   pending: pendingCash.length,
                   total: cash.length,
                   latestPending: pendingCash[0] || null,
+                  latestResolved: resolvedCash[0] || null,
                 },
               },
             ];
@@ -259,7 +312,7 @@ export function AdminBoardPage({
               row.table_session_id,
               {
                 waiter: { pending: 0, total: 0 },
-                cash: { pending: 0, total: 0, latestPending: null },
+                cash: { pending: 0, total: 0, latestPending: null, latestResolved: null },
               },
             ];
           }
@@ -355,7 +408,12 @@ export function AdminBoardPage({
       setActiveModal((current) => (current?.kind === "CASH_REQUEST" ? null : current));
       setCashSignals((current) => {
         if (!tableSessionId) return current;
-        const currentSignal = current[tableSessionId] || { pending: 0, total: 0, latestPending: null };
+        const currentSignal = current[tableSessionId] || {
+          pending: 0,
+          total: 0,
+          latestPending: null,
+          latestResolved: null,
+        };
         return {
           ...current,
           [tableSessionId]: {
@@ -363,6 +421,8 @@ export function AdminBoardPage({
             pending: Math.max(0, Number(currentSignal.pending || 0) - 1),
             latestPending:
               currentSignal.latestPending?.id === requestId ? null : currentSignal.latestPending || null,
+            latestResolved:
+              currentSignal.latestPending?.id === requestId ? currentSignal.latestPending : currentSignal.latestResolved,
           },
         };
       });
@@ -374,6 +434,18 @@ export function AdminBoardPage({
   async function confirmReportedPayments(row) {
     if (!row?.lead_order_id || typeof onConfirmReportedPayments !== "function") return;
     await onConfirmReportedPayments([row.lead_order_id]);
+  }
+
+  async function forceCloseTable(row) {
+    if (!row?.table_code || typeof onForceCloseTableByCode !== "function") return;
+    setForceCloseTarget(row);
+  }
+
+  async function confirmForceClose() {
+    if (!forceCloseTarget?.table_code || typeof onForceCloseTableByCode !== "function") return;
+    const target = forceCloseTarget;
+    setForceCloseTarget(null);
+    await onForceCloseTableByCode(target.table_code);
   }
 
   async function takeWaiterCall(requestId, tableSessionId) {
@@ -482,7 +554,7 @@ export function AdminBoardPage({
                 <tr
                   key={row.id}
                   className={
-                    row.status === "CUENTA_SOLICITADA"
+                    row.status === "PAGO_SOLICITADO"
                       ? "admin-row-alert"
                       : row.status === "EN_PROCESO"
                       ? "admin-row-active"
@@ -533,7 +605,7 @@ export function AdminBoardPage({
                     <div className="status-cell">
                       <button
                         className={statusClass(row.status)}
-                        onClick={() => openModal(row.status === "CUENTA_SOLICITADA" ? "CASH_REQUEST" : "STATUS", row)}
+                        onClick={() => openModal(row.status === "PAGO_SOLICITADO" ? "CASH_REQUEST" : "STATUS", row)}
                       >
                         {statusText(row.status)}
                       </button>
@@ -542,7 +614,7 @@ export function AdminBoardPage({
                   <td>{elapsedLabel(row.elapsed_minutes)}</td>
                   <td>{formatMoney(row.total)}</td>
                   <td>
-                    {row.status === "CUENTA_SOLICITADA" ? (
+                    {row.status === "PAGO_SOLICITADO" ? (
                       <button
                         className="btn-primary"
                         disabled={
@@ -557,26 +629,44 @@ export function AdminBoardPage({
                       >
                         {acceptingCashRequestId === cashSignals[row.table_session_id]?.latestPending?.id
                           ? "Aceptando..."
-                          : "Aceptar cuenta"}
+                          : "Aceptar pago"}
                       </button>
                     ) : row.status === "PAGO_REPORTADO" ? (
-                      <button
-                        className="btn-primary"
-                        disabled={validatingPaymentKey === String(row.lead_order_id || "")}
-                        onClick={() => confirmReportedPayments(row)}
-                      >
-                        {validatingPaymentKey === String(row.lead_order_id || "")
-                          ? "Confirmando..."
-                          : "Confirmar pago"}
-                      </button>
+                      <div className="order-actions">
+                        <button
+                          className="btn-primary"
+                          disabled={validatingPaymentKey === String(row.lead_order_id || "")}
+                          onClick={() => confirmReportedPayments(row)}
+                        >
+                          {validatingPaymentKey === String(row.lead_order_id || "")
+                            ? "Confirmando..."
+                            : "Confirmar pago"}
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          disabled={closingTable}
+                          onClick={() => forceCloseTable(row)}
+                        >
+                          {closingTable ? "Cerrando..." : "Forzar cierre"}
+                        </button>
+                      </div>
                     ) : (
-                      <button
-                        className="btn-secondary"
-                        disabled={closingTable || row.status === "EN_PROCESO"}
-                        onClick={() => onCloseTableByCode(row.table_code)}
-                      >
-                        {closingTable ? "Cerrando..." : "Cerrar mesa"}
-                      </button>
+                      <div className="order-actions">
+                        <button
+                          className="btn-secondary"
+                          disabled={closingTable || row.status === "EN_PROCESO"}
+                          onClick={() => onCloseTableByCode(row.table_code)}
+                        >
+                          {closingTable ? "Cerrando..." : "Cerrar mesa"}
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          disabled={closingTable}
+                          onClick={() => forceCloseTable(row)}
+                        >
+                          {closingTable ? "Cerrando..." : "Forzar cierre"}
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -590,7 +680,7 @@ export function AdminBoardPage({
         <Modal
           title={
             activeModal.kind === "CASH_REQUEST"
-              ? `Mesa ${activeModal.row.table_code} solicita la cuenta`
+              ? `Mesa ${activeModal.row.table_code} solicita pagar`
               : activeModal.kind === "TABLE"
               ? `Mesa ${activeModal.row.table_code}`
               : activeModal.kind === "SECTOR"
@@ -599,7 +689,7 @@ export function AdminBoardPage({
           }
           subtitle={
             activeModal.kind === "CASH_REQUEST"
-              ? "Confirma este aviso para que el cliente vea que el mozo va en camino con la cuenta."
+              ? "Confirma este aviso para que el cliente vea las opciones para pagar desde Mozo."
               : activeModal.kind === "TABLE"
               ? "Todo lo ya pedido en esta mesa"
               : activeModal.kind === "SECTOR"
@@ -622,14 +712,14 @@ export function AdminBoardPage({
                       <strong>{pendingRequest.payer_label || `Mesa ${activeModal.row.table_code}`}</strong>
                       <span className="badge badge-received">Pendiente</span>
                     </div>
-                    <p>{pendingRequest.note || "Pedir cuenta"}</p>
+                    <p>{pendingRequest.note || "Quiero pagar"}</p>
                     <span className="muted">{new Date(pendingRequest.created_at).toLocaleTimeString("es-AR")}</span>
                     <button
                       className="btn-primary"
                       disabled={acceptingCashRequestId === pendingRequest.id}
                       onClick={() => acceptCashRequest(pendingRequest.id, activeModal.row.table_session_id)}
                     >
-                      {acceptingCashRequestId === pendingRequest.id ? "Aceptando..." : "Aceptar pedido de cuenta"}
+                      {acceptingCashRequestId === pendingRequest.id ? "Aceptando..." : "Aceptar solicitud de pago"}
                     </button>
                   </article>
                 );
@@ -663,45 +753,63 @@ export function AdminBoardPage({
                       >
                         {closingTable ? "Cerrando..." : "Cerrar mesa"}
                       </button>
+                      <button
+                        className="btn-secondary"
+                        disabled={closingTable}
+                        onClick={() => forceCloseTable(activeModal.row)}
+                      >
+                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                      </button>
                     </div>
                   )}
-                  {activeModal.kind === "SECTOR" && (activeModal.sector === "KITCHEN" || activeModal.sector === "BAR") ? (
+                  {activeModal.kind === "SECTOR" ? (
                 (() => {
                   const sectorItems = itemsInProcess(modalDetail.items).filter((item) => item.sector === activeModal.sector);
-                  const lotsMap = sectorItems.reduce((acc, item) => {
-                    const key = String(item.order_id || modalDetail.order_id || "0");
-                    if (!acc[key]) acc[key] = [];
-                    acc[key].push(item);
-                    return acc;
-                  }, {});
-                  const lots = Object.entries(lotsMap)
-                    .map(([orderId, lotItems]) => {
-                      const orderCreatedAt = modalDetail.created_at || lotItems[0]?.created_at;
-                      return {
-                        orderId,
-                        items: lotItems,
-                        state: lotStateFromItems(lotItems),
-                        elapsed: elapsedMinutes(orderCreatedAt),
-                      };
-                    })
-                    .sort((a, b) => Number(b.orderId) - Number(a.orderId));
+                  const lots = buildSectorLots(sectorItems, modalDetail.order_id);
 
                   return lots.map((lot) => {
                     const next = lotNextStatus(lot.state, actorSector);
                     const lotBusy = lot.items.some((item) => advancingKey.startsWith(`${item.item_id}:`));
+                    const showLotAction =
+                      (activeModal.sector === "KITCHEN" || activeModal.sector === "BAR") && Boolean(next);
+
                     return (
-                      <article key={`lot-${lot.orderId}`} className="sector-lot-card">
-                        <p className="sector-lot-title">Pedido #{lot.orderId}</p>
+                      <article key={`lot-${lot.key}`} className="sector-lot-card">
+                        <div className="sector-lot-head">
+                          <p className="sector-lot-title">Pedido #{lot.orderId}</p>
+                          <span className="muted">{batchLabel(lot.createdAt)}</span>
+                        </div>
                         <div className="sector-lot-items">
-                          {lot.items.map((item) => (
-                            <p key={item.item_id} className="sector-lot-item">
-                              {item.qty}x {item.item_name}
-                            </p>
-                          ))}
+                          {lot.items.map((item) => {
+                            const nextStatus = nextStatusForAction({
+                              currentStatus: item.status,
+                              itemSector: item.sector,
+                              actorSector,
+                            });
+                            return (
+                              <div key={item.item_id} className="staff-modal-row">
+                                <p className="staff-modal-item-name">{itemLabelWithNotes(item)}</p>
+                                <div className="staff-modal-meta-inline">
+                                  <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
+                                  <span className="badge">{itemStatusLabel(item.status)}</span>
+                                  <span className="muted">{elapsedLabel(elapsedMinutes(item.updated_at || item.created_at))}</span>
+                                  {!showLotAction && nextStatus && (
+                                    <button
+                                      className="btn-primary"
+                                      disabled={advancingKey === `${item.item_id}:${nextStatus}`}
+                                      onClick={() => advanceFromModal(item)}
+                                    >
+                                      {advancingKey === `${item.item_id}:${nextStatus}` ? "..." : `Pasar a ${nextStatus}`}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                         <div className="sector-lot-footer">
                           <span className={lotButtonClass(lot.state)}>{lot.state}</span>
-                          {next && (
+                          {showLotAction && (
                             <button className="btn-primary" disabled={lotBusy} onClick={() => advanceLotFromModal(lot)}>
                               {lotBusy ? "..." : lotActionLabel(next)}
                             </button>
@@ -715,14 +823,11 @@ export function AdminBoardPage({
               ) : (
                 (activeModal.kind === "TABLE"
                   ? modalDetail.items
-                  : activeModal.kind === "SECTOR"
-                  ? itemsInProcess(modalDetail.items).filter((item) => item.sector === activeModal.sector)
                   : itemsInProcess(modalDetail.items)
                 ).map((item) => (
                   <div key={item.item_id} className="staff-modal-row">
                     <p className="staff-modal-item-name">
-                      {item.qty}x {item.item_name}
-                      {item.notes ? <span className="muted"> · {item.notes}</span> : null}
+                      {itemLabelWithNotes(item)}
                     </p>
                     <div className="staff-modal-meta-inline">
                       <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
@@ -814,6 +919,23 @@ export function AdminBoardPage({
               ))}
           </article>
         </div>
+      )}
+
+      {forceCloseTarget && (
+        <Modal
+          title={`Forzar cierre de ${forceCloseTarget.table_code}`}
+          subtitle={`Esto cerrara la mesa ${forceCloseTarget.table_code} aunque tenga estados pendientes.`}
+          onClose={() => setForceCloseTarget(null)}
+        >
+          <div className="order-actions">
+            <button className="btn-secondary" onClick={() => setForceCloseTarget(null)} disabled={closingTable}>
+              Cancelar
+            </button>
+            <button className="btn-primary" onClick={confirmForceClose} disabled={closingTable}>
+              {closingTable ? "Cerrando..." : "Aceptar y forzar cierre"}
+            </button>
+          </div>
+        </Modal>
       )}
     </section>
   );

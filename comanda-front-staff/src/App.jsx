@@ -11,6 +11,7 @@ import {
   fetchStoreClientVisibility,
   openStaffEvents,
   closeTableSession,
+  forceCloseTableSession,
   confirmSplitPart,
   createEqualSplit,
   patchStoreClientVisibility,
@@ -374,6 +375,30 @@ export function App() {
     [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
   );
 
+  const forceCloseTableByCode = useCallback(
+    async (tableCode) => {
+      if (!session || session.staff.sector !== "ADMIN" || !tableCode) return;
+      setError("");
+      setClosingTable(true);
+      try {
+        await forceCloseTableSession({
+          token: session.access_token,
+          tableCode,
+        });
+        await loadBoard();
+        await loadTableSessions();
+        if (selectedOrderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo forzar el cierre de la mesa.");
+      } finally {
+        setClosingTable(false);
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
+  );
+
   const confirmReportedPayments = useCallback(
     async (orderIds = []) => {
       if (!session || session.staff.sector !== "ADMIN") return;
@@ -614,6 +639,7 @@ export function App() {
           advancingKey={advancingKey}
           actorSector={staffSector}
           onCloseTableByCode={closeTableByCode}
+          onForceCloseTableByCode={forceCloseTableByCode}
           closingTable={closingTable}
           onRequestWaiterCalls={requestAdminWaiterCalls}
           onResolveWaiterCall={resolveWaiterCall}
@@ -739,7 +765,7 @@ export function App() {
       const cashRequestId = payload.cash_request_id ? String(payload.cash_request_id) : "";
       if (!cashRequestId || lastCashAlertRef.current === cashRequestId) return;
       lastCashAlertRef.current = cashRequestId;
-      setAlarmText(`Mesa ${payload.table_code || "?"} pide la cuenta`);
+      setAlarmText(`Mesa ${payload.table_code || "?"} quiere pagar`);
       playAlarm("delay");
     };
 
@@ -754,7 +780,7 @@ export function App() {
         return;
       }
       if (!payload || payload.request_kind !== "CASH_PAYMENT") return;
-      setAlarmText(`Cuenta tomada en mesa ${payload.table_code || "?"}`);
+      setAlarmText(`Pago tomado en mesa ${payload.table_code || "?"}`);
     };
 
     stream.onopen = () => setLiveConnected(true);
@@ -938,6 +964,7 @@ export function App() {
           onAdvanceItem={advanceItem}
           advancingKey={advancingKey}
           onCloseTable={closeTable}
+          onForceCloseTable={() => forceCloseTableByCode(selectedOrderDetail?.table_code)}
           closingTable={closingTable}
           onCreateSplit={createSplit}
           onConfirmPart={confirmPart}

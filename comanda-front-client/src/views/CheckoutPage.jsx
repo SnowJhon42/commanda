@@ -21,6 +21,14 @@ function toMoney(value) {
   }).format(value);
 }
 
+function paymentMethodLabel(method) {
+  if (method === "CASH") return "Efectivo";
+  if (method === "MERCADO_PAGO") return "Mercado Pago";
+  if (method === "MODO") return "MODO";
+  if (method === "TRANSFER") return "Transferencia";
+  return "Medio sin definir";
+}
+
 export function CheckoutPage({
   tableCode,
   guestCount,
@@ -29,6 +37,7 @@ export function CheckoutPage({
   committedItems = [],
   committedTotal = 0,
   mesaGrandTotal = 0,
+  connectedClients = 1,
   checkoutError,
   submittingOrder,
   lastCreatedOrder,
@@ -44,10 +53,17 @@ export function CheckoutPage({
   onSubmitOrder,
   onGoToTracking,
   onRequestTableBill,
-  onPayAllFromTable,
+  onSplitBill,
+  onSelectPaymentMethod,
+  onReportPayment,
   mesaActionBusy = false,
   mesaActionMessage = "",
   mesaPaymentStateMessage = "",
+  mesaBillSplit = null,
+  canSplitBill = false,
+  canShowPaymentOptions = false,
+  selectedPaymentMethod = "",
+  paymentHelpMessage = "",
   showLiveTotal = true,
   showSessionContext = true,
 }) {
@@ -240,7 +256,11 @@ export function CheckoutPage({
                                   Quitar
                                 </button>
                               </div>
-                              {String(item.notes || "").trim() ? <p className="table-consumption-note">{item.notes}</p> : null}
+                              {String(item.notes || "").trim() ? (
+                                <p className="table-consumption-note">
+                                  <strong>Aclaracion:</strong> {item.notes}
+                                </p>
+                              ) : null}
                             </article>
                           ))}
                         </div>
@@ -290,7 +310,11 @@ export function CheckoutPage({
                               )}
                             </div>
                           </div>
-                          {String(item.notes || "").trim() ? <p className="table-consumption-note">{item.notes}</p> : null}
+                          {String(item.notes || "").trim() ? (
+                            <p className="table-consumption-note">
+                              <strong>Aclaracion:</strong> {item.notes}
+                            </p>
+                          ) : null}
                         </article>
                       ))}
                     </div>
@@ -340,21 +364,81 @@ export function CheckoutPage({
           <div className="mesa-final-actions">
             <button
               type="button"
-              className="btn-secondary btn-full"
+              className="btn-primary btn-full"
               onClick={onRequestTableBill}
               disabled={mesaActionBusy}
             >
-              {mesaActionBusy ? "Procesando..." : "Pedir cuenta"}
+              {mesaActionBusy ? "Procesando..." : "Pagar"}
             </button>
-            <button
-              type="button"
-              className="btn-primary btn-full"
-              onClick={onPayAllFromTable}
-              disabled={mesaActionBusy}
-            >
-              {mesaActionBusy ? "Procesando..." : "Pagar todo"}
-            </button>
+            {canSplitBill && (
+              <button
+                type="button"
+                className="btn-secondary btn-full"
+                onClick={onSplitBill}
+                disabled={mesaActionBusy}
+              >
+                {mesaActionBusy ? "Procesando..." : "Dividir cuenta"}
+              </button>
+            )}
           </div>
+          {canSplitBill && (
+            <p className="muted">
+              Conectados en la mesa: <strong>{connectedClients}</strong>
+            </p>
+          )}
+          {mesaBillSplit?.mode === "EQUAL" && (mesaBillSplit.parts || []).length > 1 && (
+            <p className="muted">
+              Cuenta dividida en <strong>{mesaBillSplit.parts.length}</strong> partes iguales.
+            </p>
+          )}
+          {canShowPaymentOptions && (
+            <div className="detail-card">
+              <h3>Como queres pagar</h3>
+              {paymentHelpMessage ? <p className="toast-ok">{paymentHelpMessage}</p> : null}
+              <div className="order-actions">
+                <button
+                  type="button"
+                  className={selectedPaymentMethod === "CASH" ? "btn-primary" : "btn-secondary"}
+                  onClick={() => onSelectPaymentMethod?.("CASH")}
+                  disabled={mesaActionBusy}
+                >
+                  Llamar al mozo para efectivo
+                </button>
+                <button
+                  type="button"
+                  className={selectedPaymentMethod === "MERCADO_PAGO" ? "btn-primary" : "btn-secondary"}
+                  onClick={() => onSelectPaymentMethod?.("MERCADO_PAGO")}
+                  disabled={mesaActionBusy}
+                >
+                  Mercado Pago
+                </button>
+                <button
+                  type="button"
+                  className={selectedPaymentMethod === "MODO" ? "btn-primary" : "btn-secondary"}
+                  onClick={() => onSelectPaymentMethod?.("MODO")}
+                  disabled={mesaActionBusy}
+                >
+                  MODO
+                </button>
+                <button
+                  type="button"
+                  className={selectedPaymentMethod === "TRANSFER" ? "btn-primary" : "btn-secondary"}
+                  onClick={() => onSelectPaymentMethod?.("TRANSFER")}
+                  disabled={mesaActionBusy}
+                >
+                  Transferencia
+                </button>
+              </div>
+              {selectedPaymentMethod && (
+                <p className="muted">
+                  Medio elegido: <strong>{paymentMethodLabel(selectedPaymentMethod)}</strong>
+                </p>
+              )}
+              <button type="button" className="btn-primary btn-full" onClick={onReportPayment} disabled={mesaActionBusy}>
+                {mesaActionBusy ? "Procesando..." : "Ya pague"}
+              </button>
+            </div>
+          )}
           {mesaActionMessage ? <p className="muted">{mesaActionMessage}</p> : null}
           {mesaPaymentStateMessage && mesaPaymentStateMessage !== mesaActionMessage ? (
             <p className="muted">{mesaPaymentStateMessage}</p>

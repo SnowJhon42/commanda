@@ -269,7 +269,7 @@ def get_table_session_state(
         assistance_status = latest_assistance_request.status
         if latest_assistance_request.status == CashRequestStatus.RESOLVED.value:
             if latest_assistance_request.request_kind == CashRequestKind.CASH_PAYMENT.value:
-                assistance_message = "El mozo va en camino con la cuenta."
+                assistance_message = "Tu pago fue tomado. Elegi como queres pagar."
             elif latest_assistance_request.request_kind == CashRequestKind.WAITER_CALL.value:
                 assistance_message = "El mozo se esta acercando."
 

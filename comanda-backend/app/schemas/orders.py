@@ -112,6 +112,14 @@ class CloseTableSessionResponse(BaseModel):
     closed_at: datetime
 
 
+class ForceCloseTableSessionResponse(BaseModel):
+    table_session_id: int
+    table_code: str
+    status: str
+    closed_at: datetime
+    forced: bool = True
+
+
 class TableSessionFeedbackRequest(BaseModel):
     client_id: str = Field(..., min_length=1, max_length=120)
     rating: int = Field(..., ge=1, le=5)

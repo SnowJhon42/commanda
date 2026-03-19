@@ -38,7 +38,7 @@ function billBadgeClass(status) {
 
 function cashRequestKindLabel(kind) {
   if (kind === "WAITER_CALL") return "Llamado mozo";
-  if (kind === "CASH_PAYMENT") return "Pedido de cuenta";
+  if (kind === "CASH_PAYMENT") return "Solicitud de pago";
   return "Solicitud";
 }
 
@@ -52,6 +52,7 @@ export function OrderDetailPanel({
   onAdvanceItem,
   advancingKey,
   onCloseTable,
+  onForceCloseTable = () => {},
   closingTable = false,
   onCreateSplit,
   onConfirmPart,
@@ -89,6 +90,9 @@ export function OrderDetailPanel({
               <div className="order-actions">
                 <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable}>
                   {closingTable ? "Cerrando..." : "Cerrar mesa"}
+                </button>
+                <button className="btn-secondary" onClick={onForceCloseTable} disabled={closingTable}>
+                  {closingTable ? "Cerrando..." : "Forzar cierre"}
                 </button>
                 {orderDetail.bill_split?.status === "CLOSED" && (
                   <span className="badge badge-delivered">Pago confirmado</span>
@@ -129,7 +133,7 @@ export function OrderDetailPanel({
                         <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
                         <span className="muted">c/u {formatMoney(item.unit_price || 0)}</span>
                       </span>
-                      {item.notes ? <span className="row-note">{item.notes}</span> : null}
+                      {item.notes ? <span className="row-note row-note-strong">Aclaracion: {item.notes}</span> : null}
                     </div>
                     <span className={badgeClass(item.status)}>{statusLabel(item.status)}</span>
                     {next ? (
@@ -212,16 +216,21 @@ export function OrderDetailPanel({
                   </div>
                 ))}
                 {actorSector === "ADMIN" && orderDetail.bill_split.status === "CLOSED" && (
-                  <button className="btn-primary" onClick={onCloseTable} disabled={closingTable}>
-                    {closingTable ? "Cerrando..." : "Cerrar mesa y finalizar"}
-                  </button>
+                  <div className="order-actions">
+                    <button className="btn-primary" onClick={onCloseTable} disabled={closingTable}>
+                      {closingTable ? "Cerrando..." : "Cerrar mesa y finalizar"}
+                    </button>
+                    <button className="btn-secondary" onClick={onForceCloseTable} disabled={closingTable}>
+                      {closingTable ? "Cerrando..." : "Forzar cierre"}
+                    </button>
+                  </div>
                 )}
               </div>
             )}
           </article>
 
           <article className="detail-card">
-            <h4>Solicitudes de mozo / efectivo</h4>
+            <h4>Solicitudes de mozo / pago</h4>
             {!orderDetail.cash_requests || orderDetail.cash_requests.length === 0 ? (
               <p className="muted">Sin solicitudes activas.</p>
             ) : (

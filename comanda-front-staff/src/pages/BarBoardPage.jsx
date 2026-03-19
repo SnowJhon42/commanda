@@ -67,7 +67,7 @@ export function BarBoardPage({
                           <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
                           <span className="muted row-age">{elapsedMinutes(item.updated_at || item.created_at)} min</span>
                         </span>
-                        {item.notes ? <span className="row-note">{item.notes}</span> : null}
+                        {item.notes ? <span className="row-note row-note-strong">Aclaracion: {item.notes}</span> : null}
                       </div>
                       <span className={badgeClass(item.status)}>{statusLabel(item.status)}</span>
                       <button

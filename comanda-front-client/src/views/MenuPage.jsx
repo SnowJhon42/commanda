@@ -8,12 +8,20 @@ function toMoney(value) {
   }).format(value);
 }
 
+function preparationNoteLabel(sector) {
+  if (sector === "BAR") return "Aclaracion para barra";
+  if (sector === "WAITER") return "Aclaracion para mozo";
+  if (sector === "KITCHEN") return "Aclaracion para cocina";
+  return "Aclaracion del pedido";
+}
+
 export function MenuPage({
   menu,
   loading,
   error,
   onRetry,
   onAddToCart,
+  onSyncDraftConfig = () => {},
   onDecrementProductInCart,
   productQtyInCart = {},
   resetToCategoriesSignal = 0,
@@ -53,6 +61,24 @@ export function MenuPage({
     setActiveCategoryId(null);
     setPreviewProduct(null);
   }, [resetToCategoriesSignal]);
+
+  const buildDraftConfig = (product, overrides = {}) => {
+    const selectedVariantId =
+      overrides.variantId !== undefined ? overrides.variantId : variantByProduct[product.id];
+    const selectedVariant = product.variants.find((variant) => variant.id === Number(selectedVariantId));
+    const selectedExtraIds =
+      overrides.extraOptionIds !== undefined ? overrides.extraOptionIds : extraOptionsByProduct[product.id] || [];
+    const selectedExtras = (product.extra_options || []).filter((extra) => selectedExtraIds.includes(extra.id));
+    const comment =
+      overrides.comment !== undefined ? String(overrides.comment || "").trim() : String(commentByProduct[product.id] || "").trim();
+    return {
+      product,
+      variant: selectedVariant,
+      notes: comment || undefined,
+      extraOptionIds: selectedExtras.map((extra) => extra.id),
+      extraOptionLabels: selectedExtras.map((extra) => extra.name),
+    };
+  };
 
   const addProduct = (product, forcedQty = null) => {
     const selectedVariantId = variantByProduct[product.id];
@@ -164,17 +190,18 @@ export function MenuPage({
                 const selectedVariantId = variantByProduct[product.id] ?? "";
                 const comment = commentByProduct[product.id] ?? "";
                 const selectedExtraIds = extraOptionsByProduct[product.id] || [];
-                const toggleExtra = (extraId) =>
-                  setExtraOptionsByProduct((current) => {
-                    const currentIds = current[product.id] || [];
-                    const exists = currentIds.includes(extraId);
-                    return {
-                      ...current,
-                      [product.id]: exists
-                        ? currentIds.filter((id) => id !== extraId)
-                        : [...currentIds, extraId],
-                    };
-                  });
+                const toggleExtra = (extraId) => {
+                  const currentIds = selectedExtraIds;
+                  const exists = currentIds.includes(extraId);
+                  const nextExtraIds = exists
+                    ? currentIds.filter((id) => id !== extraId)
+                    : [...currentIds, extraId];
+                  setExtraOptionsByProduct((current) => ({
+                    ...current,
+                    [product.id]: nextExtraIds,
+                  }));
+                  onSyncDraftConfig(buildDraftConfig(product, { extraOptionIds: nextExtraIds }));
+                };
                 const decreaseQty = () => onDecrementProductInCart?.(product.id);
                 const increaseQty = () =>
                   addProduct(product, 1);
@@ -207,57 +234,59 @@ export function MenuPage({
                         +
                       </button>
                     </div>
-                    {qty > 0 && (
-                      <div className="menu-notes-wrap">
-                        <label className="field">
-                          Comentario
-                          <input
-                            type="text"
-                            maxLength="120"
-                            value={comment}
-                            onChange={(e) =>
-                              setCommentByProduct((current) => ({
-                                ...current,
-                                [product.id]: e.target.value,
-                              }))
-                            }
-                            placeholder="Ej: sin cebolla"
-                          />
-                        </label>
-                        {product.extra_options?.length > 0 && (
-                          <div className="field">
-                            Extra
-                            <div className="menu-extra-options">
-                              {product.extra_options.map((extra) => (
-                                <button
-                                  key={extra.id}
-                                  type="button"
-                                  className={
-                                    selectedExtraIds.includes(extra.id)
-                                      ? "menu-extra-chip menu-extra-chip-active"
-                                      : "menu-extra-chip"
-                                  }
-                                  onClick={() => toggleExtra(extra.id)}
-                                >
-                                  {extra.name}
-                                  {Number(extra.extra_price || 0) > 0
-                                    ? ` (+${toMoney(Number(extra.extra_price))})`
-                                    : ""}
-                                </button>
-                              ))}
-                            </div>
+                    <div className="menu-notes-wrap">
+                      <label className="field">
+                        {preparationNoteLabel(product.fulfillment_sector)}
+                        <input
+                          type="text"
+                          maxLength="120"
+                          value={comment}
+                          onChange={(e) => {
+                            const nextComment = e.target.value;
+                            setCommentByProduct((current) => ({
+                              ...current,
+                              [product.id]: nextComment,
+                            }));
+                            onSyncDraftConfig(buildDraftConfig(product, { comment: nextComment }));
+                          }}
+                          placeholder="Ej: sin cebolla, con hielo, bien cocida"
+                        />
+                      </label>
+                      {product.extra_options?.length > 0 && (
+                        <div className="field">
+                          Agregados
+                          <div className="menu-extra-options">
+                            {product.extra_options.map((extra) => (
+                              <button
+                                key={extra.id}
+                                type="button"
+                                className={
+                                  selectedExtraIds.includes(extra.id)
+                                    ? "menu-extra-chip menu-extra-chip-active"
+                                    : "menu-extra-chip"
+                                }
+                                onClick={() => toggleExtra(extra.id)}
+                              >
+                                {extra.name}
+                                {Number(extra.extra_price || 0) > 0
+                                  ? ` (+${toMoney(Number(extra.extra_price))})`
+                                  : ""}
+                              </button>
+                            ))}
                           </div>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      )}
+                    </div>
                     {product.variants.length > 0 && (
                       <label className="field menu-variant-field">
-                        Extra
+                        Opciones
                         <select
                           value={selectedVariantId}
-                          onChange={(e) =>
-                            setVariantByProduct((current) => ({ ...current, [product.id]: e.target.value }))
-                          }
+                          onChange={(e) => {
+                            const nextVariantId = e.target.value;
+                            setVariantByProduct((current) => ({ ...current, [product.id]: nextVariantId }));
+                            onSyncDraftConfig(buildDraftConfig(product, { variantId: nextVariantId }));
+                          }}
                         >
                           <option value="">Sin extra</option>
                           {product.variants.map((variant) => (

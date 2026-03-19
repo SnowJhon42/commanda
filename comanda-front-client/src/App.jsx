@@ -34,6 +34,13 @@ const CLIENT_TABS = {
   WAITER: "WAITER",
 };
 
+const PAYMENT_METHODS = {
+  CASH: "CASH",
+  MERCADO_PAGO: "MERCADO_PAGO",
+  MODO: "MODO",
+  TRANSFER: "TRANSFER",
+};
+
 function normalizeTableCode(input) {
   if (typeof input !== "string") return null;
   const compact = input.trim().toUpperCase().replace(/\s+/g, "");
@@ -60,6 +67,11 @@ function cartKey(productId, variantId, extraOptionIds = []) {
   return `${productId}:${variantId ?? "none"}:${extrasKey || "noextras"}`;
 }
 
+function buildMergedItemNotes(notes, extrasLabel) {
+  const cleanNotes = String(notes || "").trim();
+  return [cleanNotes, extrasLabel ? `Extras: ${extrasLabel}` : ""].filter(Boolean).join(" | ");
+}
+
 function getStableClientId() {
   if (typeof window === "undefined") return `client-${Date.now()}`;
   const key = "comanda_client_id";
@@ -75,12 +87,12 @@ function getStableClientId() {
 function paymentStatusMessageFromSplit(split) {
   if (!split) return "";
   const parts = split.parts || [];
-  if (split.status === "CLOSED") return "Pago confirmado por el staff.";
+  if (split.status === "CLOSED") return "Pago confirmado. Gracias por venir, te esperamos pronto.";
   if (parts.length > 0 && parts.every((part) => part.payment_status === "CONFIRMED")) {
-    return "Pago confirmado por el staff.";
+    return "Pago confirmado. Gracias por venir, te esperamos pronto.";
   }
   if (parts.some((part) => part.payment_status === "REPORTED")) {
-    return "El pago ya fue reportado. Falta validacion del staff.";
+    return "Estamos verificando tu pago, aguarda hasta la confirmacion del staff.";
   }
   return "";
 }
@@ -115,6 +127,8 @@ export function App() {
   const [mesaActionBusy, setMesaActionBusy] = useState(false);
   const [mesaActionMessage, setMesaActionMessage] = useState("");
   const [mesaPaymentStateMessage, setMesaPaymentStateMessage] = useState("");
+  const [mesaBillSplit, setMesaBillSplit] = useState(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [tableSessionId, setTableSessionId] = useState(null);
   const [sessionJoinedAt, setSessionJoinedAt] = useState(null);
   const [connectedClients, setConnectedClients] = useState(1);
@@ -123,6 +137,8 @@ export function App() {
   const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
   const [isAdjustGuestsOpen, setIsAdjustGuestsOpen] = useState(false);
+  const [assistanceRequestKind, setAssistanceRequestKind] = useState("");
+  const [assistanceRequestStatus, setAssistanceRequestStatus] = useState("");
   const previousTableSessionIdRef = useRef(null);
   const hasPendingToSend = cartItems.length > 0;
 
@@ -225,7 +241,9 @@ export function App() {
   useEffect(() => {
     if (!activeOrderId) {
       setActiveOrderDetail(null);
+      setMesaBillSplit(null);
       setMesaPaymentStateMessage("");
+      setSelectedPaymentMethod("");
       return;
     }
     let mounted = true;
@@ -254,7 +272,9 @@ export function App() {
       // New table session: clear stale order pointers from previous session.
       setActiveOrderId(null);
       setActiveOrderDetail(null);
+      setMesaBillSplit(null);
       setMesaPaymentStateMessage("");
+      setSelectedPaymentMethod("");
       setLastCreatedOrder(null);
     }
     previousTableSessionIdRef.current = current;
@@ -270,10 +290,12 @@ export function App() {
       try {
         const split = await fetchOrderSplit(activeOrderId);
         if (!mounted) return;
+        setMesaBillSplit(split);
         setMesaPaymentStateMessage(paymentStatusMessageFromSplit(split));
       } catch (error) {
         if (!mounted) return;
         if (error?.status === 404) {
+          setMesaBillSplit(null);
           setMesaPaymentStateMessage("");
         }
       }
@@ -311,10 +333,7 @@ export function App() {
         .map((label) => String(label).trim())
         .filter(Boolean)
         .join(", ") || selectedExtras.map((option) => option.name).join(", ");
-    const cleanNotes = String(notes || "").trim();
-    const mergedNotes = [cleanNotes, extrasLabel ? `Extras: ${extrasLabel}` : ""]
-      .filter(Boolean)
-      .join(" | ");
+    const mergedNotes = buildMergedItemNotes(notes, extrasLabel);
     const key = cartKey(product.id, variant?.id, extraOptionIds);
 
     setCartItems((current) => {
@@ -347,6 +366,36 @@ export function App() {
       ];
     });
     setUiToast(`Agregado: ${product.name}`);
+  };
+
+  const syncDraftProductConfig = ({ product, variant, notes, extraOptionIds = [], extraOptionLabels = [] }) => {
+    if (!product?.id) return;
+    const extra = variant ? Number(variant.extra_price) : 0;
+    const selectedExtras = (product.extra_options || []).filter((option) =>
+      extraOptionIds.includes(option.id)
+    );
+    const extrasPrice = selectedExtras.reduce((acc, option) => acc + Number(option.extra_price || 0), 0);
+    const extrasLabel =
+      (extraOptionLabels || [])
+        .filter(Boolean)
+        .map((label) => String(label).trim())
+        .filter(Boolean)
+        .join(", ") || selectedExtras.map((option) => option.name).join(", ");
+    const mergedNotes = buildMergedItemNotes(notes, extrasLabel);
+    const key = cartKey(product.id, variant?.id, extraOptionIds);
+    const nextPrice = Number(product.base_price) + extra + extrasPrice;
+
+    setCartItems((current) =>
+      current.map((item) =>
+        item.key === key
+          ? {
+              ...item,
+              unit_price: nextPrice,
+              notes: mergedNotes,
+            }
+          : item
+      )
+    );
   };
 
   useEffect(() => {
@@ -528,14 +577,20 @@ export function App() {
           setSessionJoinedAt(null);
           setConnectedClients(1);
           setActiveOrderId(null);
+          setMesaBillSplit(null);
           setMesaPaymentStateMessage("");
+          setSelectedPaymentMethod("");
           setHasTrackingAlert(false);
           setHasWaiterAlert(false);
           setWaiterAlertMessage("");
+          setAssistanceRequestKind("");
+          setAssistanceRequestStatus("");
           setCartItems([]);
           return;
         }
         setConnectedClients(state.connected_clients || 1);
+        setAssistanceRequestKind(state.assistance_request_kind || "");
+        setAssistanceRequestStatus(state.assistance_request_status || "");
         const nextWaiterMessage = state.assistance_message || "";
         setWaiterAlertMessage(nextWaiterMessage);
         if (!nextWaiterMessage) {
@@ -614,7 +669,9 @@ export function App() {
         setActiveOrderId(null);
         setActiveOrderDetail(null);
         setLastCreatedOrder(null);
+        setMesaBillSplit(null);
         setMesaPaymentStateMessage("");
+        setSelectedPaymentMethod("");
         setCartItems([]);
         setClosedSession(null);
         setEntryValidated(true);
@@ -645,6 +702,12 @@ export function App() {
     selectTab(CLIENT_TABS.NOTIFICATIONS);
   };
   const showSessionHeader = entryValidated && !closedSession;
+  const paymentRequestAccepted =
+    assistanceRequestKind === "CASH_PAYMENT" && assistanceRequestStatus === "RESOLVED";
+  const paymentConfirmedMessage =
+    mesaPaymentStateMessage === "Pago confirmado. Gracias por venir, te esperamos pronto.";
+  const canShowPaymentOptions = (paymentRequestAccepted || Boolean(selectedPaymentMethod)) && !paymentConfirmedMessage;
+  const canSplitBill = connectedClients > 1 && !paymentConfirmedMessage;
 
   const requestWaiterHelp = async () => {
     if (waiterBusy) return;
@@ -671,10 +734,10 @@ export function App() {
     }
   };
 
-  const requestTableBill = async () => {
+  const requestPaymentFlow = async () => {
     if (mesaActionBusy) return;
     if (!activeOrderId) {
-      setMesaActionMessage("Primero envia un pedido para pedir la cuenta.");
+      setMesaActionMessage("Primero envia un pedido para iniciar el pago.");
       return;
     }
     setMesaActionBusy(true);
@@ -686,20 +749,83 @@ export function App() {
         clientId,
         payerLabel,
         requestKind: "CASH_PAYMENT",
-        note: "Pedir cuenta",
+        note: "Quiero pagar",
       });
-      setMesaActionMessage("Pedido enviado. Esperando confirmacion del staff.");
+      setSelectedPaymentMethod("");
+      setMesaActionMessage("Solicitud de pago enviada. Esperando confirmacion del staff.");
     } catch (error) {
-      setMesaActionMessage(error.message || "No se pudo pedir la cuenta.");
+      setMesaActionMessage(error.message || "No se pudo iniciar el pago.");
     } finally {
       setMesaActionBusy(false);
     }
   };
 
-  const payAllFromTable = async () => {
+  const selectPaymentMethod = async (method) => {
+    if (mesaActionBusy) return;
+    setSelectedPaymentMethod(method);
+    if (method !== PAYMENT_METHODS.CASH) {
+      const methodLabel =
+        method === PAYMENT_METHODS.MERCADO_PAGO
+          ? "Mercado Pago"
+          : method === PAYMENT_METHODS.MODO
+          ? "MODO"
+          : "Transferencia";
+      setMesaActionMessage(`Elegiste ${methodLabel}. Cuando termines, toca "Ya pague".`);
+      return;
+    }
+    if (!tableSessionId) {
+      setMesaActionMessage("Primero registra la mesa.");
+      return;
+    }
+    setMesaActionBusy(true);
+    setMesaActionMessage("Avisando al staff para cobrar en efectivo...");
+    const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
+    try {
+      await requestWaiterHelpBySession({
+        tableSessionId,
+        clientId,
+        payerLabel,
+        note: "Cobro en efectivo",
+      });
+      setMesaActionMessage('Mozo en camino para cobrar en efectivo. Cuando termine, toca "Ya pague".');
+    } catch (error) {
+      setMesaActionMessage(error.message || "No se pudo avisar al staff para cobrar en efectivo.");
+    } finally {
+      setMesaActionBusy(false);
+    }
+  };
+
+  const splitBillEqually = async () => {
+    if (mesaActionBusy) return;
+    if (!activeOrderId) {
+      setMesaActionMessage("Primero envia un pedido para dividir la cuenta.");
+      return;
+    }
+    if (connectedClients <= 1) {
+      setMesaActionMessage("La division aparece cuando hay mas de un cliente conectado.");
+      return;
+    }
+    setMesaActionBusy(true);
+    setMesaActionMessage("");
+    try {
+      const split = await createEqualSplit({ orderId: activeOrderId, partsCount: connectedClients });
+      setMesaBillSplit(split);
+      setMesaActionMessage(`Cuenta dividida en ${connectedClients} partes iguales.`);
+    } catch (error) {
+      setMesaActionMessage(error.message || "No se pudo dividir la cuenta.");
+    } finally {
+      setMesaActionBusy(false);
+    }
+  };
+
+  const reportPaymentFromTable = async () => {
     if (mesaActionBusy) return;
     if (!activeOrderId) {
       setMesaActionMessage("Primero envia un pedido para pagar.");
+      return;
+    }
+    if (!selectedPaymentMethod) {
+      setMesaActionMessage("Elegi primero como queres pagar.");
       return;
     }
     setMesaActionBusy(true);
@@ -713,12 +839,13 @@ export function App() {
       if (!activeSplit) {
         activeSplit = await createEqualSplit({ orderId: activeOrderId, partsCount: 1 });
       }
+      setMesaBillSplit(activeSplit);
       const allConfirmed =
         (activeSplit.parts || []).length > 0 &&
         (activeSplit.parts || []).every((part) => part.payment_status === "CONFIRMED");
       if (activeSplit.status === "CLOSED" || allConfirmed) {
-        setMesaActionMessage("Pago confirmado por el staff.");
-        setMesaPaymentStateMessage("Pago confirmado por el staff.");
+        setMesaActionMessage("Pago confirmado. Gracias por venir, te esperamos pronto.");
+        setMesaPaymentStateMessage("Pago confirmado. Gracias por venir, te esperamos pronto.");
         return;
       }
       const pendingPart = (activeSplit.parts || []).find((part) => part.payment_status === "PENDING");
@@ -726,18 +853,19 @@ export function App() {
         const hasReported = (activeSplit.parts || []).some((part) => part.payment_status === "REPORTED");
         setMesaActionMessage(
           hasReported
-            ? "El pago ya fue reportado. Falta validacion del staff."
-            : "El pago ya fue confirmado por el staff."
+            ? "Estamos verificando tu pago, aguarda hasta la confirmacion del staff."
+            : "Pago confirmado. Gracias por venir, te esperamos pronto."
         );
         setMesaPaymentStateMessage(paymentStatusMessageFromSplit(activeSplit));
         return;
       }
       const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
-      await reportSplitPartPayment({ partId: pendingPart.id, payerLabel });
-      setMesaActionMessage("Pago total reportado. El staff lo valida y cierra la mesa.");
-      setMesaPaymentStateMessage("El pago ya fue reportado. Falta validacion del staff.");
+      const updatedSplit = await reportSplitPartPayment({ partId: pendingPart.id, payerLabel });
+      setMesaBillSplit(updatedSplit);
+      setMesaActionMessage("Estamos verificando tu pago, aguarda hasta la confirmacion del staff.");
+      setMesaPaymentStateMessage("Estamos verificando tu pago, aguarda hasta la confirmacion del staff.");
     } catch (error) {
-      setMesaActionMessage(error.message || "No se pudo reportar el pago total.");
+      setMesaActionMessage(error.message || "No se pudo reportar el pago.");
     } finally {
       setMesaActionBusy(false);
     }
@@ -757,6 +885,8 @@ export function App() {
     setWaiterMessage("");
     setWaiterAlertMessage("");
     setHasWaiterAlert(false);
+    setAssistanceRequestKind("");
+    setAssistanceRequestStatus("");
     setTableSessionId(null);
     setSessionJoinedAt(null);
     setConnectedClients(1);
@@ -764,8 +894,10 @@ export function App() {
     setCheckoutError("");
     setFeedbackError("");
     setActiveOrderDetail(null);
+    setMesaBillSplit(null);
     setMesaActionMessage("");
     setMesaPaymentStateMessage("");
+    setSelectedPaymentMethod("");
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem(SESSION_STATE_KEY);
@@ -849,16 +981,17 @@ export function App() {
       ) : (
         <>
           {activeTab === CLIENT_TABS.MENU && (
-            <MenuPage
-              menu={menu}
-              loading={menuLoading}
-              error={menuError}
-              onRetry={loadMenu}
-              onAddToCart={addToCart}
-              onDecrementProductInCart={decrementProductInCart}
-              productQtyInCart={productQtyInCart}
-              resetToCategoriesSignal={menuResetSignal}
-            />
+        <MenuPage
+          menu={menu}
+          loading={menuLoading}
+          error={menuError}
+          onRetry={loadMenu}
+          onAddToCart={addToCart}
+          onSyncDraftConfig={syncDraftProductConfig}
+          onDecrementProductInCart={decrementProductInCart}
+          productQtyInCart={productQtyInCart}
+          resetToCategoriesSignal={menuResetSignal}
+        />
           )}
           {activeTab === CLIENT_TABS.TABLE && (
             <>
@@ -870,6 +1003,7 @@ export function App() {
                 committedItems={committedItemsForMesa}
                 committedTotal={committedTotal}
                 mesaGrandTotal={mesaGrandTotal}
+                connectedClients={connectedClients}
                 checkoutError={checkoutError}
                 submittingOrder={submittingOrder}
                 lastCreatedOrder={lastCreatedOrder}
@@ -884,11 +1018,18 @@ export function App() {
                 onRemoveProductFromCart={removeProductFromCart}
                 onSubmitOrder={submitOrder}
                 onGoToTracking={goToTracking}
-                onRequestTableBill={requestTableBill}
-                onPayAllFromTable={payAllFromTable}
+                onRequestTableBill={requestPaymentFlow}
+                onSplitBill={splitBillEqually}
+                onSelectPaymentMethod={selectPaymentMethod}
+                onReportPayment={reportPaymentFromTable}
                 mesaActionBusy={mesaActionBusy}
                 mesaActionMessage={mesaActionMessage}
                 mesaPaymentStateMessage={mesaPaymentStateMessage}
+                mesaBillSplit={mesaBillSplit}
+                canSplitBill={canSplitBill}
+                canShowPaymentOptions={canShowPaymentOptions}
+                selectedPaymentMethod={selectedPaymentMethod}
+                paymentHelpMessage={paymentRequestAccepted ? waiterAlertMessage : ""}
                 showLiveTotal={showLiveTotalToClient}
                 showSessionContext={false}
               />
@@ -900,7 +1041,7 @@ export function App() {
           {activeTab === CLIENT_TABS.WAITER && (
             <section className="panel">
               <h2>Llamar al mozo</h2>
-              <p className="muted">Pedi ayuda para recomendaciones, dudas o pago en efectivo.</p>
+              <p className="muted">Pedi ayuda para recomendaciones, dudas o asistencia presencial.</p>
               <label className="field">
                 Nota (opcional)
                 <input
