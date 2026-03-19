@@ -239,6 +239,18 @@ export async function resolveCashRequest({ token, cashRequestId }) {
   }
 }
 
+export async function fetchTableSessionCashRequests({ token, tableSessionId }) {
+  try {
+    const res = await fetch(`${API_URL}/billing/table-sessions/${tableSessionId}/cash-requests`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron cargar los llamados de mozo.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron cargar los llamados de mozo.");
+  }
+}
+
 export async function fetchAdminMenuCategories({ token }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/categories`, {

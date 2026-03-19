@@ -1299,6 +1299,21 @@ button:focus {
   box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
 }
 
+.client-nav-btn-cta {
+  border-color: #ea580c;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+  color: #9a3412;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.18);
+  animation: mesaCtaPulse 1.2s ease-in-out infinite;
+}
+
+.client-nav-btn-cta.client-nav-btn-active {
+  border-color: #ea580c;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+  color: #9a3412;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.24);
+}
+
 .client-nav-icon {
   font-size: 16px;
   line-height: 1;
@@ -1378,6 +1393,18 @@ button:focus {
   }
   100% {
     transform: scale(1);
+  }
+}
+
+@keyframes mesaCtaPulse {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+  100% {
+    transform: translateY(0);
   }
 }
 

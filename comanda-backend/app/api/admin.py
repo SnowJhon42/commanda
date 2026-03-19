@@ -16,7 +16,9 @@ from app.db.models import (
     Sector,
     StaffAccount,
     Table,
+    TableSession,
     TableSessionCashRequest,
+    TableSessionStatus,
 )
 from app.db.session import get_db
 from app.schemas.menu import (
@@ -322,13 +324,37 @@ def list_admin_orders(
     )
     if status:
         query = query.where(Order.status_aggregated == status)
+
+    active_session_ids = set(
+        db.scalars(
+            select(TableSession.id).where(
+                TableSession.store_id == store_id,
+                TableSession.status.in_(
+                    [
+                        TableSessionStatus.OPEN.value,
+                        TableSessionStatus.MESA_OCUPADA.value,
+                        TableSessionStatus.CON_PEDIDO.value,
+                    ]
+                ),
+            )
+        ).all()
+    )
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     orders_with_table = db.execute(query.order_by(Order.created_at.desc()).limit(limit).offset(offset)).unique().all()
     now_utc = datetime.now(tz=timezone.utc)
 
-    return AdminOrdersResponse(
-        total=total,
-        items=[
+    items: list[AdminOrderSummaryOut] = []
+    for order, table in orders_with_table:
+        bill_split = to_bill_split_out(db, get_latest_bill_split(db, order.id))
+        has_pending_payment = bool(
+            bill_split
+            and (
+                bill_split.status != "CLOSED"
+                or any(part.payment_status != "CONFIRMED" for part in bill_split.parts)
+            )
+        )
+
+        items.append(
             AdminOrderSummaryOut(
                 order_id=order.id,
                 table_code=table.code,
@@ -337,6 +363,8 @@ def list_admin_orders(
                 delivered_items=sum(item.qty for item in order.items if item.status == OrderStatus.DELIVERED.value),
                 total_amount=float(sum(float(item.unit_price) * item.qty for item in order.items)),
                 status_aggregated=order.status_aggregated,
+                has_pending_payment=has_pending_payment,
+                is_active_session=bool(order.table_session_id and order.table_session_id in active_session_ids),
                 sectors=[
                     SectorStatusOut(sector=item.sector, status=item.status)
                     for item in sorted(order.items, key=lambda row: (row.sector, row.id))
@@ -366,9 +394,9 @@ def list_admin_orders(
                 created_at=order.created_at,
                 updated_at=order.updated_at,
             )
-            for order, table in orders_with_table
-        ],
-    )
+        )
+
+    return AdminOrdersResponse(total=total, items=items)
 
 
 @router.get("/orders/{order_id}/items", response_model=AdminOrderItemsDetailResponse)

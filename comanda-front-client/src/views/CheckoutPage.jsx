@@ -47,6 +47,7 @@ export function CheckoutPage({
   onPayAllFromTable,
   mesaActionBusy = false,
   mesaActionMessage = "",
+  mesaPaymentStateMessage = "",
   showLiveTotal = true,
   showSessionContext = true,
 }) {
@@ -329,10 +330,6 @@ export function CheckoutPage({
       ) : (
         <form className="checkout-form mesa-actions" onSubmit={submit}>
           <div className="summary mesa-summary">
-            <span>Total por enviar</span>
-            <strong>{showLiveTotal ? toMoney(cartTotal) : "Oculto por el local"}</strong>
-          </div>
-          <div className="summary mesa-summary">
             <span>Total ya pedido</span>
             <strong>{showLiveTotal ? toMoney(committedTotal) : "Oculto por el local"}</strong>
           </div>
@@ -359,6 +356,9 @@ export function CheckoutPage({
             </button>
           </div>
           {mesaActionMessage ? <p className="muted">{mesaActionMessage}</p> : null}
+          {mesaPaymentStateMessage && mesaPaymentStateMessage !== mesaActionMessage ? (
+            <p className="muted">{mesaPaymentStateMessage}</p>
+          ) : null}
         </form>
       )}
 
