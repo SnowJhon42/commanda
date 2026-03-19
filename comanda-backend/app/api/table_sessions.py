@@ -5,6 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    CashRequestKind,
+    CashRequestStatus,
     Order,
     OrderItem,
     OrderStatus,
@@ -13,6 +15,7 @@ from app.db.models import (
     ProductVariant,
     Table,
     TableSession,
+    TableSessionCashRequest,
     TableSessionClient,
     TableSessionFeedback,
     TableSessionStatus,
@@ -32,6 +35,7 @@ from app.schemas.orders import (
 )
 from app.services.item_status import recompute_order_status_from_items
 from app.services.order_routing import route_item_to_sector
+from app.services.billing import get_latest_bill_split, sync_open_split_to_order_total
 from app.services.realtime import event_bus
 from app.services.table_code import normalize_table_code
 from app.services.ticket_generator import next_ticket_number
@@ -228,7 +232,11 @@ def join_table_session(
 
 
 @router.get("/table/session/{table_session_id}/state", response_model=TableSessionStateResponse)
-def get_table_session_state(table_session_id: int, db: Session = Depends(get_db)) -> TableSessionStateResponse:
+def get_table_session_state(
+    table_session_id: int,
+    client_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> TableSessionStateResponse:
     table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
     if not table_session:
         raise HTTPException(status_code=404, detail="Table session not found")
@@ -238,6 +246,33 @@ def get_table_session_state(table_session_id: int, db: Session = Depends(get_db)
     connected_clients = db.scalar(
         select(func.count()).select_from(TableSessionClient).where(TableSessionClient.table_session_id == table_session_id)
     ) or 0
+    latest_assistance_request = None
+    if client_id and client_id.strip():
+        latest_assistance_request = db.scalar(
+            select(TableSessionCashRequest)
+            .where(
+                TableSessionCashRequest.table_session_id == table_session_id,
+                TableSessionCashRequest.client_id == client_id.strip(),
+                TableSessionCashRequest.request_kind.in_(
+                    [CashRequestKind.WAITER_CALL.value, CashRequestKind.CASH_PAYMENT.value]
+                ),
+            )
+            .order_by(TableSessionCashRequest.created_at.desc(), TableSessionCashRequest.id.desc())
+            .limit(1)
+        )
+
+    assistance_message = None
+    assistance_kind = None
+    assistance_status = None
+    if latest_assistance_request:
+        assistance_kind = latest_assistance_request.request_kind
+        assistance_status = latest_assistance_request.status
+        if latest_assistance_request.status == CashRequestStatus.RESOLVED.value:
+            if latest_assistance_request.request_kind == CashRequestKind.CASH_PAYMENT.value:
+                assistance_message = "El mozo va en camino con la cuenta."
+            elif latest_assistance_request.request_kind == CashRequestKind.WAITER_CALL.value:
+                assistance_message = "El mozo se esta acercando."
+
     return TableSessionStateResponse(
         table_session_id=table_session.id,
         store_id=table_session.store_id,
@@ -246,6 +281,9 @@ def get_table_session_state(table_session_id: int, db: Session = Depends(get_db)
         status=table_session.status,
         connected_clients=int(connected_clients),
         active_order_id=active_order.id if active_order else None,
+        assistance_request_kind=assistance_kind,
+        assistance_request_status=assistance_status,
+        assistance_message=assistance_message,
     )
 
 
@@ -350,6 +388,10 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
     db.add(table_session)
     order.status_aggregated = recompute_order_status_from_items(db, order.id)
     db.add(order)
+    previous_split = get_latest_bill_split(db, order.id)
+    previous_split_id = previous_split.id if previous_split else None
+    previous_split_status = previous_split.status if previous_split else None
+    split_synced = sync_open_split_to_order_total(db, order)
     db.commit()
 
     if created_new:
@@ -388,6 +430,23 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
             "active_order_id": order.id,
         },
     )
+    if split_synced:
+        reason = (
+            "split_reopened_after_new_items"
+            if previous_split_status == "CLOSED" and previous_split_id != split_synced.id
+            else "order_total_updated"
+        )
+        event_bus.publish(
+            "bill.split.updated",
+            {
+                "order_id": order.id,
+                "table_session_id": table_session.id,
+                "store_id": payload.store_id,
+                "bill_split_id": split_synced.id,
+                "status": split_synced.status,
+                "reason": reason,
+            },
+        )
 
     return CreateOrderResponse(
         order_id=order.id,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createEqualSplit,
   fetchOrder,
@@ -11,6 +11,7 @@ import {
   openTableSessionEvents,
   reportSplitPartPayment,
   requestCashPayment,
+  requestWaiterHelpBySession,
   submitTableSessionFeedback,
   fetchTableSessionState,
   upsertOrderByTable,
@@ -23,7 +24,7 @@ import { EntryGatePage } from "./views/EntryGatePage";
 import { AdjustGuestsModal } from "./views/AdjustGuestsModal";
 
 const DEFAULT_STORE_ID = 1;
-const SESSION_STATE_KEY = "comanda_client_session_state_v2";
+const SESSION_STATE_KEY = "comanda_client_session_state_v3";
 const MIN_GUESTS = 1;
 const MAX_GUESTS = 20;
 const CLIENT_TABS = {
@@ -71,6 +72,19 @@ function getStableClientId() {
   return generated;
 }
 
+function paymentStatusMessageFromSplit(split) {
+  if (!split) return "";
+  const parts = split.parts || [];
+  if (split.status === "CLOSED") return "Pago confirmado por el staff.";
+  if (parts.length > 0 && parts.every((part) => part.payment_status === "CONFIRMED")) {
+    return "Pago confirmado por el staff.";
+  }
+  if (parts.some((part) => part.payment_status === "REPORTED")) {
+    return "El pago ya fue reportado. Falta validacion del staff.";
+  }
+  return "";
+}
+
 export function App() {
   const [storeId] = useState(DEFAULT_STORE_ID);
   const [clientId] = useState(getStableClientId);
@@ -85,6 +99,8 @@ export function App() {
   const [waiterBusy, setWaiterBusy] = useState(false);
   const [waiterNote, setWaiterNote] = useState("");
   const [waiterMessage, setWaiterMessage] = useState("");
+  const [waiterAlertMessage, setWaiterAlertMessage] = useState("");
+  const [hasWaiterAlert, setHasWaiterAlert] = useState(false);
 
   const [menu, setMenu] = useState(null);
   const [menuLoading, setMenuLoading] = useState(true);
@@ -98,13 +114,17 @@ export function App() {
   const [activeOrderDetail, setActiveOrderDetail] = useState(null);
   const [mesaActionBusy, setMesaActionBusy] = useState(false);
   const [mesaActionMessage, setMesaActionMessage] = useState("");
+  const [mesaPaymentStateMessage, setMesaPaymentStateMessage] = useState("");
   const [tableSessionId, setTableSessionId] = useState(null);
+  const [sessionJoinedAt, setSessionJoinedAt] = useState(null);
   const [connectedClients, setConnectedClients] = useState(1);
   const [uiToast, setUiToast] = useState("");
   const [closedSession, setClosedSession] = useState(null);
   const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
   const [isAdjustGuestsOpen, setIsAdjustGuestsOpen] = useState(false);
+  const previousTableSessionIdRef = useRef(null);
+  const hasPendingToSend = cartItems.length > 0;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -123,19 +143,9 @@ export function App() {
         setGuestCount(guestsValidation.value);
       }
       if (Number(saved.tableSessionId) > 0) setTableSessionId(Number(saved.tableSessionId));
+      if (Number(saved.sessionJoinedAt) > 0) setSessionJoinedAt(Number(saved.sessionJoinedAt));
       if (Number(saved.activeOrderId) > 0) setActiveOrderId(Number(saved.activeOrderId));
       if (Number(saved.connectedClients) > 0) setConnectedClients(Number(saved.connectedClients));
-      if (Array.isArray(saved.cartItems)) {
-        const hydrated = saved.cartItems
-          .filter((item) => item && typeof item.key === "string" && Number(item.qty) > 0)
-          .map((item) => ({
-            ...item,
-            qty: Number(item.qty),
-            unit_price: Number(item.unit_price || 0),
-            extra_option_ids: Array.isArray(item.extra_option_ids) ? item.extra_option_ids : [],
-          }));
-        setCartItems(hydrated);
-      }
       if (saved.closedSession?.tableSessionId && saved.closedSession?.tableCode) {
         setClosedSession({
           tableSessionId: Number(saved.closedSession.tableSessionId),
@@ -154,16 +164,16 @@ export function App() {
       tableCode,
       guestCount,
       tableSessionId,
+      sessionJoinedAt,
       activeOrderId,
       connectedClients,
       closedSession,
-      cartItems,
     };
     try {
       window.localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(payload));
     } catch {
     }
-  }, [tableCode, guestCount, tableSessionId, activeOrderId, connectedClients, closedSession, cartItems]);
+  }, [tableCode, guestCount, tableSessionId, sessionJoinedAt, activeOrderId, connectedClients, closedSession]);
 
   const loadMenu = async () => {
     setMenuLoading(true);
@@ -187,16 +197,35 @@ export function App() {
     [cartItems]
   );
   const showLiveTotalToClient = Boolean(menu?.show_live_total_to_client ?? true);
-  const committedItems = useMemo(() => activeOrderDetail?.items || [], [activeOrderDetail]);
+  const committedItems = useMemo(() => {
+    const items = activeOrderDetail?.items || [];
+    return items.filter((item) => {
+      if (item.created_by_client_id !== clientId) return false;
+      if (!sessionJoinedAt) return true;
+      const createdTs = item.created_at ? new Date(item.created_at).getTime() : 0;
+      return createdTs >= sessionJoinedAt;
+    });
+  }, [activeOrderDetail, clientId, sessionJoinedAt]);
+  const committedItemsForMesa = useMemo(() => {
+    const isPreviousDeliveredOrder =
+      activeOrderDetail?.status_aggregated === "DELIVERED" && cartItems.length > 0;
+    return isPreviousDeliveredOrder ? [] : committedItems;
+  }, [activeOrderDetail?.status_aggregated, cartItems.length, committedItems]);
   const committedTotal = useMemo(
-    () => committedItems.reduce((acc, item) => acc + Number(item.unit_price || 0) * Number(item.qty || 0), 0),
-    [committedItems]
+    () =>
+      committedItemsForMesa.reduce(
+        (acc, item) => acc + Number(item.unit_price || 0) * Number(item.qty || 0),
+        0
+      ),
+    [committedItemsForMesa]
   );
-  const mesaGrandTotal = committedTotal + cartTotal;
+  // "Total mesa" must only reflect confirmed consumption, not draft items.
+  const mesaGrandTotal = committedTotal;
 
   useEffect(() => {
     if (!activeOrderId) {
       setActiveOrderDetail(null);
+      setMesaPaymentStateMessage("");
       return;
     }
     let mounted = true;
@@ -212,6 +241,45 @@ export function App() {
 
     loadActiveOrder();
     const timer = setInterval(loadActiveOrder, 9000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, [activeOrderId]);
+
+  useEffect(() => {
+    const previous = previousTableSessionIdRef.current;
+    const current = tableSessionId;
+    if (previous !== null && current && previous !== current) {
+      // New table session: clear stale order pointers from previous session.
+      setActiveOrderId(null);
+      setActiveOrderDetail(null);
+      setMesaPaymentStateMessage("");
+      setLastCreatedOrder(null);
+    }
+    previousTableSessionIdRef.current = current;
+  }, [tableSessionId]);
+
+  useEffect(() => {
+    if (!activeOrderId) {
+      setMesaPaymentStateMessage("");
+      return;
+    }
+    let mounted = true;
+    const loadSplitState = async () => {
+      try {
+        const split = await fetchOrderSplit(activeOrderId);
+        if (!mounted) return;
+        setMesaPaymentStateMessage(paymentStatusMessageFromSplit(split));
+      } catch (error) {
+        if (!mounted) return;
+        if (error?.status === 404) {
+          setMesaPaymentStateMessage("");
+        }
+      }
+    };
+    loadSplitState();
+    const timer = setInterval(loadSplitState, 7000);
     return () => {
       mounted = false;
       clearInterval(timer);
@@ -301,6 +369,9 @@ export function App() {
     }
     if (tab === CLIENT_TABS.NOTIFICATIONS) {
       setHasTrackingAlert(false);
+    }
+    if (tab === CLIENT_TABS.WAITER) {
+      setHasWaiterAlert(false);
     }
   };
 
@@ -446,7 +517,7 @@ export function App() {
 
     const refreshState = async () => {
       try {
-        const state = await fetchTableSessionState(tableSessionId);
+        const state = await fetchTableSessionState(tableSessionId, clientId);
         if (state.status === "CLOSED") {
           setClosedSession({
             tableSessionId: state.table_session_id,
@@ -454,20 +525,30 @@ export function App() {
           });
           setFeedbackError("");
           setTableSessionId(null);
+          setSessionJoinedAt(null);
           setConnectedClients(1);
           setActiveOrderId(null);
+          setMesaPaymentStateMessage("");
           setHasTrackingAlert(false);
+          setHasWaiterAlert(false);
+          setWaiterAlertMessage("");
           setCartItems([]);
           return;
         }
         setConnectedClients(state.connected_clients || 1);
+        const nextWaiterMessage = state.assistance_message || "";
+        setWaiterAlertMessage(nextWaiterMessage);
+        if (!nextWaiterMessage) {
+          setHasWaiterAlert(false);
+        }
+        if (nextWaiterMessage && activeTab !== CLIENT_TABS.WAITER) {
+          setHasWaiterAlert(true);
+        }
         if (state.active_order_id) {
           if (activeTab !== CLIENT_TABS.NOTIFICATIONS) {
             setHasTrackingAlert(true);
           }
           setActiveOrderId(state.active_order_id);
-        } else {
-          setActiveOrderId(null);
         }
       } catch {
       }
@@ -481,12 +562,14 @@ export function App() {
     stream.addEventListener("order.created", refreshState);
     stream.addEventListener("table.session.joined", refreshState);
     stream.addEventListener("table.session.closed", refreshState);
+    stream.addEventListener("bill.cash.requested", refreshState);
+    stream.addEventListener("bill.cash.resolved", refreshState);
 
     return () => {
       clearInterval(timer);
       stream.close();
     };
-  }, [tableSessionId, activeTab]);
+  }, [tableSessionId, activeTab, clientId]);
 
   const handleEntryTableChange = (value) => {
     setTableCode(value);
@@ -527,6 +610,12 @@ export function App() {
         setConnectedClients(joined.connected_clients || 1);
         setTableCode(normalizedTable);
         setGuestCount(guestsValidation.value);
+        setSessionJoinedAt(Date.now());
+        setActiveOrderId(null);
+        setActiveOrderDetail(null);
+        setLastCreatedOrder(null);
+        setMesaPaymentStateMessage("");
+        setCartItems([]);
         setClosedSession(null);
         setEntryValidated(true);
         setActiveTab(CLIENT_TABS.MENU);
@@ -559,22 +648,21 @@ export function App() {
 
   const requestWaiterHelp = async () => {
     if (waiterBusy) return;
-    if (!activeOrderId) {
-      setWaiterMessage("Todavia no hay pedido enviado. Primero confirma tu pedido.");
+    if (!tableSessionId) {
+      setWaiterMessage("Primero registra la mesa.");
       return;
     }
     setWaiterBusy(true);
     setWaiterMessage("");
     const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
     try {
-      await requestCashPayment({
-        orderId: activeOrderId,
+      await requestWaiterHelpBySession({
+        tableSessionId,
         clientId,
         payerLabel,
-        requestKind: "WAITER_CALL",
         note: waiterNote || "Asistencia general",
       });
-      setWaiterMessage("Llamado enviado. El mozo va en camino.");
+      setWaiterMessage("Llamado enviado. Esperando confirmacion del staff.");
       setWaiterNote("");
     } catch (error) {
       setWaiterMessage(error.message || "No se pudo llamar al mozo.");
@@ -600,7 +688,7 @@ export function App() {
         requestKind: "CASH_PAYMENT",
         note: "Pedir cuenta",
       });
-      setMesaActionMessage("Aviso enviado: el mozo se acerca con la cuenta.");
+      setMesaActionMessage("Pedido enviado. Esperando confirmacion del staff.");
     } catch (error) {
       setMesaActionMessage(error.message || "No se pudo pedir la cuenta.");
     } finally {
@@ -625,14 +713,29 @@ export function App() {
       if (!activeSplit) {
         activeSplit = await createEqualSplit({ orderId: activeOrderId, partsCount: 1 });
       }
+      const allConfirmed =
+        (activeSplit.parts || []).length > 0 &&
+        (activeSplit.parts || []).every((part) => part.payment_status === "CONFIRMED");
+      if (activeSplit.status === "CLOSED" || allConfirmed) {
+        setMesaActionMessage("Pago confirmado por el staff.");
+        setMesaPaymentStateMessage("Pago confirmado por el staff.");
+        return;
+      }
       const pendingPart = (activeSplit.parts || []).find((part) => part.payment_status === "PENDING");
       if (!pendingPart) {
-        setMesaActionMessage("El pago ya fue reportado. Falta validacion del staff.");
+        const hasReported = (activeSplit.parts || []).some((part) => part.payment_status === "REPORTED");
+        setMesaActionMessage(
+          hasReported
+            ? "El pago ya fue reportado. Falta validacion del staff."
+            : "El pago ya fue confirmado por el staff."
+        );
+        setMesaPaymentStateMessage(paymentStatusMessageFromSplit(activeSplit));
         return;
       }
       const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
       await reportSplitPartPayment({ partId: pendingPart.id, payerLabel });
       setMesaActionMessage("Pago total reportado. El staff lo valida y cierra la mesa.");
+      setMesaPaymentStateMessage("El pago ya fue reportado. Falta validacion del staff.");
     } catch (error) {
       setMesaActionMessage(error.message || "No se pudo reportar el pago total.");
     } finally {
@@ -652,13 +755,17 @@ export function App() {
     setHasTrackingAlert(false);
     setWaiterNote("");
     setWaiterMessage("");
+    setWaiterAlertMessage("");
+    setHasWaiterAlert(false);
     setTableSessionId(null);
+    setSessionJoinedAt(null);
     setConnectedClients(1);
     setCartItems([]);
     setCheckoutError("");
     setFeedbackError("");
     setActiveOrderDetail(null);
     setMesaActionMessage("");
+    setMesaPaymentStateMessage("");
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem(SESSION_STATE_KEY);
@@ -706,7 +813,7 @@ export function App() {
               <strong>{connectedClients}</strong>
             </p>
             <p className="hero-table-row">
-              Consumo cargado: <strong>{committedItems.reduce((acc, item) => acc + (item.qty || 0), 0)} items</strong>
+              Consumo cargado: <strong>{committedItemsForMesa.reduce((acc, item) => acc + (item.qty || 0), 0)} items</strong>
             </p>
           </div>
         ) : (
@@ -760,7 +867,7 @@ export function App() {
                 guestCount={guestCount}
                 cartItems={cartItems}
                 cartTotal={cartTotal}
-                committedItems={committedItems}
+                committedItems={committedItemsForMesa}
                 committedTotal={committedTotal}
                 mesaGrandTotal={mesaGrandTotal}
                 checkoutError={checkoutError}
@@ -781,6 +888,7 @@ export function App() {
                 onPayAllFromTable={payAllFromTable}
                 mesaActionBusy={mesaActionBusy}
                 mesaActionMessage={mesaActionMessage}
+                mesaPaymentStateMessage={mesaPaymentStateMessage}
                 showLiveTotal={showLiveTotalToClient}
                 showSessionContext={false}
               />
@@ -806,6 +914,7 @@ export function App() {
               <button className="btn-primary btn-full" onClick={requestWaiterHelp} disabled={waiterBusy}>
                 {waiterBusy ? "Enviando..." : "Llamar al mozo"}
               </button>
+              {waiterAlertMessage && <p className="toast-ok">{waiterAlertMessage}</p>}
               {waiterMessage && <p className="muted">{waiterMessage}</p>}
             </section>
           )}
@@ -831,14 +940,30 @@ export function App() {
               <span>Notis</span>
             </button>
             <button
-              className={activeTab === CLIENT_TABS.TABLE ? "client-nav-btn client-nav-btn-active" : "client-nav-btn"}
+              className={
+                [
+                  "client-nav-btn",
+                  activeTab === CLIENT_TABS.TABLE ? "client-nav-btn-active" : "",
+                  hasPendingToSend ? "client-nav-btn-cta" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+              }
               onClick={() => selectTab(CLIENT_TABS.TABLE)}
             >
               <span className="client-nav-icon">🪑</span>
               <span>Mesa</span>
             </button>
             <button
-              className={activeTab === CLIENT_TABS.WAITER ? "client-nav-btn client-nav-btn-active" : "client-nav-btn"}
+              className={
+                [
+                  "client-nav-btn",
+                  activeTab === CLIENT_TABS.WAITER ? "client-nav-btn-active" : "",
+                  hasWaiterAlert ? "client-nav-btn-cta" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+              }
               onClick={() => selectTab(CLIENT_TABS.WAITER)}
             >
               <span className="client-nav-icon">🔔</span>

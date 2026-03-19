@@ -38,7 +38,7 @@ function billBadgeClass(status) {
 
 function cashRequestKindLabel(kind) {
   if (kind === "WAITER_CALL") return "Llamado mozo";
-  if (kind === "CASH_PAYMENT") return "Cobro efectivo";
+  if (kind === "CASH_PAYMENT") return "Pedido de cuenta";
   return "Solicitud";
 }
 
@@ -86,9 +86,14 @@ export function OrderDetailPanel({
             </p>
             <p className="muted">Total: {formatMoney(orderDetail.total_amount)}</p>
             {actorSector === "ADMIN" && (
-              <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable}>
-                {closingTable ? "Cerrando..." : "Cerrar mesa"}
-              </button>
+              <div className="order-actions">
+                <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable}>
+                  {closingTable ? "Cerrando..." : "Cerrar mesa"}
+                </button>
+                {orderDetail.bill_split?.status === "CLOSED" && (
+                  <span className="badge badge-delivered">Pago confirmado</span>
+                )}
+              </div>
             )}
           </article>
 
@@ -206,6 +211,11 @@ export function OrderDetailPanel({
                     )}
                   </div>
                 ))}
+                {actorSector === "ADMIN" && orderDetail.bill_split.status === "CLOSED" && (
+                  <button className="btn-primary" onClick={onCloseTable} disabled={closingTable}>
+                    {closingTable ? "Cerrando..." : "Cerrar mesa y finalizar"}
+                  </button>
+                )}
               </div>
             )}
           </article>
@@ -221,7 +231,9 @@ export function OrderDetailPanel({
                     <span>
                       {cashRequestKindLabel(req.request_kind)}: {req.payer_label} {req.note ? `- ${req.note}` : ""}
                     </span>
-                    <span className={billBadgeClass(req.status === "RESOLVED" ? "CONFIRMED" : "PENDING")}>{req.status}</span>
+                    <span className={billBadgeClass(req.status === "RESOLVED" ? "CONFIRMED" : "PENDING")}>
+                      {req.status === "RESOLVED" ? "TOMADO" : "PENDIENTE"}
+                    </span>
                     {req.status === "PENDING" && (actorSector === "ADMIN" || actorSector === "WAITER") ? (
                       <button className="btn-primary" onClick={() => onResolveCashRequest(req.id)} disabled={billingBusy}>
                         {billingBusy ? "..." : "Marcar atendido"}

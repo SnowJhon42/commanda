@@ -17,7 +17,10 @@ from app.db.models import (
     OrderItem,
     Sector,
     StaffAccount,
+    Table,
     TableSessionCashRequest,
+    TableSession,
+    TableSessionStatus,
 )
 from app.db.session import get_db
 from app.schemas.orders import (
@@ -32,6 +35,11 @@ from app.services.billing import get_latest_bill_split, maybe_close_bill_split, 
 from app.services.realtime import event_bus
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+ACTIVE_TABLE_SESSION_STATUSES = {
+    TableSessionStatus.OPEN.value,
+    TableSessionStatus.MESA_OCUPADA.value,
+    TableSessionStatus.CON_PEDIDO.value,
+}
 
 
 def _order_total_amount(order: Order) -> Decimal:
@@ -234,6 +242,7 @@ def request_cash_payment(
     db.commit()
     db.refresh(cash_request)
 
+    table_code = db.scalar(select(Table.code).where(Table.id == order.table_id)) or "-"
     event_bus.publish(
         "bill.cash.requested",
         {
@@ -241,11 +250,86 @@ def request_cash_payment(
             "order_id": order.id,
             "table_session_id": order.table_session_id,
             "store_id": order.store_id,
+            "table_code": table_code,
             "payer_label": cash_request.payer_label,
             "request_kind": cash_request.request_kind,
         },
     )
     return _cash_request_out(cash_request)
+
+
+@router.post("/table-sessions/{table_session_id}/request-waiter", response_model=TableSessionCashRequestOut)
+def request_waiter_help(
+    table_session_id: int,
+    payload: RequestCashPaymentRequest,
+    db: Session = Depends(get_db),
+) -> TableSessionCashRequestOut:
+    table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
+    if not table_session:
+        raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.status not in ACTIVE_TABLE_SESSION_STATUSES:
+        raise HTTPException(status_code=409, detail="Table session is closed")
+
+    latest_order = db.scalar(
+        select(Order)
+        .where(
+            Order.table_session_id == table_session.id,
+            Order.store_id == table_session.store_id,
+        )
+        .order_by(Order.id.desc())
+        .limit(1)
+    )
+
+    cash_request = TableSessionCashRequest(
+        table_session_id=table_session.id,
+        order_id=latest_order.id if latest_order else None,
+        store_id=table_session.store_id,
+        client_id=payload.client_id,
+        payer_label=payload.payer_label.strip(),
+        request_kind=CashRequestKind.WAITER_CALL.value,
+        note=payload.note.strip() if payload.note else None,
+        status=CashRequestStatus.PENDING.value,
+        created_at=datetime.utcnow(),
+    )
+    db.add(cash_request)
+    db.commit()
+    db.refresh(cash_request)
+
+    table_code = db.scalar(select(Table.code).where(Table.id == table_session.table_id)) or "-"
+    event_bus.publish(
+        "bill.cash.requested",
+        {
+            "cash_request_id": cash_request.id,
+            "order_id": cash_request.order_id,
+            "table_session_id": cash_request.table_session_id,
+            "store_id": cash_request.store_id,
+            "table_code": table_code,
+            "payer_label": cash_request.payer_label,
+            "request_kind": cash_request.request_kind,
+        },
+    )
+    return _cash_request_out(cash_request)
+
+
+@router.get("/table-sessions/{table_session_id}/cash-requests", response_model=list[TableSessionCashRequestOut])
+def list_table_session_cash_requests(
+    table_session_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> list[TableSessionCashRequestOut]:
+    table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
+    if not table_session:
+        raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.store_id != current_staff.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    requests = db.scalars(
+        select(TableSessionCashRequest)
+        .where(TableSessionCashRequest.table_session_id == table_session_id)
+        .order_by(TableSessionCashRequest.created_at.desc(), TableSessionCashRequest.id.desc())
+        .limit(40)
+    ).all()
+    return [_cash_request_out(req) for req in requests]
 
 
 @router.post("/cash-requests/{cash_request_id}/resolve", response_model=TableSessionCashRequestOut)
@@ -273,6 +357,11 @@ def resolve_cash_payment_request(
     db.commit()
     db.refresh(cash_request)
 
+    table_code = db.scalar(
+        select(Table.code)
+        .join(TableSession, TableSession.table_id == Table.id)
+        .where(TableSession.id == cash_request.table_session_id)
+    ) or "-"
     event_bus.publish(
         "bill.cash.resolved",
         {
@@ -280,6 +369,7 @@ def resolve_cash_payment_request(
             "order_id": cash_request.order_id,
             "table_session_id": cash_request.table_session_id,
             "store_id": cash_request.store_id,
+            "table_code": table_code,
             "request_kind": cash_request.request_kind,
         },
     )

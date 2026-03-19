@@ -86,9 +86,12 @@ export async function joinTableSession({ tableSessionId, clientId, alias }) {
   }
 }
 
-export async function fetchTableSessionState(tableSessionId) {
+export async function fetchTableSessionState(tableSessionId, clientId) {
   try {
-    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/state`);
+    const qs = new URLSearchParams();
+    if (clientId) qs.set("client_id", clientId);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/state${suffix}`);
     if (!res.ok) {
       await toApiError(res, "No se pudo cargar estado de la mesa.");
     }
@@ -224,6 +227,27 @@ export async function requestCashPayment({ orderId, clientId, payerLabel, note, 
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudo pedir asistencia para pago en efectivo.");
+  }
+}
+
+export async function requestWaiterHelpBySession({ tableSessionId, clientId, payerLabel, note }) {
+  try {
+    const res = await fetch(`${API_URL}/billing/table-sessions/${tableSessionId}/request-waiter`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: clientId,
+        payer_label: payerLabel,
+        request_kind: "WAITER_CALL",
+        note: note?.trim() || undefined,
+      }),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo llamar al mozo.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo llamar al mozo.");
   }
 }
 

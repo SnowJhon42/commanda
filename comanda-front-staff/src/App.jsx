@@ -7,6 +7,7 @@ import {
   fetchStaffBoardItems,
   fetchTableSessions,
   fetchStaffOrderItems,
+  fetchTableSessionCashRequests,
   fetchStoreClientVisibility,
   openStaffEvents,
   closeTableSession,
@@ -78,9 +79,9 @@ function groupItemsByOrder(items) {
   return [...map.values()]
     .map((group) => ({
       ...group,
-      items: [...group.items].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+      items: [...group.items].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
     }))
-    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
 function criticalThresholdBySector(sector) {
@@ -117,12 +118,14 @@ export function App() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [closingTable, setClosingTable] = useState(false);
+  const [validatingPaymentKey, setValidatingPaymentKey] = useState("");
   const [billingBusy, setBillingBusy] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [alarmText, setAlarmText] = useState("");
   const lastDoneAlertRef = useRef("");
   const lastDelayAlertRef = useRef("");
+  const lastCashAlertRef = useRef("");
 
   const playAlarm = useCallback((kind) => {
     if (!soundEnabled || typeof window === "undefined") return;
@@ -216,6 +219,28 @@ export function App() {
       setDetailLoading(false);
     }
   }, [selectedOrderId, session]);
+
+  const requestAdminOrderDetail = useCallback(
+    async (orderId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !orderId) return null;
+      return fetchAdminOrderItems({
+        token: session.access_token,
+        orderId,
+      });
+    },
+    [session]
+  );
+
+  const requestAdminWaiterCalls = useCallback(
+    async (tableSessionId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !tableSessionId) return [];
+      return fetchTableSessionCashRequests({
+        token: session.access_token,
+        tableSessionId,
+      });
+    },
+    [session]
+  );
 
   const loadTableSessions = useCallback(async () => {
     if (!session) return;
@@ -325,6 +350,64 @@ export function App() {
     }
   }, [session, selectedOrderDetail, loadBoard, loadOrderDetail]);
 
+  const closeTableByCode = useCallback(
+    async (tableCode) => {
+      if (!session || session.staff.sector !== "ADMIN" || !tableCode) return;
+      setError("");
+      setClosingTable(true);
+      try {
+        await closeTableSession({
+          token: session.access_token,
+          tableCode,
+        });
+        await loadBoard();
+        await loadTableSessions();
+        if (selectedOrderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo cerrar la mesa.");
+      } finally {
+        setClosingTable(false);
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
+  );
+
+  const confirmReportedPayments = useCallback(
+    async (orderIds = []) => {
+      if (!session || session.staff.sector !== "ADMIN") return;
+      const ids = [...new Set((orderIds || []).map((id) => Number(id)).filter((id) => id > 0))];
+      if (ids.length === 0) return;
+      setError("");
+      setValidatingPaymentKey(ids.join(","));
+      try {
+        for (const orderId of ids) {
+          // eslint-disable-next-line no-await-in-loop
+          const detail = await fetchAdminOrderItems({
+            token: session.access_token,
+            orderId,
+          });
+          const reportedParts = (detail?.bill_split?.parts || []).filter((part) => part.payment_status === "REPORTED");
+          for (const part of reportedParts) {
+            // eslint-disable-next-line no-await-in-loop
+            await confirmSplitPart({ token: session.access_token, partId: part.id });
+          }
+        }
+        await loadBoard();
+        await loadTableSessions();
+        if (selectedOrderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo validar el pago.");
+      } finally {
+        setValidatingPaymentKey("");
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
+  );
+
   const createSplit = useCallback(async () => {
     if (!selectedOrderDetail) return;
     setError("");
@@ -351,13 +434,14 @@ export function App() {
         await confirmSplitPart({ token: session.access_token, partId });
         await loadOrderDetail();
         await loadBoard();
+        await loadTableSessions();
       } catch (err) {
         setError(err.message || "No se pudo confirmar el pago.");
       } finally {
         setBillingBusy(false);
       }
     },
-    [session, loadOrderDetail, loadBoard]
+    [session, loadOrderDetail, loadBoard, loadTableSessions]
   );
 
   const resolveCash = useCallback(
@@ -369,13 +453,27 @@ export function App() {
         await resolveCashRequest({ token: session.access_token, cashRequestId });
         await loadOrderDetail();
         await loadBoard();
+        await loadTableSessions();
       } catch (err) {
         setError(err.message || "No se pudo resolver la solicitud de efectivo.");
       } finally {
         setBillingBusy(false);
       }
     },
-    [session, loadOrderDetail, loadBoard]
+    [session, loadOrderDetail, loadBoard, loadTableSessions]
+  );
+
+  const resolveWaiterCall = useCallback(
+    async (cashRequestId) => {
+      if (!session) return;
+      await resolveCashRequest({ token: session.access_token, cashRequestId });
+      await loadTableSessions();
+      await loadBoard();
+      if (selectedOrderId) {
+        await loadOrderDetail();
+      }
+    },
+    [session, selectedOrderId, loadTableSessions, loadBoard, loadOrderDetail]
   );
 
   const markTableSession = useCallback(
@@ -448,13 +546,24 @@ export function App() {
     let visibleRows = [...boardRows];
     if (staffSector === "ADMIN") {
       if (adminQueueFilter === "ACTIVE") {
-        visibleRows = visibleRows.filter((row) => row.status_aggregated !== "DELIVERED");
+        visibleRows = visibleRows.filter(
+          (row) =>
+            row.status_aggregated !== "DELIVERED" ||
+            Boolean(row.has_pending_payment) ||
+            Boolean(row.is_active_session)
+        );
       } else if (adminQueueFilter === "DELIVERED") {
         visibleRows = visibleRows.filter((row) => row.status_aggregated === "DELIVERED");
       }
       visibleRows.sort((a, b) => {
-        const aActive = a.status_aggregated !== "DELIVERED" ? 1 : 0;
-        const bActive = b.status_aggregated !== "DELIVERED" ? 1 : 0;
+        const aActive =
+          a.status_aggregated !== "DELIVERED" || Boolean(a.has_pending_payment) || Boolean(a.is_active_session)
+            ? 1
+            : 0;
+        const bActive =
+          b.status_aggregated !== "DELIVERED" || Boolean(b.has_pending_payment) || Boolean(b.is_active_session)
+            ? 1
+            : 0;
         if (aActive !== bActive) return bActive - aActive;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
@@ -495,13 +604,46 @@ export function App() {
           <MenuEditorPage token={session?.access_token} storeId={session?.staff?.store_id} />
         );
       }
-      return <AdminBoardPage {...sharedProps} />;
+      return (
+        <AdminBoardPage
+          rows={visibleRows}
+          loading={loading}
+          tableSessionsRows={tableSessionsRows}
+          onRequestOrderDetail={requestAdminOrderDetail}
+          onAdvanceItem={advanceItem}
+          advancingKey={advancingKey}
+          actorSector={staffSector}
+          onCloseTableByCode={closeTableByCode}
+          closingTable={closingTable}
+          onRequestWaiterCalls={requestAdminWaiterCalls}
+          onResolveWaiterCall={resolveWaiterCall}
+          onConfirmReportedPayments={confirmReportedPayments}
+          validatingPaymentKey={validatingPaymentKey}
+        />
+      );
     }
     if (staffSector === "KITCHEN") return <KitchenBoardPage {...sharedProps} />;
     if (staffSector === "BAR") return <BarBoardPage {...sharedProps} />;
     if (staffSector === "WAITER") return <WaiterBoardPage {...sharedProps} />;
     return null;
-  }, [boardRows, loading, advancingKey, selectedOrderId, advanceItem, staffSector, alertsOnly, adminQueueFilter, adminView, session]);
+  }, [
+    boardRows,
+    loading,
+    advancingKey,
+    selectedOrderId,
+    advanceItem,
+    staffSector,
+    alertsOnly,
+    adminQueueFilter,
+    adminView,
+    session,
+    tableSessionsRows,
+    requestAdminOrderDetail,
+    requestAdminWaiterCalls,
+    resolveWaiterCall,
+    confirmReportedPayments,
+    validatingPaymentKey,
+  ]);
 
   useEffect(() => {
     if (!session) return;
@@ -582,6 +724,39 @@ export function App() {
       }
     };
 
+    const handleCashRequested = (event) => {
+      scheduleRefresh();
+      if (session.staff.sector !== "ADMIN") return;
+
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!payload || payload.request_kind !== "CASH_PAYMENT") return;
+
+      const cashRequestId = payload.cash_request_id ? String(payload.cash_request_id) : "";
+      if (!cashRequestId || lastCashAlertRef.current === cashRequestId) return;
+      lastCashAlertRef.current = cashRequestId;
+      setAlarmText(`Mesa ${payload.table_code || "?"} pide la cuenta`);
+      playAlarm("delay");
+    };
+
+    const handleCashResolved = (event) => {
+      scheduleRefresh();
+      if (session.staff.sector !== "ADMIN") return;
+
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!payload || payload.request_kind !== "CASH_PAYMENT") return;
+      setAlarmText(`Cuenta tomada en mesa ${payload.table_code || "?"}`);
+    };
+
     stream.onopen = () => setLiveConnected(true);
     stream.onerror = () => setLiveConnected(false);
     stream.onmessage = scheduleRefresh;
@@ -589,8 +764,8 @@ export function App() {
     stream.addEventListener("order.created", scheduleRefresh);
     stream.addEventListener("table.session.closed", scheduleRefresh);
     stream.addEventListener("bill.split.updated", scheduleRefresh);
-    stream.addEventListener("bill.cash.requested", scheduleRefresh);
-    stream.addEventListener("bill.cash.resolved", scheduleRefresh);
+    stream.addEventListener("bill.cash.requested", handleCashRequested);
+    stream.addEventListener("bill.cash.resolved", handleCashResolved);
 
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -737,20 +912,22 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-      <TableSessionsPanel
-        rows={tableSessionsRows}
-        loading={tableSessionsLoading}
-        actorSector={staffSector}
-        busyId={tableSessionBusyId}
-        onMarkRetired={(id) => markTableSession(id, "SE_RETIRARON")}
-      />
+      {!(staffSector === "ADMIN" && adminView === "BOARD") && (
+        <TableSessionsPanel
+          rows={tableSessionsRows}
+          loading={tableSessionsLoading}
+          actorSector={staffSector}
+          busyId={tableSessionBusyId}
+          onMarkRetired={(id) => markTableSession(id, "SE_RETIRARON")}
+        />
+      )}
       {staffSector === "ADMIN" && adminView === "FEEDBACK" ? (
         <FeedbackSummaryPage loading={feedbackLoading} summary={feedbackSummary} />
       ) : (
         board
       )}
 
-      {!(staffSector === "ADMIN" && adminView === "FEEDBACK") && (
+      {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD")) && (
         <OrderDetailPanel
           orderDetail={selectedOrderDetail}
           selectedOrderId={selectedOrderId}

@@ -17,15 +17,16 @@ function elapsedLabel(minutesValue) {
 
 export function TableSessionsPanel({ rows, loading, actorSector, busyId, onMarkRetired }) {
   const canUpdate = actorSector === "ADMIN" || actorSector === "WAITER";
+  const sortedRows = [...rows].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
   return (
     <section className="panel">
       <div className="section-head">
         <h3>Mesas activas</h3>
-        <span className="muted">{rows.length} activas</span>
+        <span className="muted">{sortedRows.length} activas</span>
       </div>
       {loading && <p className="muted">Actualizando mesas...</p>}
-      {rows.length === 0 ? (
+      {sortedRows.length === 0 ? (
         <p className="muted">No hay mesas activas.</p>
       ) : (
         <div className="table-wrap">
@@ -42,7 +43,7 @@ export function TableSessionsPanel({ rows, loading, actorSector, busyId, onMarkR
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {sortedRows.map((row) => (
                 <tr key={row.table_session_id} className={row.active_order_id ? "table-session-has-order" : ""}>
                   <td>{row.table_code}</td>
                   <td>{row.guest_count}</td>

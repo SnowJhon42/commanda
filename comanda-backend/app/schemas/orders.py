@@ -63,6 +63,9 @@ class TableSessionStateResponse(BaseModel):
     status: str
     connected_clients: int
     active_order_id: int | None = None
+    assistance_request_kind: str | None = None
+    assistance_request_status: str | None = None
+    assistance_message: str | None = None
 
 
 class StaffTableSessionOut(BaseModel):
@@ -217,6 +220,8 @@ class OrderItemOut(BaseModel):
     product_name: str
     qty: int
     unit_price: float
+    created_by_client_id: str | None = None
+    created_at: datetime | None = None
     notes: str | None = None
     sector: str
     status: str
@@ -277,6 +282,8 @@ class AdminOrderSummaryOut(BaseModel):
     delivered_items: int
     total_amount: float
     status_aggregated: str
+    has_pending_payment: bool = False
+    is_active_session: bool = False
     sectors: list[SectorStatusOut]
     elapsed_minutes: int = 0
     created_at: datetime
