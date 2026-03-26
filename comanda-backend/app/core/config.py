@@ -7,7 +7,7 @@ class Settings:
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./comanda_dev.db")
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "720"))
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))
     cors_allow_origins: list[str] = [
         origin.strip()
         for origin in os.getenv(
@@ -27,5 +27,10 @@ class Settings:
         r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$",
     )
 
+    def validate(self) -> None:
+        if self.environment.lower() != "dev" and self.jwt_secret_key == "change-me-in-production":
+            raise RuntimeError("JWT_SECRET_KEY must be set to a non-default value outside dev")
+
 
 settings = Settings()
+settings.validate()

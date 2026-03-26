@@ -44,6 +44,7 @@ class JoinTableSessionResponse(BaseModel):
     client_id: str
     alias: str | None = None
     connected_clients: int
+    table_session_token: str
 
 
 class UpsertOrderByTableRequest(BaseModel):
@@ -66,6 +67,28 @@ class TableSessionStateResponse(BaseModel):
     assistance_request_kind: str | None = None
     assistance_request_status: str | None = None
     assistance_message: str | None = None
+
+
+class TableSessionConsumptionItemOut(BaseModel):
+    item_id: int
+    order_id: int
+    product_name: str
+    qty: int
+    unit_price: float
+    created_by_client_id: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    notes: str | None = None
+    sector: str
+    status: str
+
+
+class TableSessionConsumptionResponse(BaseModel):
+    table_session_id: int
+    table_code: str
+    guest_count: int
+    order_ids: list[int]
+    items: list[TableSessionConsumptionItemOut]
 
 
 class StaffTableSessionOut(BaseModel):
@@ -103,6 +126,15 @@ class StoreClientVisibilityResponse(BaseModel):
 
 class UpdateStoreClientVisibilityRequest(BaseModel):
     show_live_total_to_client: bool
+
+
+class StorePrintSettingsResponse(BaseModel):
+    store_id: int
+    print_mode: str
+
+
+class UpdateStorePrintSettingsRequest(BaseModel):
+    print_mode: str = Field(..., pattern="^(MANUAL|AUTOMATIC)$")
 
 
 class CloseTableSessionResponse(BaseModel):
@@ -296,6 +328,9 @@ class AdminOrderSummaryOut(BaseModel):
     elapsed_minutes: int = 0
     created_at: datetime
     updated_at: datetime
+    bill_split_closed: bool = False
+    payment_confirmed: bool = False
+    print_status: "OrderPrintStatusOut"
 
 
 class AdminOrdersResponse(BaseModel):
@@ -338,6 +373,31 @@ class ChangeItemStatusResponse(BaseModel):
     updated_at: datetime
 
 
+class OrderPrintSectorStateOut(BaseModel):
+    sector: str
+    required: bool
+    status: str
+    printed_at: datetime | None = None
+
+
+class OrderPrintStatusOut(BaseModel):
+    overall_status: str
+    full_status: str
+    full_printed_at: datetime | None = None
+    commands_status: str
+    sectors: list[OrderPrintSectorStateOut]
+
+
+class MarkOrderPrintRequest(BaseModel):
+    target: str = Field(..., pattern="^(FULL|COMMANDS|KITCHEN|BAR|WAITER)$")
+
+
+class MarkOrderPrintResponse(BaseModel):
+    order_id: int
+    touched_targets: list[str]
+    print_status: OrderPrintStatusOut
+
+
 class AdminSectorDelayOut(BaseModel):
     sector: str
     waiting_items: int
@@ -369,4 +429,7 @@ class AdminOrderItemsDetailResponse(BaseModel):
     events: list[ItemStatusEventOut]
     bill_split: BillSplitOut | None = None
     cash_requests: list[TableSessionCashRequestOut] = []
+    print_status: "OrderPrintStatusOut"
+    table_elapsed_minutes: int = 0
+    order_elapsed_minutes: int = 0
     created_at: datetime
