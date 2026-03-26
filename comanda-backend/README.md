@@ -15,17 +15,16 @@ pip install -r requirements.txt
 ## Variables de entorno opcionales
 
 - `DATABASE_URL` (default: `sqlite:///./comanda_dev.db`)
-- `JWT_SECRET_KEY`
-- `ACCESS_TOKEN_EXPIRE_MINUTES`
+- `JWT_SECRET_KEY` (obligatoria fuera de `ENVIRONMENT=dev`)
+- `ACCESS_TOKEN_EXPIRE_MINUTES` (default `120`)
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_R2_BUCKET`
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_PUBLIC_HOST` (default `https://pub-5d4b544badf2444a82ffa24a0f757908.r2.dev`)
 
-## Inicializar base de datos (opcional)
+## Inicializar base de datos
 
-Por defecto FastAPI crea tablas ORM al arrancar.
-Si queres cargar esquema/seed oficial SQL de `docs/`, ejecuta:
+El backend ya no modifica esquema al arrancar. Antes de levantarlo, carga esquema/seed oficial con:
 
 ```bash
 python scripts/init_db.py

@@ -1,5 +1,16 @@
 ﻿const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function withTableSessionToken(headers = {}, tableSessionToken) {
+  if (!tableSessionToken) return headers;
+  return { ...headers, "X-Table-Session-Token": tableSessionToken };
+}
+
+function withSessionTokenQuery(url, tableSessionToken) {
+  if (!tableSessionToken) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}session_token=${encodeURIComponent(tableSessionToken)}`;
+}
+
 async function toApiError(res, fallbackMessage) {
   let detail = "";
   try {
@@ -86,12 +97,11 @@ export async function joinTableSession({ tableSessionId, clientId, alias }) {
   }
 }
 
-export async function fetchTableSessionState(tableSessionId, clientId) {
+export async function fetchTableSessionState(tableSessionId, clientId, tableSessionToken) {
   try {
-    const qs = new URLSearchParams();
-    if (clientId) qs.set("client_id", clientId);
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/state${suffix}`);
+    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/state`, {
+      headers: withTableSessionToken({}, tableSessionToken),
+    });
     if (!res.ok) {
       await toApiError(res, "No se pudo cargar estado de la mesa.");
     }
@@ -101,11 +111,11 @@ export async function fetchTableSessionState(tableSessionId, clientId) {
   }
 }
 
-export async function submitTableSessionFeedback({ tableSessionId, clientId, rating, comment }) {
+export async function submitTableSessionFeedback({ tableSessionId, clientId, rating, comment, tableSessionToken }) {
   try {
     const res = await fetch(`${API_URL}/table/session/${tableSessionId}/feedback`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTableSessionToken({ "Content-Type": "application/json" }, tableSessionToken),
       body: JSON.stringify({
         client_id: clientId,
         rating: Number(rating),
@@ -121,11 +131,25 @@ export async function submitTableSessionFeedback({ tableSessionId, clientId, rat
   }
 }
 
-export async function upsertOrderByTable(payload) {
+export async function fetchTableSessionConsumption(tableSessionId, tableSessionToken) {
+  try {
+    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/consumption`, {
+      headers: withTableSessionToken({}, tableSessionToken),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo cargar el consumo de la mesa.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar el consumo de la mesa.");
+  }
+}
+
+export async function upsertOrderByTable(payload, tableSessionToken) {
   try {
     const res = await fetch(`${API_URL}/orders/upsert-by-table`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTableSessionToken({ "Content-Type": "application/json" }, tableSessionToken),
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -137,9 +161,11 @@ export async function upsertOrderByTable(payload) {
   }
 }
 
-export async function fetchOrder(orderId) {
+export async function fetchOrder(orderId, tableSessionToken) {
   try {
-    const res = await fetch(`${API_URL}/orders/${orderId}`);
+    const res = await fetch(`${API_URL}/orders/${orderId}`, {
+      headers: withTableSessionToken({}, tableSessionToken),
+    });
     if (!res.ok) {
       await toApiError(res, "No se pudo cargar el seguimiento.");
     }
@@ -149,9 +175,11 @@ export async function fetchOrder(orderId) {
   }
 }
 
-export async function fetchOrderSplit(orderId) {
+export async function fetchOrderSplit(orderId, tableSessionToken) {
   try {
-    const res = await fetch(`${API_URL}/billing/orders/${orderId}/split`);
+    const res = await fetch(`${API_URL}/billing/orders/${orderId}/split`, {
+      headers: withTableSessionToken({}, tableSessionToken),
+    });
     if (!res.ok) {
       await toApiError(res, "No hay division creada.");
     }
@@ -161,11 +189,11 @@ export async function fetchOrderSplit(orderId) {
   }
 }
 
-export async function createEqualSplit({ orderId, partsCount }) {
+export async function createEqualSplit({ orderId, partsCount, tableSessionToken }) {
   try {
     const res = await fetch(`${API_URL}/billing/orders/${orderId}/split-equal`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTableSessionToken({ "Content-Type": "application/json" }, tableSessionToken),
       body: JSON.stringify({ parts_count: Number(partsCount) }),
     });
     if (!res.ok) {
@@ -177,11 +205,11 @@ export async function createEqualSplit({ orderId, partsCount }) {
   }
 }
 
-export async function createConsumptionSplit({ orderId }) {
+export async function createConsumptionSplit({ orderId, tableSessionToken }) {
   try {
     const res = await fetch(`${API_URL}/billing/orders/${orderId}/split-consumption`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTableSessionToken({ "Content-Type": "application/json" }, tableSessionToken),
       body: JSON.stringify({}),
     });
     if (!res.ok) {
@@ -193,11 +221,11 @@ export async function createConsumptionSplit({ orderId }) {
   }
 }
 
-export async function reportSplitPartPayment({ partId, payerLabel }) {
+export async function reportSplitPartPayment({ partId, payerLabel, tableSessionToken }) {
   try {
     const res = await fetch(`${API_URL}/billing/split-parts/${partId}/report`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTableSessionToken({ "Content-Type": "application/json" }, tableSessionToken),
       body: JSON.stringify({ payer_label: payerLabel }),
     });
     if (!res.ok) {
@@ -209,11 +237,18 @@ export async function reportSplitPartPayment({ partId, payerLabel }) {
   }
 }
 
-export async function requestCashPayment({ orderId, clientId, payerLabel, note, requestKind = "CASH_PAYMENT" }) {
+export async function requestCashPayment({
+  orderId,
+  clientId,
+  payerLabel,
+  note,
+  requestKind = "CASH_PAYMENT",
+  tableSessionToken,
+}) {
   try {
     const res = await fetch(`${API_URL}/billing/orders/${orderId}/request-cash`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTableSessionToken({ "Content-Type": "application/json" }, tableSessionToken),
       body: JSON.stringify({
         client_id: clientId,
         payer_label: payerLabel,
@@ -230,11 +265,11 @@ export async function requestCashPayment({ orderId, clientId, payerLabel, note, 
   }
 }
 
-export async function requestWaiterHelpBySession({ tableSessionId, clientId, payerLabel, note }) {
+export async function requestWaiterHelpBySession({ tableSessionId, clientId, payerLabel, note, tableSessionToken }) {
   try {
     const res = await fetch(`${API_URL}/billing/table-sessions/${tableSessionId}/request-waiter`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTableSessionToken({ "Content-Type": "application/json" }, tableSessionToken),
       body: JSON.stringify({
         client_id: clientId,
         payer_label: payerLabel,
@@ -251,10 +286,12 @@ export async function requestWaiterHelpBySession({ tableSessionId, clientId, pay
   }
 }
 
-export function openOrderEvents(orderId) {
-  return new EventSource(`${API_URL}/events/orders/${orderId}/stream`);
+export function openOrderEvents(orderId, tableSessionToken) {
+  return new EventSource(withSessionTokenQuery(`${API_URL}/events/orders/${orderId}/stream`, tableSessionToken));
 }
 
-export function openTableSessionEvents(tableSessionId) {
-  return new EventSource(`${API_URL}/events/table-session/${tableSessionId}/stream`);
+export function openTableSessionEvents(tableSessionId, tableSessionToken) {
+  return new EventSource(
+    withSessionTokenQuery(`${API_URL}/events/table-session/${tableSessionId}/stream`, tableSessionToken)
+  );
 }

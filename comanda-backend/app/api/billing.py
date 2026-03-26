@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_staff
+from app.api.deps import TableClientContext, get_current_staff, get_current_table_client
 from app.db.models import (
     BillPartPaymentStatus,
     BillSplit,
@@ -85,11 +85,23 @@ def _cash_request_out(req: TableSessionCashRequest) -> TableSessionCashRequestOu
     )
 
 
+def _require_table_order_access(order: Order, table_client: TableClientContext) -> None:
+    if not order.table_session_id:
+        raise HTTPException(status_code=403, detail="Order is not linked to table session")
+    if order.table_session_id != table_client.table_session_id or order.store_id != table_client.store_id:
+        raise HTTPException(status_code=403, detail="Order does not belong to this table session")
+
+
 @router.get("/orders/{order_id}/split", response_model=BillSplitOut)
-def get_order_split(order_id: int, db: Session = Depends(get_db)) -> BillSplitOut:
+def get_order_split(
+    order_id: int,
+    table_client: TableClientContext = Depends(get_current_table_client),
+    db: Session = Depends(get_db),
+) -> BillSplitOut:
     order = db.scalar(select(Order).where(Order.id == order_id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    _require_table_order_access(order, table_client)
     bill_split = get_latest_bill_split(db, order_id)
     if not bill_split:
         raise HTTPException(status_code=404, detail="Bill split not found")
@@ -100,11 +112,13 @@ def get_order_split(order_id: int, db: Session = Depends(get_db)) -> BillSplitOu
 def create_equal_split(
     order_id: int,
     payload: CreateEqualBillSplitRequest,
+    table_client: TableClientContext = Depends(get_current_table_client),
     db: Session = Depends(get_db),
 ) -> BillSplitOut:
     order = db.scalar(select(Order).where(Order.id == order_id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    _require_table_order_access(order, table_client)
 
     existing = get_latest_bill_split(db, order_id)
     if existing and existing.status == BillSplitStatus.OPEN.value:
@@ -145,11 +159,13 @@ def create_equal_split(
 def create_consumption_split(
     order_id: int,
     payload: CreateConsumptionBillSplitRequest,
+    table_client: TableClientContext = Depends(get_current_table_client),
     db: Session = Depends(get_db),
 ) -> BillSplitOut:
     order = db.scalar(select(Order).where(Order.id == order_id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    _require_table_order_access(order, table_client)
 
     existing = get_latest_bill_split(db, order_id)
     if existing and existing.status == BillSplitStatus.OPEN.value:
@@ -202,11 +218,15 @@ def create_consumption_split(
 def request_cash_payment(
     order_id: int,
     payload: RequestCashPaymentRequest,
+    table_client: TableClientContext = Depends(get_current_table_client),
     db: Session = Depends(get_db),
 ) -> TableSessionCashRequestOut:
     order = db.scalar(select(Order).where(Order.id == order_id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    _require_table_order_access(order, table_client)
+    if payload.client_id != table_client.client_id:
+        raise HTTPException(status_code=403, detail="Cash request token does not match this client")
     if not order.table_session_id:
         raise HTTPException(status_code=409, detail="Order is not linked to table session")
 
@@ -262,11 +282,16 @@ def request_cash_payment(
 def request_waiter_help(
     table_session_id: int,
     payload: RequestCashPaymentRequest,
+    table_client: TableClientContext = Depends(get_current_table_client),
     db: Session = Depends(get_db),
 ) -> TableSessionCashRequestOut:
+    if table_client.table_session_id != table_session_id or table_client.client_id != payload.client_id:
+        raise HTTPException(status_code=403, detail="Waiter request token does not match this session")
     table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
     if not table_session:
         raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.store_id != table_client.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
     if table_session.status not in ACTIVE_TABLE_SESSION_STATUSES:
         raise HTTPException(status_code=409, detail="Table session is closed")
 
@@ -380,6 +405,7 @@ def resolve_cash_payment_request(
 def report_part_payment(
     part_id: int,
     payload: ReportBillPartPaymentRequest,
+    table_client: TableClientContext = Depends(get_current_table_client),
     db: Session = Depends(get_db),
 ) -> BillSplitOut:
     part = db.scalar(select(BillSplitPart).where(BillSplitPart.id == part_id))
@@ -388,6 +414,10 @@ def report_part_payment(
     split = db.scalar(select(BillSplit).where(BillSplit.id == part.bill_split_id))
     if not split:
         raise HTTPException(status_code=404, detail="Bill split not found")
+    order = db.scalar(select(Order).where(Order.id == split.order_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    _require_table_order_access(order, table_client)
     if split.status != BillSplitStatus.OPEN.value:
         raise HTTPException(status_code=409, detail="Bill split is closed")
 
@@ -400,7 +430,6 @@ def report_part_payment(
     db.add(part)
     db.commit()
 
-    order = db.scalar(select(Order).where(Order.id == split.order_id))
     if order:
         _publish_split_event(order, split, "payment_reported", part.id)
     return to_bill_split_out(db, split)  # type: ignore[return-value]
@@ -441,3 +470,64 @@ def confirm_part_payment(
     if order:
         _publish_split_event(order, split, "payment_confirmed", part.id)
     return to_bill_split_out(db, split)  # type: ignore[return-value]
+
+
+@router.post("/orders/{order_id}/force-confirm", response_model=BillSplitOut)
+def force_confirm_order_payment(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> BillSplitOut:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    order = db.scalar(select(Order).where(Order.id == order_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    split = get_latest_bill_split(db, order_id)
+    if not split:
+        total = _order_total_amount(order)
+        if total <= 0:
+            raise HTTPException(status_code=400, detail="Order total must be greater than zero")
+        split = BillSplit(
+            order_id=order_id,
+            mode="FORCED",
+            status=BillSplitStatus.OPEN.value,
+            total_amount=float(total),
+            created_at=datetime.utcnow(),
+        )
+        db.add(split)
+        db.flush()
+        db.add(
+            BillSplitPart(
+                bill_split_id=split.id,
+                label="Pago total",
+                amount=float(total),
+                payment_status=BillPartPaymentStatus.PENDING.value,
+                created_at=datetime.utcnow(),
+            )
+        )
+        db.commit()
+        db.refresh(split)
+
+    parts = db.scalars(select(BillSplitPart).where(BillSplitPart.bill_split_id == split.id)).all()
+    if not parts:
+        raise HTTPException(status_code=400, detail="Bill split has no parts")
+
+    for part in parts:
+        if part.payment_status != BillPartPaymentStatus.CONFIRMED.value:
+            part.payment_status = BillPartPaymentStatus.CONFIRMED.value
+            part.confirmed_by_staff_id = current_staff.id
+            part.confirmed_at = datetime.utcnow()
+            db.add(part)
+
+    split.status = BillSplitStatus.CLOSED.value
+    split.closed_at = datetime.utcnow()
+    db.add(split)
+    order = db.scalar(select(Order).where(Order.id == order_id))
+    if order:
+        _publish_split_event(order, split, "forced_payment_confirmed")
+    db.commit()
+    db.refresh(split)
+    return to_bill_split_out(db, split)

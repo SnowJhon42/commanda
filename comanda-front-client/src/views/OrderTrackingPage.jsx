@@ -37,7 +37,7 @@ function formatShortDate(value) {
   }
 }
 
-export function OrderTrackingPage({ orderId }) {
+export function OrderTrackingPage({ orderId, tableSessionToken }) {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
   const [liveConnected, setLiveConnected] = useState(false);
@@ -53,7 +53,7 @@ export function OrderTrackingPage({ orderId }) {
     let mounted = true;
 
     const tick = () => {
-      fetchOrder(orderId)
+      fetchOrder(orderId, tableSessionToken)
         .then((data) => {
           if (!mounted) return;
           setOrder(data);
@@ -67,7 +67,7 @@ export function OrderTrackingPage({ orderId }) {
 
     tick();
     const timer = setInterval(tick, 7000);
-    const stream = openOrderEvents(orderId);
+    const stream = openOrderEvents(orderId, tableSessionToken);
     let refreshTimer = null;
 
     const scheduleRefresh = () => {
@@ -91,7 +91,7 @@ export function OrderTrackingPage({ orderId }) {
       stream.close();
       setLiveConnected(false);
     };
-  }, [orderId]);
+  }, [orderId, tableSessionToken]);
 
   const summary = useMemo(() => {
     const items = order?.items || [];

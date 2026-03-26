@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import TableClientContext, get_current_table_client
+from app.core.security import create_table_session_token
 from app.db.models import (
     CashRequestKind,
     CashRequestStatus,
@@ -29,12 +31,14 @@ from app.schemas.orders import (
     OpenTableSessionResponse,
     SectorStatusOut,
     TableSessionStateResponse,
+    TableSessionConsumptionItemOut,
+    TableSessionConsumptionResponse,
     TableSessionFeedbackRequest,
     TableSessionFeedbackResponse,
     UpsertOrderByTableRequest,
 )
 from app.services.item_status import recompute_order_status_from_items
-from app.services.order_routing import route_item_to_sector
+from app.services.order_creation import add_items_to_order
 from app.services.billing import get_latest_bill_split, sync_open_split_to_order_total
 from app.services.realtime import event_bus
 from app.services.table_code import normalize_table_code
@@ -55,70 +59,6 @@ def _active_order_for_table(db: Session, *, store_id: int, table_id: int) -> Ord
         .order_by(Order.created_at.desc(), Order.id.desc())
         .limit(1)
     )
-
-
-def _add_items_to_order(db: Session, *, store_id: int, order: Order, items: list, client_id: str | None = None) -> set[str]:
-    sectors_present = {row[0] for row in db.execute(select(OrderItem.sector).where(OrderItem.order_id == order.id)).all()}
-
-    for raw_item in items:
-        product = db.scalar(
-            select(Product).where(Product.id == raw_item.product_id, Product.store_id == store_id, Product.active == True)
-        )
-        if not product:
-            raise HTTPException(status_code=404, detail=f"Product {raw_item.product_id} not found")
-
-        variant_price = 0.0
-        if raw_item.variant_id:
-            variant = db.scalar(
-                select(ProductVariant).where(
-                    ProductVariant.id == raw_item.variant_id,
-                    ProductVariant.product_id == product.id,
-                    ProductVariant.active == True,
-                )
-            )
-            if not variant:
-                raise HTTPException(status_code=404, detail=f"Variant {raw_item.variant_id} not found")
-            variant_price = float(variant.extra_price)
-        extra_option_ids = sorted({int(extra_id) for extra_id in (raw_item.extra_option_ids or [])})
-        extras_total = 0.0
-        extra_names: list[str] = []
-        if extra_option_ids:
-            extras = db.scalars(
-                select(ProductExtraOption).where(
-                    ProductExtraOption.product_id == product.id,
-                    ProductExtraOption.id.in_(extra_option_ids),
-                    ProductExtraOption.active == True,
-                )
-            ).all()
-            if len(extras) != len(extra_option_ids):
-                raise HTTPException(status_code=422, detail="One or more extras are invalid for this product")
-            extras_total = sum(float(extra.extra_price) for extra in extras)
-            extra_names = [extra.name for extra in sorted(extras, key=lambda row: row.id)]
-
-        notes_parts: list[str] = []
-        if raw_item.notes and raw_item.notes.strip():
-            notes_parts.append(raw_item.notes.strip())
-        if extra_names:
-            notes_parts.append(f"Extras: {', '.join(extra_names)}")
-        merged_notes = " | ".join(notes_parts) if notes_parts else None
-
-        sector = route_item_to_sector(product)
-        sectors_present.add(sector)
-        db.add(
-            OrderItem(
-                order_id=order.id,
-                product_id=product.id,
-                variant_id=raw_item.variant_id,
-                created_by_client_id=client_id,
-                qty=raw_item.qty,
-                unit_price=float(product.base_price) + variant_price + extras_total,
-                notes=merged_notes,
-                sector=sector,
-                status=OrderStatus.RECEIVED.value,
-            )
-        )
-    db.flush()
-    return sectors_present
 
 
 @router.post("/table/session/open", response_model=OpenTableSessionResponse)
@@ -228,18 +168,27 @@ def join_table_session(
         client_id=payload.client_id,
         alias=client.alias,
         connected_clients=int(connected_clients),
+        table_session_token=create_table_session_token(
+            table_session_id=table_session_id,
+            store_id=session.store_id,
+            client_id=payload.client_id,
+        ),
     )
 
 
 @router.get("/table/session/{table_session_id}/state", response_model=TableSessionStateResponse)
 def get_table_session_state(
     table_session_id: int,
-    client_id: str | None = None,
+    table_client: TableClientContext = Depends(get_current_table_client),
     db: Session = Depends(get_db),
 ) -> TableSessionStateResponse:
+    if table_client.table_session_id != table_session_id:
+        raise HTTPException(status_code=403, detail="Table session token does not match this session")
     table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
     if not table_session:
         raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.store_id != table_client.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
 
     table = db.scalar(select(Table).where(Table.id == table_session.table_id))
     active_order = _active_order_for_table(db, store_id=table_session.store_id, table_id=table_session.table_id)
@@ -247,12 +196,12 @@ def get_table_session_state(
         select(func.count()).select_from(TableSessionClient).where(TableSessionClient.table_session_id == table_session_id)
     ) or 0
     latest_assistance_request = None
-    if client_id and client_id.strip():
+    if table_client.client_id:
         latest_assistance_request = db.scalar(
             select(TableSessionCashRequest)
             .where(
                 TableSessionCashRequest.table_session_id == table_session_id,
-                TableSessionCashRequest.client_id == client_id.strip(),
+                TableSessionCashRequest.client_id == table_client.client_id,
                 TableSessionCashRequest.request_kind.in_(
                     [CashRequestKind.WAITER_CALL.value, CashRequestKind.CASH_PAYMENT.value]
                 ),
@@ -287,15 +236,86 @@ def get_table_session_state(
     )
 
 
+@router.get("/table/session/{table_session_id}/consumption", response_model=TableSessionConsumptionResponse)
+def get_table_session_consumption(
+    table_session_id: int,
+    table_client: TableClientContext = Depends(get_current_table_client),
+    db: Session = Depends(get_db),
+) -> TableSessionConsumptionResponse:
+    if table_client.table_session_id != table_session_id:
+        raise HTTPException(status_code=403, detail="Table session token does not match this session")
+    table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
+    if not table_session:
+        raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.store_id != table_client.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    table = db.scalar(select(Table).where(Table.id == table_session.table_id))
+    orders = (
+        db.scalars(
+            select(Order)
+            .where(Order.table_session_id == table_session_id)
+            .options()
+            .order_by(Order.created_at.asc(), Order.id.asc())
+        )
+        .all()
+    )
+    order_ids = [int(order.id) for order in orders]
+    items = []
+    if order_ids:
+        items = (
+            db.scalars(
+                select(OrderItem)
+                .where(OrderItem.order_id.in_(order_ids))
+                .order_by(OrderItem.created_at.asc(), OrderItem.id.asc())
+            ).all()
+        )
+
+    products_by_id = {
+        product.id: product.name
+        for product in db.scalars(
+            select(Product).where(Product.id.in_({item.product_id for item in items} if items else {0}))
+        ).all()
+    }
+
+    return TableSessionConsumptionResponse(
+        table_session_id=table_session.id,
+        table_code=table.code if table else "-",
+        guest_count=table_session.guest_count,
+        order_ids=order_ids,
+        items=[
+            TableSessionConsumptionItemOut(
+                item_id=item.id,
+                order_id=item.order_id,
+                product_name=products_by_id.get(item.product_id, f"Item {item.id}"),
+                qty=item.qty,
+                unit_price=float(item.unit_price),
+                created_by_client_id=item.created_by_client_id,
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+                notes=item.notes,
+                sector=item.sector,
+                status=item.status,
+            )
+            for item in items
+        ],
+    )
+
+
 @router.post("/table/session/{table_session_id}/feedback", response_model=TableSessionFeedbackResponse)
 def submit_table_session_feedback(
     table_session_id: int,
     payload: TableSessionFeedbackRequest,
+    table_client: TableClientContext = Depends(get_current_table_client),
     db: Session = Depends(get_db),
 ) -> TableSessionFeedbackResponse:
+    if table_client.table_session_id != table_session_id or table_client.client_id != payload.client_id:
+        raise HTTPException(status_code=403, detail="Feedback token does not match this session")
     table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
     if not table_session:
         raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.store_id != table_client.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
     if table_session.status != TableSessionStatus.CLOSED.value:
         raise HTTPException(status_code=409, detail="Table session must be closed before sending feedback")
 
@@ -332,7 +352,11 @@ def submit_table_session_feedback(
 
 
 @router.post("/orders/upsert-by-table", response_model=CreateOrderResponse, status_code=201)
-def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depends(get_db)) -> CreateOrderResponse:
+def upsert_order_by_table(
+    payload: UpsertOrderByTableRequest,
+    table_client: TableClientContext = Depends(get_current_table_client),
+    db: Session = Depends(get_db),
+) -> CreateOrderResponse:
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one item is required")
 
@@ -344,6 +368,10 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
     if table_session.store_id != payload.store_id:
         raise HTTPException(status_code=403, detail="Store mismatch in table session")
     if payload.client_id:
+        if table_client.table_session_id != payload.table_session_id or table_client.client_id != payload.client_id:
+            raise HTTPException(status_code=403, detail="Table session token does not match this client")
+        if table_client.store_id != payload.store_id:
+            raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
         joined_client = db.scalar(
             select(TableSessionClient).where(
                 TableSessionClient.table_session_id == payload.table_session_id,
@@ -380,7 +408,7 @@ def upsert_order_by_table(payload: UpsertOrderByTableRequest, db: Session = Depe
         db.add(order)
         db.flush()
 
-    sectors_present = _add_items_to_order(
+    sectors_present = add_items_to_order(
         db, store_id=payload.store_id, order=order, items=payload.items, client_id=payload.client_id
     )
     table_session.guest_count = max(int(table_session.guest_count or 1), int(payload.guest_count))
