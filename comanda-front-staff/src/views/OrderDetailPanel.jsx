@@ -68,10 +68,14 @@ export function OrderDetailPanel({
   onResolveCashRequest = () => {},
   billingBusy = false,
 }) {
+  const allDelivered =
+    Array.isArray(orderDetail?.items) &&
+    orderDetail.items.length > 0 &&
+    orderDetail.items.every((item) => item.status === "DELIVERED");
   const normalCloseEnabled =
     !orderDetail ||
     Number(orderDetail.total_amount || 0) <= 0 ||
-    orderDetail.bill_split?.status === "CLOSED";
+    (orderDetail.bill_split?.status === "CLOSED" && allDelivered);
 
   return (
     <section className="panel">
@@ -112,7 +116,7 @@ export function OrderDetailPanel({
                   {closingTable ? "Cerrando..." : "Forzar cierre"}
                 </button>
                 {!normalCloseEnabled && (
-                  <span className="muted">Confirma el pago antes de cerrar la mesa.</span>
+                  <span className="muted">Cerrar mesa requiere pago confirmado y entrega completa.</span>
                 )}
                 {orderDetail.bill_split?.status === "CLOSED" && (
                   <span className="badge badge-delivered">Pago confirmado</span>

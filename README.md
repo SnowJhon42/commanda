@@ -16,7 +16,14 @@ Documentacion tecnica:
 
 ## Operacion Local Unificada
 
-Desde `C:\Users\agust\OneDrive\Desktop\COMANDA`:
+Workspace recomendado:
+
+- Desarrollo activo: `C:\Users\agust\Desktop\COMANDA_LOCAL`
+- OneDrive: solo backup, docs, capturas y material no ejecutable
+
+No ejecutar COMANDA desde rutas dentro de `OneDrive`. Next.js, Python, SQLite y los logs generan artefactos de runtime que OneDrive puede virtualizar o bloquear.
+
+Desde `C:\Users\agust\Desktop\COMANDA_LOCAL`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 -Action up
@@ -61,7 +68,7 @@ npm.cmd run dev:backend
 
 DB local canonica para backend:
 
-- `C:\Users\agust\OneDrive\Desktop\COMANDA\comanda-backend\comanda_dev.db`
+- `C:\Users\agust\Desktop\COMANDA_LOCAL\comanda-backend\comanda_dev.db`
 
 Chequeo recomendado para evitar confusion de DB:
 
@@ -83,6 +90,27 @@ npm.cmd run staff:static
 ```
 
 Luego abrir `http://localhost:5174`.
+
+## Backup Seguro a OneDrive
+
+Para guardar codigo y documentacion en OneDrive sin copiar artefactos de runtime:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\backup_code_to_onedrive.ps1
+```
+
+El backup genera un snapshot en `C:\Users\agust\OneDrive\COMANDA_BACKUP` y excluye:
+
+- `.git`
+- `node_modules`
+- `.next`
+- `.venv`
+- `logs`
+- `recordings`
+- `backups`
+- `comanda_dev.db`
+- `*.pid`
+- `*.log`
 
 ## Variables Front
 

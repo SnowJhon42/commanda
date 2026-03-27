@@ -299,7 +299,10 @@ export function CheckoutPage({
                   ) : (
                     <div className="table-consumption-list">
                       {committedItems.map((item) => (
-                        <article className="table-consumption-row" key={`committed-${item.id}`}>
+                        <article
+                          className="table-consumption-row"
+                          key={`committed-${item.item_id ?? item.id ?? `${item.order_id}-${item.product_name}`}`}
+                        >
                           <div className="table-consumption-main">
                             <h3 className="table-consumption-name">{item.product_name}</h3>
                             <div className="table-consumption-values">
@@ -342,7 +345,7 @@ export function CheckoutPage({
 
           <div className="summary">
             <span>Total</span>
-            <strong>{showLiveTotal ? toMoney(cartTotal) : "Oculto por el local"}</strong>
+            <strong>{toMoney(cartTotal)}</strong>
           </div>
 
           {checkoutError && <p className="error-text">{checkoutError}</p>}
@@ -355,11 +358,11 @@ export function CheckoutPage({
         <form className="checkout-form mesa-actions" onSubmit={submit}>
           <div className="summary mesa-summary">
             <span>Total ya pedido</span>
-            <strong>{showLiveTotal ? toMoney(committedTotal) : "Oculto por el local"}</strong>
+            <strong>{toMoney(committedTotal)}</strong>
           </div>
           <div className="summary mesa-summary mesa-summary-grand">
             <span>Total mesa</span>
-            <strong>{showLiveTotal ? toMoney(mesaGrandTotal) : "Oculto por el local"}</strong>
+            <strong>{toMoney(mesaGrandTotal)}</strong>
           </div>
           <div className="mesa-final-actions">
             <button

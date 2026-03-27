@@ -37,7 +37,7 @@ function formatShortDate(value) {
   }
 }
 
-export function OrderTrackingPage({ orderId, tableSessionToken = "" }) {
+export function OrderTrackingPage({ orderId, tableSessionToken }) {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
   const [liveConnected, setLiveConnected] = useState(false);

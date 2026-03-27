@@ -14,7 +14,10 @@ export function sectorClass(sector) {
 }
 
 export function elapsedMinutes(dateStr) {
-  const ms = Date.now() - new Date(dateStr).getTime();
+  if (!dateStr) return 0;
+  const parsed = new Date(dateStr).getTime();
+  if (!Number.isFinite(parsed)) return 0;
+  const ms = Date.now() - parsed;
   return Math.max(0, Math.floor(ms / 60000));
 }
 

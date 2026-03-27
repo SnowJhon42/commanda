@@ -71,6 +71,7 @@ class Store(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     show_live_total_to_client: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    print_mode: Mapped[str] = mapped_column(String(20), default="MANUAL", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -216,6 +217,10 @@ class Order(Base):
     guest_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     ticket_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status_aggregated: Mapped[str] = mapped_column(String(20), nullable=False)
+    printed_full_at: Mapped[datetime | None] = mapped_column(DateTime)
+    printed_kitchen_at: Mapped[datetime | None] = mapped_column(DateTime)
+    printed_bar_at: Mapped[datetime | None] = mapped_column(DateTime)
+    printed_waiter_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False

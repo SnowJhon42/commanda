@@ -106,6 +106,16 @@ export async function fetchTableSessions({ token, storeId, onlyWithoutOrder = fa
   }
 }
 
+export async function fetchTableSessionConsumption(tableSessionId) {
+  try {
+    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/consumption`);
+    if (!res.ok) await toApiError(res, "No se pudo cargar el consumo de la mesa.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar el consumo de la mesa.");
+  }
+}
+
 export async function patchTableSessionStatus({ token, tableSessionId, toStatus }) {
   try {
     const res = await fetch(`${API_URL}/staff/table-sessions/${tableSessionId}/status`, {
@@ -167,6 +177,37 @@ export async function patchStoreClientVisibility({ token, storeId, showLiveTotal
   }
 }
 
+export async function fetchStorePrintMode({ token, storeId }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/print-mode?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar configuracion de impresion.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar configuracion de impresion.");
+  }
+}
+
+export async function patchStorePrintMode({ token, storeId, printMode }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/print-mode?${qs.toString()}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ print_mode: printMode }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo actualizar configuracion de impresion.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar configuracion de impresion.");
+  }
+}
+
 export async function patchItemStatus({ token, itemId, toStatus }) {
   try {
     const res = await fetch(`${API_URL}/staff/items/${itemId}/status`, {
@@ -218,6 +259,38 @@ export async function confirmSplitPart({ token, partId }) {
     const res = await fetch(`${API_URL}/billing/split-parts/${partId}/confirm`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo confirmar el pago.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo confirmar el pago.");
+  }
+}
+
+export async function markOrderPrintStatus({ token, orderId, target }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/print-status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ target }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo actualizar estado de impresion.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar estado de impresion.");
+  }
+}
+
+export async function forceConfirmOrderPayment({ token, orderId }) {
+  try {
+    const res = await fetch(`${API_URL}/billing/orders/${orderId}/force-confirm`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     });
     if (!res.ok) await toApiError(res, "No se pudo confirmar el pago.");
     return res.json();

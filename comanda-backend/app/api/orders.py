@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.deps import TableClientContext, get_current_table_client
 from app.db.models import (
     Order,
     OrderItem,
@@ -23,7 +24,7 @@ from app.schemas.orders import (
     SectorStatusOut,
 )
 from app.services.item_status import recompute_order_status_from_items
-from app.services.order_routing import route_item_to_sector
+from app.services.order_creation import add_items_to_order
 from app.services.realtime import event_bus
 from app.services.table_code import normalize_table_code
 from app.services.ticket_generator import next_ticket_number
@@ -70,62 +71,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
     db.add(order)
     db.flush()
 
-    sectors_present: set[str] = set()
-    for raw_item in payload.items:
-        product = db.scalar(
-            select(Product).where(Product.id == raw_item.product_id, Product.store_id == payload.store_id, Product.active == True)
-        )
-        if not product:
-            raise HTTPException(status_code=404, detail=f"Product {raw_item.product_id} not found")
-        variant_price = 0.0
-        if raw_item.variant_id:
-            variant = db.scalar(
-                select(ProductVariant).where(
-                    ProductVariant.id == raw_item.variant_id,
-                    ProductVariant.product_id == product.id,
-                    ProductVariant.active == True,
-                )
-            )
-            if not variant:
-                raise HTTPException(status_code=404, detail=f"Variant {raw_item.variant_id} not found")
-            variant_price = float(variant.extra_price)
-        extra_option_ids = sorted({int(extra_id) for extra_id in (raw_item.extra_option_ids or [])})
-        extras_total = 0.0
-        extra_names: list[str] = []
-        if extra_option_ids:
-            extras = db.scalars(
-                select(ProductExtraOption).where(
-                    ProductExtraOption.product_id == product.id,
-                    ProductExtraOption.id.in_(extra_option_ids),
-                    ProductExtraOption.active == True,
-                )
-            ).all()
-            if len(extras) != len(extra_option_ids):
-                raise HTTPException(status_code=422, detail="One or more extras are invalid for this product")
-            extras_total = sum(float(extra.extra_price) for extra in extras)
-            extra_names = [extra.name for extra in sorted(extras, key=lambda row: row.id)]
-
-        notes_parts: list[str] = []
-        if raw_item.notes and raw_item.notes.strip():
-            notes_parts.append(raw_item.notes.strip())
-        if extra_names:
-            notes_parts.append(f"Extras: {', '.join(extra_names)}")
-        merged_notes = " | ".join(notes_parts) if notes_parts else None
-
-        sector = route_item_to_sector(product)
-        sectors_present.add(sector)
-        db.add(
-            OrderItem(
-                order_id=order.id,
-                product_id=product.id,
-                variant_id=raw_item.variant_id,
-                qty=raw_item.qty,
-                unit_price=float(product.base_price) + variant_price + extras_total,
-                notes=merged_notes,
-                sector=sector,
-                status=OrderStatus.RECEIVED.value,
-            )
-        )
+    sectors_present = add_items_to_order(db, store_id=payload.store_id, order=order, items=payload.items)
 
     order.status_aggregated = recompute_order_status_from_items(db, order.id)
     if open_table_session:
@@ -177,7 +123,11 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
 
 
 @router.get("/orders/{order_id}", response_model=OrderDetailResponse)
-def get_order(order_id: int, db: Session = Depends(get_db)) -> OrderDetailResponse:
+def get_order(
+    order_id: int,
+    table_client: TableClientContext = Depends(get_current_table_client),
+    db: Session = Depends(get_db),
+) -> OrderDetailResponse:
     order = db.scalar(
         select(Order)
         .where(Order.id == order_id)
@@ -185,6 +135,10 @@ def get_order(order_id: int, db: Session = Depends(get_db)) -> OrderDetailRespon
     )
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    if not order.table_session_id:
+        raise HTTPException(status_code=403, detail="Order is not linked to table session")
+    if order.table_session_id != table_client.table_session_id or order.store_id != table_client.store_id:
+        raise HTTPException(status_code=403, detail="Order does not belong to this table session")
 
     return OrderDetailResponse(
         id=order.id,
