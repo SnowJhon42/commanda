@@ -10,24 +10,24 @@ function badgeClass(status) {
   return "badge";
 }
 
-export function BarBoardPage({
-  rows,
-  loading,
-  onAdvanceItem,
-  advancingKey,
-  onSelectOrder,
-  selectedOrderId,
+export function WaiterBoardPage({
+  rows = [],
+  loading = false,
+  onAdvanceItem = () => {},
+  advancingKey = "",
+  onSelectOrder = () => {},
+  selectedOrderId = null,
   alertMetaByOrder = {},
 }) {
   return (
     <section className="panel">
       <div className="section-head">
-        <h3>Barra</h3>
+        <h3>Mozo</h3>
         <span className="muted">{rows.length} mesas activas</span>
       </div>
       {loading && <p className="muted">Actualizando...</p>}
       {rows.length === 0 ? (
-        <p className="muted">No hay items recibidos o en preparacion en barra.</p>
+        <p className="muted">No hay items listos para entregar.</p>
       ) : (
         <div className="card-grid">
           {rows.map((row) => {
@@ -55,10 +55,9 @@ export function BarBoardPage({
               </div>
               <div className="sector-list">
                 {row.items.map((item) => {
-                  const nextStatus = item.status === "RECEIVED" ? "IN_PROGRESS" : "DONE";
-                  const key = `${item.item_id}:${nextStatus}`;
+                  const key = `${item.item_id}:DELIVERED`;
                   const updating = advancingKey === key;
-                  const alertClass = itemAlertClass(item, "BAR");
+                  const alertClass = itemAlertClass(item, "WAITER");
                   return (
                     <div className={`sector-row ${alertClass}`} key={item.item_id}>
                       <div className="row-main-wrap">
@@ -81,7 +80,7 @@ export function BarBoardPage({
                           })
                         }
                       >
-                        {updating ? "..." : item.status === "RECEIVED" ? "Tomar" : "Listo para mozo"}
+                        {updating ? "..." : "Entregar"}
                       </button>
                     </div>
                   );
@@ -95,3 +94,5 @@ export function BarBoardPage({
     </section>
   );
 }
+
+export default WaiterBoardPage;

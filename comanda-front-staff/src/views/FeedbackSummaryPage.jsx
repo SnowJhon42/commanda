@@ -68,3 +68,5 @@ export function FeedbackSummaryPage({ loading, summary }) {
     </section>
   );
 }
+
+export default FeedbackSummaryPage;

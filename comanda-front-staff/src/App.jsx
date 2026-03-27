@@ -19,15 +19,15 @@ import {
   patchItemStatus,
   patchTableSessionStatus,
 } from "./api/staffApi";
-import { LoginPage } from "./pages/LoginPage";
-import { AdminBoardPage } from "./pages/AdminBoardPage";
-import { KitchenBoardPage } from "./pages/KitchenBoardPage";
-import { BarBoardPage } from "./pages/BarBoardPage";
-import { WaiterBoardPage } from "./pages/WaiterBoardPage";
-import { OrderDetailPanel } from "./pages/OrderDetailPanel";
-import { FeedbackSummaryPage } from "./pages/FeedbackSummaryPage";
-import { MenuEditorPage } from "./pages/MenuEditorPage";
-import { TableSessionsPanel } from "./pages/TableSessionsPanel";
+import { LoginPage } from "./views/LoginPage";
+import { AdminBoardPage } from "./views/AdminBoardPage";
+import { KitchenBoardPage } from "./views/KitchenBoardPage";
+import { BarBoardPage } from "./views/BarBoardPage";
+import { WaiterBoardPage } from "./views/WaiterBoardPage";
+import { OrderDetailPanel } from "./views/OrderDetailPanel";
+import { FeedbackSummaryPage } from "./views/FeedbackSummaryPage";
+import { MenuEditorPage } from "./views/MenuEditorPage";
+import { TableSessionsPanel } from "./views/TableSessionsPanel";
 import { elapsedMinutes } from "./utils/boardMeta";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];

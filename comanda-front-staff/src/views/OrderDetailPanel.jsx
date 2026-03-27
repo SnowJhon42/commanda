@@ -24,6 +24,15 @@ function formatMoney(value) {
   );
 }
 
+function elapsedLabel(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value < 0) return "-";
+  if (value < 60) return `${value} min`;
+  const hours = Math.floor(value / 60);
+  const remainder = value % 60;
+  return `${hours}h ${remainder}m`;
+}
+
 function delayClass(minutes) {
   if (minutes >= 20) return "alert-high";
   if (minutes >= 12) return "alert-medium";
@@ -59,6 +68,11 @@ export function OrderDetailPanel({
   onResolveCashRequest = () => {},
   billingBusy = false,
 }) {
+  const normalCloseEnabled =
+    !orderDetail ||
+    Number(orderDetail.total_amount || 0) <= 0 ||
+    orderDetail.bill_split?.status === "CLOSED";
+
   return (
     <section className="panel">
       <div className="section-head">
@@ -85,15 +99,21 @@ export function OrderDetailPanel({
             <p className="muted">
               Comensales: {orderDetail.guest_count} | Entregados: {orderDetail.delivered_items} / {orderDetail.total_items}
             </p>
-            <p className="muted">Total: {formatMoney(orderDetail.total_amount)}</p>
+            <p className="muted">
+              Total: {formatMoney(orderDetail.total_amount)} | Mesa abierta: {elapsedLabel(orderDetail.table_elapsed_minutes)} | Pedido actual:{" "}
+              {elapsedLabel(orderDetail.order_elapsed_minutes)}
+            </p>
             {actorSector === "ADMIN" && (
               <div className="order-actions">
-                <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable}>
+                <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable || !normalCloseEnabled}>
                   {closingTable ? "Cerrando..." : "Cerrar mesa"}
                 </button>
                 <button className="btn-secondary" onClick={onForceCloseTable} disabled={closingTable}>
                   {closingTable ? "Cerrando..." : "Forzar cierre"}
                 </button>
+                {!normalCloseEnabled && (
+                  <span className="muted">Confirma el pago antes de cerrar la mesa.</span>
+                )}
                 {orderDetail.bill_split?.status === "CLOSED" && (
                   <span className="badge badge-delivered">Pago confirmado</span>
                 )}
@@ -262,3 +282,5 @@ export function OrderDetailPanel({
     </section>
   );
 }
+
+export default OrderDetailPanel;

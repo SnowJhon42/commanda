@@ -18,21 +18,21 @@ function elapsedLabel(minutesValue) {
 
 function statusText(status) {
   if (status === "SIN_PEDIDO") return "Sin pedido";
-  if (status === "EN_PROCESO") return "En proceso";
-  if (status === "PAGO_SOLICITADO") return "Pago solicitado";
-  if (status === "PAGO_TOMADO") return "Pago tomado";
-  if (status === "LISTO_CUENTA") return "Listo para cobrar";
-  if (status === "PAGO_REPORTADO") return "Pago reportado";
+  if (status === "ABIERTO") return "Abierto";
+  if (status === "PAGO_SOLICITADO") return "Cuenta";
+  if (status === "PAGO_REPORTADO") return "Cuenta";
+  if (status === "PAGO_CONFIRMADO") return "Pago confirmado";
+  if (status === "CERRADA") return "Cerrada";
   return status;
 }
 
 function statusClass(status) {
   if (status === "SIN_PEDIDO") return "badge";
-  if (status === "EN_PROCESO") return "badge badge-progress";
-  if (status === "PAGO_SOLICITADO") return "badge badge-received";
-  if (status === "PAGO_TOMADO") return "badge badge-done";
-  if (status === "LISTO_CUENTA") return "badge badge-done";
+  if (status === "ABIERTO") return "badge badge-received";
+  if (status === "PAGO_SOLICITADO") return "badge badge-delivered";
   if (status === "PAGO_REPORTADO") return "badge badge-delivered";
+  if (status === "PAGO_CONFIRMADO") return "badge badge-done";
+  if (status === "CERRADA") return "badge badge-neutral";
   return "badge";
 }
 
@@ -168,8 +168,8 @@ function nextStatusForAction({ currentStatus, itemSector, actorSector }) {
 }
 
 export function AdminBoardPage({
-  rows,
-  loading,
+  rows = [],
+  loading = false,
   tableSessionsRows = [],
   onRequestOrderDetail,
   onAdvanceItem,
@@ -224,6 +224,7 @@ export function AdminBoardPage({
         const delivered = effectiveOrders.reduce((sum, order) => sum + Number(order.delivered_items || 0), 0);
         const total = effectiveOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
         const hasPendingPayment = effectiveOrders.some((order) => Boolean(order.has_pending_payment));
+        const hasConfirmedPayment = effectiveOrders.some((order) => Boolean(order.bill_split_closed));
         const cashSignal = tableSession?.table_session_id ? cashSignals[tableSession.table_session_id] : null;
         const hasPendingCashPayment = Number(cashSignal?.pending || 0) > 0;
         const hasAcceptedCashPayment = Boolean(cashSignal?.latestResolved);
@@ -236,18 +237,19 @@ export function AdminBoardPage({
             )
           ),
         ];
+        const sessionOpen = tableSession?.status !== "CLOSED";
         const status =
           qty === 0
             ? "SIN_PEDIDO"
+            : !sessionOpen
+            ? "CERRADA"
             : hasPendingCashPayment
             ? "PAGO_SOLICITADO"
             : hasPendingPayment
             ? "PAGO_REPORTADO"
-            : hasAcceptedCashPayment
-            ? "PAGO_TOMADO"
-            : delivered < qty
-            ? "EN_PROCESO"
-            : "LISTO_CUENTA";
+            : hasConfirmedPayment
+            ? "PAGO_CONFIRMADO"
+            : "ABIERTO";
         const referenceDate = tableSession?.created_at || leadOrder?.created_at || null;
 
         return {
@@ -650,11 +652,11 @@ export function AdminBoardPage({
                           {closingTable ? "Cerrando..." : "Forzar cierre"}
                         </button>
                       </div>
-                    ) : (
+                    ) : row.status === "PAGO_CONFIRMADO" ? (
                       <div className="order-actions">
                         <button
                           className="btn-secondary"
-                          disabled={closingTable || row.status === "EN_PROCESO"}
+                          disabled={closingTable}
                           onClick={() => onCloseTableByCode(row.table_code)}
                         >
                           {closingTable ? "Cerrando..." : "Cerrar mesa"}
@@ -667,6 +669,10 @@ export function AdminBoardPage({
                           {closingTable ? "Cerrando..." : "Forzar cierre"}
                         </button>
                       </div>
+                    ) : row.status === "CERRADA" ? (
+                      <span className="muted">Mesa cerrada</span>
+                    ) : (
+                      <span className="muted">Mesa abierta</span>
                     )}
                   </td>
                 </tr>
@@ -749,6 +755,18 @@ export function AdminBoardPage({
                       <button
                         className="btn-secondary"
                         disabled={closingTable}
+                        onClick={() => forceCloseTable(activeModal.row)}
+                      >
+                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                      </button>
+                      <span className="muted">Cerrar mesa queda habilitado recien despues de confirmar el pago.</span>
+                    </div>
+                  )}
+                  {activeModal.kind === "STATUS" && activeModal.row.status === "PAGO_CONFIRMADO" && (
+                    <div className="order-actions">
+                      <button
+                        className="btn-secondary"
+                        disabled={closingTable}
                         onClick={() => onCloseTableByCode(activeModal.row.table_code)}
                       >
                         {closingTable ? "Cerrando..." : "Cerrar mesa"}
@@ -760,6 +778,7 @@ export function AdminBoardPage({
                       >
                         {closingTable ? "Cerrando..." : "Forzar cierre"}
                       </button>
+                      <span className="muted">Pago confirmado. Ya podes cerrar la mesa en el flujo normal.</span>
                     </div>
                   )}
                   {activeModal.kind === "SECTOR" ? (
@@ -940,3 +959,4 @@ export function AdminBoardPage({
     </section>
   );
 }
+export default AdminBoardPage;

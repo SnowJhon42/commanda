@@ -10,24 +10,24 @@ function badgeClass(status) {
   return "badge";
 }
 
-export function WaiterBoardPage({
-  rows,
-  loading,
-  onAdvanceItem,
-  advancingKey,
-  onSelectOrder,
-  selectedOrderId,
+export function KitchenBoardPage({
+  rows = [],
+  loading = false,
+  onAdvanceItem = () => {},
+  advancingKey = "",
+  onSelectOrder = () => {},
+  selectedOrderId = null,
   alertMetaByOrder = {},
 }) {
   return (
     <section className="panel">
       <div className="section-head">
-        <h3>Mozo</h3>
+        <h3>Cocina</h3>
         <span className="muted">{rows.length} mesas activas</span>
       </div>
       {loading && <p className="muted">Actualizando...</p>}
       {rows.length === 0 ? (
-        <p className="muted">No hay items listos para entregar.</p>
+        <p className="muted">No hay items recibidos o en preparacion en cocina.</p>
       ) : (
         <div className="card-grid">
           {rows.map((row) => {
@@ -55,9 +55,10 @@ export function WaiterBoardPage({
               </div>
               <div className="sector-list">
                 {row.items.map((item) => {
-                  const key = `${item.item_id}:DELIVERED`;
+                  const nextStatus = item.status === "RECEIVED" ? "IN_PROGRESS" : "DONE";
+                  const key = `${item.item_id}:${nextStatus}`;
                   const updating = advancingKey === key;
-                  const alertClass = itemAlertClass(item, "WAITER");
+                  const alertClass = itemAlertClass(item, "KITCHEN");
                   return (
                     <div className={`sector-row ${alertClass}`} key={item.item_id}>
                       <div className="row-main-wrap">
@@ -80,7 +81,7 @@ export function WaiterBoardPage({
                           })
                         }
                       >
-                        {updating ? "..." : "Entregar"}
+                        {updating ? "..." : item.status === "RECEIVED" ? "Tomar" : "Listo para mozo"}
                       </button>
                     </div>
                   );
@@ -94,3 +95,5 @@ export function WaiterBoardPage({
     </section>
   );
 }
+
+export default KitchenBoardPage;

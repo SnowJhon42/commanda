@@ -10,24 +10,24 @@ function badgeClass(status) {
   return "badge";
 }
 
-export function KitchenBoardPage({
-  rows,
-  loading,
-  onAdvanceItem,
-  advancingKey,
-  onSelectOrder,
-  selectedOrderId,
+export function BarBoardPage({
+  rows = [],
+  loading = false,
+  onAdvanceItem = () => {},
+  advancingKey = "",
+  onSelectOrder = () => {},
+  selectedOrderId = null,
   alertMetaByOrder = {},
 }) {
   return (
     <section className="panel">
       <div className="section-head">
-        <h3>Cocina</h3>
+        <h3>Barra</h3>
         <span className="muted">{rows.length} mesas activas</span>
       </div>
       {loading && <p className="muted">Actualizando...</p>}
       {rows.length === 0 ? (
-        <p className="muted">No hay items recibidos o en preparacion en cocina.</p>
+        <p className="muted">No hay items recibidos o en preparacion en barra.</p>
       ) : (
         <div className="card-grid">
           {rows.map((row) => {
@@ -58,7 +58,7 @@ export function KitchenBoardPage({
                   const nextStatus = item.status === "RECEIVED" ? "IN_PROGRESS" : "DONE";
                   const key = `${item.item_id}:${nextStatus}`;
                   const updating = advancingKey === key;
-                  const alertClass = itemAlertClass(item, "KITCHEN");
+                  const alertClass = itemAlertClass(item, "BAR");
                   return (
                     <div className={`sector-row ${alertClass}`} key={item.item_id}>
                       <div className="row-main-wrap">
@@ -95,3 +95,5 @@ export function KitchenBoardPage({
     </section>
   );
 }
+
+export default BarBoardPage;
