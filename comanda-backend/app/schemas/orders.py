@@ -3,6 +3,20 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+def default_print_status() -> dict:
+    return {
+        "overall_status": "NONE",
+        "full_status": "PENDING",
+        "full_printed_at": None,
+        "commands_status": "NOT_APPLICABLE",
+        "sectors": [
+            {"sector": "KITCHEN", "required": False, "status": "NOT_APPLICABLE", "printed_at": None},
+            {"sector": "BAR", "required": False, "status": "NOT_APPLICABLE", "printed_at": None},
+            {"sector": "WAITER", "required": False, "status": "NOT_APPLICABLE", "printed_at": None},
+        ],
+    }
+
+
 class CreateOrderItemIn(BaseModel):
     product_id: int
     variant_id: int | None = None
@@ -330,7 +344,7 @@ class AdminOrderSummaryOut(BaseModel):
     updated_at: datetime
     bill_split_closed: bool = False
     payment_confirmed: bool = False
-    print_status: "OrderPrintStatusOut"
+    print_status: "OrderPrintStatusOut" = Field(default_factory=default_print_status)
 
 
 class AdminOrdersResponse(BaseModel):
@@ -429,7 +443,7 @@ class AdminOrderItemsDetailResponse(BaseModel):
     events: list[ItemStatusEventOut]
     bill_split: BillSplitOut | None = None
     cash_requests: list[TableSessionCashRequestOut] = []
-    print_status: "OrderPrintStatusOut"
+    print_status: "OrderPrintStatusOut" = Field(default_factory=default_print_status)
     table_elapsed_minutes: int = 0
     order_elapsed_minutes: int = 0
     created_at: datetime
