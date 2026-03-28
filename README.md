@@ -1,138 +1,135 @@
-﻿# COMANDA Monorepo
+# COMANDA Monorepo
 
-Proyecto unificado en un solo repo:
+Monorepo de COMANDA con tres aplicaciones:
 
-- `comanda-backend` (FastAPI)
-- `comanda-front-client` (Next.js)
-- `comanda-front-staff` (Next.js)
+- `comanda-backend` - FastAPI
+- `comanda-front-client` - Next.js
+- `comanda-front-staff` - Next.js
 
-Documentacion tecnica:
+## Estado operativo actual
 
-- `docs/MVP_v0.1_arquitectura_y_flujos.md`
+Infraestructura publica activa:
+
+- Backend Render: `https://commanda-apy.onrender.com`
+- Cliente Vercel: `https://comanda-cliente.vercel.app`
+- Staff Vercel: `https://comanda-staff.vercel.app`
+- DB remota Neon: proyecto `comanda-demo`
+
+Estado de trabajo local:
+
+- Fuente local historica: `C:\Users\agust\Desktop\COMANDA_LOCAL`
+- Repo conectado a GitHub y despliegue: `C:\Users\agust\OneDrive\Desktop\COMANDA`
+
+Regla practica:
+
+- El codigo que llega a Render y Vercel sale de este repo (`OneDrive\Desktop\COMANDA`) via `main`.
+- `COMANDA_LOCAL` puede usarse para probar o comparar, pero no es el origen directo de deploy.
+
+## Fuente de verdad
+
+La fuente de verdad para cloud hoy es:
+
+1. GitHub `main`
+2. Render backend
+3. Vercel client + staff
+4. Neon para datos remotos
+
+No asumir que la DB local y Neon son iguales.
+No asumir que un cambio en `COMANDA_LOCAL` toca Neon automaticamente.
+
+## Documentacion clave
+
+- `docs/DEPLOYED_STACK.md`
+- `docs/AGENT_SERVER_RUNBOOK.md`
+- `docs/LOCALHOST_RUNBOOK.md`
 - `docs/API_OPENAPI_MVP.md`
-- `docs/DB_SCHEMA_SQLITE.sql`
-- `docs/DB_SEED_MIN.sql`
-- `docs/MOCKUP_MAPPING_MVP.md`
+- `AGENTS.md`
 
-## Operacion Local Unificada
+## Operacion local
 
-Workspace recomendado:
+No ejecutar COMANDA desde OneDrive para desarrollo intensivo. El script local ya bloquea eso.
 
-- Desarrollo activo: `C:\Users\agust\Desktop\COMANDA_LOCAL`
-- OneDrive: solo backup, docs, capturas y material no ejecutable
+Ruta recomendada:
 
-No ejecutar COMANDA desde rutas dentro de `OneDrive`. Next.js, Python, SQLite y los logs generan artefactos de runtime que OneDrive puede virtualizar o bloquear.
+- `C:\Users\agust\Desktop\COMANDA_LOCAL`
 
-Desde `C:\Users\agust\Desktop\COMANDA_LOCAL`:
+Levantar stack local:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 -Action up
+powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 restart
 ```
 
-Acciones disponibles:
+Validaciones:
 
-- `up` (alias: `start`): levanta backend + front client + front staff
-- `down` (alias: `stop`): baja todos los servicios y libera puertos
-- `restart`: reinicia todo el stack
-- `status`: chequea salud de `8000`, `5173`, `5174`
-- `logs`: muestra tail de logs de los 3 servicios
-- `doctor`: valida prerequisitos, DB seed minima y estado general
-- `backend-up`: levanta solo backend
-- `backend-down`: baja solo backend
-- `backend-status`: healthcheck de backend
-- `backend-restart`: reinicia solo backend
+- backend: `http://localhost:8000/health`
+- cliente: `http://localhost:5173`
+- staff: `http://localhost:5174`
 
-Atajos:
+## Deploy cloud
 
-- `.\scripts\run_all_local.ps1`
-- `.\scripts\stop_all_local.ps1`
-- `.\scripts\status_all_local.ps1`
-- `.\scripts\restart_all_local.ps1`
-- `.\scripts\logs_all_local.ps1`
-- `.\scripts\doctor_all_local.ps1`
+### Render
 
-URLs locales:
+- Servicio: `commanda-apy`
+- Branch: `main`
+- Root directory: `comanda-backend`
 
-- Backend health: `http://localhost:8000/health`
-- Cliente Next.js: `http://localhost:5173`
-- Staff Next.js: `http://localhost:5174`
+### Vercel
 
-Si Staff muestra "No se pudo conectar con el backend":
+Cliente:
 
-1. Verificar API: abrir `http://localhost:8000/health` (debe responder `{"status":"ok"}`).
-2. Si esta caida, levantar backend desde raiz:
+- Proyecto: `comanda-cliente`
+- Root directory: `comanda-front-client`
+- `NEXT_PUBLIC_API_URL=https://commanda-apy.onrender.com`
 
-```powershell
-npm.cmd run dev:backend
+Staff:
+
+- Proyecto: `comanda-staff`
+- Root directory: `comanda-front-staff`
+- `NEXT_PUBLIC_API_URL=https://commanda-apy.onrender.com`
+
+### CORS backend
+
+Valor actual esperado en Render:
+
+```txt
+https://comanda-cliente.vercel.app,https://comanda-staff.vercel.app
 ```
 
-DB local canonica para backend:
+## Neon y menu remoto
 
-- `C:\Users\agust\Desktop\COMANDA_LOCAL\comanda-backend\comanda_dev.db`
+La data remota de menu ya no debe regenerarse con `init_postgres.py` si lo que se quiere es copiar el menu real.
 
-Chequeo recomendado para evitar confusion de DB:
+`init_postgres.py` carga solo seed minimo.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 -Action doctor
-```
+Para sincronizar menu real desde la SQLite buena hacia Neon usar:
 
-Recuperacion rapida solo de backend (puerto 8000):
+- `comanda-backend/scripts/sync_menu_sqlite_to_postgres.py`
 
-```powershell
-npm.cmd run backend:restart
-npm.cmd run backend:status
-```
+Ese script se penso para copiar:
 
-Si `npm.cmd run dev:staff` falla con `spawn EPERM`, usar fallback estatico:
+- `menu_categories`
+- `products`
+- `product_variants`
 
-```powershell
-npm.cmd run staff:static
-```
+## Ultimos fixes relevantes de cloud
 
-Luego abrir `http://localhost:5174`.
+- `31ca614` Sync Neon menu data and patch Next.js
+- `ddf82e5` Harden admin order print status schema
+- `a5ded0c` Make runtime schema validation Postgres-safe
 
-## Backup Seguro a OneDrive
+## Riesgos conocidos
 
-Para guardar codigo y documentacion en OneDrive sin copiar artefactos de runtime:
+- Render free puede dormir el backend y meter latencia de arranque.
+- Vercel puede quedar atras si no se redeploya despues de cambios criticos.
+- Neon puede quedar desalineada respecto de SQLite local si no se sincroniza explicitamente.
+- El panel staff puede fallar por errores de backend y mostrar mensajes de red engañosos.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\backup_code_to_onedrive.ps1
-```
+## Regla para agentes
 
-El backup genera un snapshot en `C:\Users\agust\OneDrive\COMANDA_BACKUP` y excluye:
+Antes de tocar cloud:
 
-- `.git`
-- `node_modules`
-- `.next`
-- `.venv`
-- `logs`
-- `recordings`
-- `backups`
-- `comanda_dev.db`
-- `*.pid`
-- `*.log`
+1. Leer `docs/DEPLOYED_STACK.md`
+2. Leer `docs/AGENT_SERVER_RUNBOOK.md`
+3. Verificar branch, commit y plataforma antes de diagnosticar
 
-## Variables Front
-
-Cada frontend usa:
-
-- `NEXT_PUBLIC_API_URL=http://localhost:8000`
-
-Archivos:
-
-- `comanda-front-client/.env.local`
-- `comanda-front-staff/.env.local`
-
-## Vercel
-
-Para deploy en Vercel crear 2 proyectos sobre este mismo repo:
-
-1. Front Cliente
-- Root Directory: `comanda-front-client`
-
-2. Front Staff
-- Root Directory: `comanda-front-staff`
-
-En ambos proyectos configurar:
-
-- `NEXT_PUBLIC_API_URL`: URL publica del backend FastAPI
+No improvisar seeds ni cambios de DB remota sobre Neon sin documentarlos.

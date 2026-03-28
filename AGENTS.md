@@ -177,6 +177,64 @@ Proximo paso:
 - Pagos productivos.
 - Multi-sucursal avanzada en UI.
 
+## Protocolo cloud para agentes
+
+Aplica cuando un agente trabaje contra servidores reales.
+
+### Stack vigente
+
+- Backend live: `https://commanda-apy.onrender.com`
+- Cliente live: `https://comanda-cliente.vercel.app`
+- Staff live: `https://comanda-staff.vercel.app`
+- DB remota: Neon proyecto `comanda-demo`
+
+### Fuente de verdad
+
+- Codigo de deploy: branch `main` del repo
+- Repo operativo conectado a cloud: `C:\Users\agust\OneDrive\Desktop\COMANDA`
+- `COMANDA_LOCAL` sirve como referencia local, no como origen directo de deploy
+
+### Regla de diagnostico
+
+Antes de concluir que "no conecta":
+
+1. verificar commit activo en GitHub
+2. verificar commit desplegado en Render/Vercel
+3. inspeccionar `Network` en frontend
+4. confirmar si el fallo es `401`, `500`, CORS o cold start
+
+No tratar mensajes genericos de frontend como evidencia suficiente.
+
+### Neon
+
+- No usar `init_postgres.py` para copiar el menu real a Neon.
+- Ese script carga seed minimo, no el catalogo bueno.
+- Para sincronizar menu real usar `comanda-backend/scripts/sync_menu_sqlite_to_postgres.py`.
+
+### Render
+
+- Mantener branch `main`.
+- Si un deploy falla, leer logs antes de tocar Vercel.
+- No ejecutar logica SQLite sobre Postgres.
+
+### Vercel
+
+- Cliente y staff deben apuntar a `https://commanda-apy.onrender.com`.
+- Antes de redeployar, confirmar que el commit correcto ya esta en `main`.
+- Si un deploy falla por seguridad de Next.js, actualizar dependencia y lockfile antes de reintentar.
+
+### Handoff minimo obligatorio
+
+Al terminar trabajo sobre cloud, dejar registrado:
+
+- commit exacto
+- estado de Render
+- estado de Vercel client
+- estado de Vercel staff
+- estado de Neon
+- endpoint validado o roto
+- siguiente paso recomendado
+
 ## Prompt sugerido para hablar con CTO-Agent
 
 ```txt
