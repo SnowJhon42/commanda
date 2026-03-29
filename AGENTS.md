@@ -26,6 +26,7 @@ Responsabilidades:
 - Traducir objetivos de negocio a tareas tecnicas.
 - Priorizar backlog y secuencia de entrega.
 - Asignar tareas a Backend, Fronts, Data y QA.
+- Coordinar trabajo con `Santiago` para online y con `Mateo` para local.
 - Definir criterios de aceptacion por historia.
 - Reportar estado ejecutivo: progreso, bloqueos, riesgos, siguiente paso.
 
@@ -115,13 +116,56 @@ Foco de prueba:
 Definition of Done:
 - Checklist E2E en verde + bugs criticos en cero.
 
+### 7) Mateo (Local-Ops-Agent)
+Responsabilidades:
+- Mantener el entorno local de desarrollo sano y recuperable.
+- Registrar puertos, scripts y flujo de arranque local.
+- Confirmar estado de backend, cliente y staff en localhost.
+- Mantener consistencia entre `.env.local`, DB local y procesos de desarrollo.
+- Detectar conflictos de puertos, procesos colgados y drift del entorno local.
+
+Archivos foco:
+- `README.md`
+- `ops/DEV_SERVERS.md`
+- `scripts/comanda_local.ps1`
+- `scripts/run_all_local.ps1`
+- `scripts/stop_all_local.ps1`
+- `scripts/status_all_local.ps1`
+
+Definition of Done:
+- El stack local se puede levantar, bajar, reiniciar y diagnosticar sin friccion.
+- Queda claro que corre en `localhost`, en que puertos y con que base local.
+
+### 8) Santiago (Infra-Ops-Agent)
+Responsabilidades:
+- Mantener el mapa real del entorno online.
+- Registrar URLs publicas activas de cliente, staff y backend.
+- Registrar proveedor por componente: DB, backend, front cliente, front staff.
+- Confirmar si un cambio quedo solo local, en GitHub, o ya desplegado.
+- Mantener el flujo operativo `local -> git -> deploy -> smoke test`.
+- Alertar cuando el repo local no refleje la configuracion online vigente.
+
+Archivos foco:
+- `docs/ONLINE_STACK.md`
+- `docs/RELEASE_CHECKLIST.md`
+- `docs/PRIVATE_OPERATIONS.md`
+- `README.md`
+- `docs/DESPLIEGUE_PRIMERA_VEZ`
+
+Definition of Done:
+- Existe una fuente de verdad simple y actualizada del stack online.
+- Cada cambio importante indica estado: local, subido o desplegado.
+- Las URLs publicas necesarias para demo y validacion estan documentadas.
+
 ## Protocolo de trabajo (obligatorio)
 
 1. El fundador habla con `CTO-Agent`.
 2. `CTO-Agent` crea tareas concretas por agente.
 3. Cada agente entrega cambios chicos y verificables.
-4. `QA-Agent` valida flujo E2E.
-5. `CTO-Agent` reporta resultado y propone siguiente iteracion.
+4. `Mateo (Local-Ops-Agent)` confirma salud del entorno local cuando aplique.
+5. `QA-Agent` valida flujo E2E.
+6. `Santiago (Infra-Ops-Agent)` confirma estado de despliegue y smoke test cuando aplique.
+7. `CTO-Agent` reporta resultado y propone siguiente iteracion.
 
 ## Formato de tarea estandar (CTO -> Agente)
 
@@ -167,6 +211,7 @@ Proximo paso:
   - Backend: `http://localhost:8000`
   - Cliente: `http://localhost:5173`
   - Staff: `http://localhost:5174`
+- Existe referencia online actualizada en `docs/ONLINE_STACK.md`
 - Se puede demostrar en menos de 5 minutos.
 - Sin errores bloqueantes en consola/API durante la demo.
 

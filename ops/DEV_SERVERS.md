@@ -1,6 +1,7 @@
 # COMANDA - Dev Servers
 
 Fecha: 2026-02-19
+Owner: `Mateo (Local-Ops-Agent)`
 
 ## Regla simple
 
