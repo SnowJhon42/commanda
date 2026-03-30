@@ -38,14 +38,19 @@ from app.schemas.orders import (
     CloseTableSessionResponse,
     ForceCloseTableSessionResponse,
     ItemStatusEventOut,
+    MarkOrderPrintRequest,
+    MarkOrderPrintResponse,
     StaffBoardItemOut,
     StaffBoardItemsResponse,
+    StorePrintSettingsResponse,
     StoreClientVisibilityResponse,
     StaffTableSessionOut,
     StaffTableSessionsResponse,
+    UpdateStorePrintSettingsRequest,
     UpdateStoreClientVisibilityRequest,
 )
 from app.services.billing import get_latest_bill_split, to_bill_split_out
+from app.services.print_tracking import build_order_print_status, mark_order_print_target
 from app.services.item_status import change_item_status
 from app.services.realtime import event_bus
 
@@ -55,6 +60,39 @@ ACTIVE_TABLE_SESSION_STATUSES = (
     TableSessionStatus.MESA_OCUPADA.value,
     TableSessionStatus.CON_PEDIDO.value,
 )
+PRINT_MODES = {"MANUAL", "AUTOMATIC"}
+
+
+def _order_total_amount(order: Order) -> float:
+    return float(sum(float(item.unit_price) * item.qty for item in order.items))
+
+
+def _order_payment_confirmed(db: Session, order: Order) -> bool:
+    total_amount = _order_total_amount(order)
+    if total_amount <= 0:
+        return True
+
+    bill_split = to_bill_split_out(db, get_latest_bill_split(db, order.id))
+    if not bill_split:
+        return False
+
+    if bill_split.status != BillSplitStatus.CLOSED.value:
+        return False
+
+    return all(part.payment_status == BillPartPaymentStatus.CONFIRMED.value for part in bill_split.parts)
+
+
+def _minutes_since(reference_dt: datetime | None, now_utc: datetime) -> int:
+    if not reference_dt:
+        return 0
+    reference_aware = reference_dt.replace(tzinfo=timezone.utc) if reference_dt.tzinfo is None else reference_dt
+    return max(0, int((now_utc - reference_aware).total_seconds() // 60))
+
+
+def _as_utc(reference_dt: datetime | None) -> datetime | None:
+    if not reference_dt:
+        return None
+    return reference_dt.replace(tzinfo=timezone.utc) if reference_dt.tzinfo is None else reference_dt
 
 
 def _board_filter_for_sector(sector: str):
@@ -175,6 +213,57 @@ def patch_store_client_visibility(
     )
 
 
+@router.get("/store-settings/print-mode", response_model=StorePrintSettingsResponse)
+def get_store_print_mode(
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StorePrintSettingsResponse:
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    print_mode = (store.print_mode or "MANUAL").upper()
+    if print_mode not in PRINT_MODES:
+        print_mode = "MANUAL"
+    return StorePrintSettingsResponse(store_id=store.id, print_mode=print_mode)
+
+
+@router.patch("/store-settings/print-mode", response_model=StorePrintSettingsResponse)
+def patch_store_print_mode(
+    payload: UpdateStorePrintSettingsRequest,
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StorePrintSettingsResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    print_mode = (payload.print_mode or "").strip().upper()
+    if print_mode not in PRINT_MODES:
+        raise HTTPException(status_code=422, detail="Unsupported print mode")
+
+    store.print_mode = print_mode
+    db.add(store)
+    db.commit()
+    db.refresh(store)
+    event_bus.publish(
+        "store.settings.updated",
+        {
+            "store_id": store.id,
+            "print_mode": store.print_mode,
+        },
+    )
+    return StorePrintSettingsResponse(store_id=store.id, print_mode=store.print_mode)
+
+
 @router.get("/table-sessions", response_model=StaffTableSessionsResponse)
 def list_staff_table_sessions(
     store_id: int,
@@ -244,9 +333,14 @@ def list_staff_table_sessions(
             .order_by(Order.created_at.desc(), Order.id.desc())
             .limit(1)
         )
-        reference_dt = active_order.created_at if active_order else table_session.created_at
-        reference_aware = reference_dt.replace(tzinfo=timezone.utc) if reference_dt.tzinfo is None else reference_dt
-        elapsed_minutes = max(0, int((now_utc - reference_aware).total_seconds() // 60))
+        latest_client_seen_at = db.scalar(
+            select(func.max(TableSessionClient.last_seen_at)).where(TableSessionClient.table_session_id == table_session.id)
+        )
+        elapsed_reference = max(
+            [candidate for candidate in [_as_utc(active_order.created_at) if active_order else None, _as_utc(latest_client_seen_at), _as_utc(table_session.created_at)] if candidate is not None],
+            default=None,
+        )
+        elapsed_minutes = _minutes_since(elapsed_reference, now_utc)
         items.append(
             StaffTableSessionOut(
                 table_session_id=table_session.id,
@@ -301,6 +395,18 @@ def patch_table_session_status(
             ) or 0
             if has_open_orders > 0:
                 raise HTTPException(status_code=409, detail="Cannot close table session with active non-delivered orders")
+            related_orders = db.scalars(
+                select(Order)
+                .where(
+                    Order.table_session_id == table_session.id,
+                    Order.store_id == current_staff.store_id,
+                )
+                .options(joinedload(Order.items))
+                .order_by(Order.created_at.desc(), Order.id.desc())
+            ).unique().all()
+            unpaid_orders = [order for order in related_orders if not _order_payment_confirmed(db, order)]
+            if unpaid_orders:
+                raise HTTPException(status_code=409, detail="Cannot close table session without confirmed payment")
         table_session.closed_at = datetime.utcnow()
     else:
         table_session.closed_at = None
@@ -355,6 +461,9 @@ def get_staff_order_items_detail(
         raise HTTPException(status_code=404, detail="Order not found")
 
     now_utc = datetime.now(tz=timezone.utc)
+    table_session = None
+    if order.table_session_id:
+        table_session = db.scalar(select(TableSession).where(TableSession.id == order.table_session_id))
     delays: list[AdminSectorDelayOut] = []
     sectors = sorted({item.sector for item in order.items})
     for sector in sectors:
@@ -442,7 +551,55 @@ def get_staff_order_items_detail(
                 .order_by(TableSessionCashRequest.created_at.desc(), TableSessionCashRequest.id.desc())
             ).all()
         ],
+        print_status=build_order_print_status(order),
+        table_elapsed_minutes=_minutes_since(table_session.created_at if table_session else order.created_at, now_utc),
+        order_elapsed_minutes=_minutes_since(order.created_at, now_utc),
         created_at=order.created_at,
+    )
+
+
+@router.post("/orders/{order_id}/print-status", response_model=MarkOrderPrintResponse)
+def mark_order_print_status(
+    order_id: int,
+    payload: MarkOrderPrintRequest,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> MarkOrderPrintResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    order = db.scalar(
+        select(Order)
+        .where(Order.id == order_id, Order.store_id == current_staff.store_id)
+        .options(joinedload(Order.items), joinedload(Order.table))
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    try:
+        touched_targets = mark_order_print_target(order, payload.target)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    order.updated_at = datetime.utcnow()
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+    table_code = order.table.code if order.table else "-"
+    event_bus.publish(
+        "order.print.updated",
+        {
+            "order_id": order.id,
+            "store_id": order.store_id,
+            "table_code": table_code,
+            "touched_targets": touched_targets,
+            "print_status": build_order_print_status(order),
+        },
+    )
+    return MarkOrderPrintResponse(
+        order_id=order.id,
+        touched_targets=touched_targets,
+        print_status=build_order_print_status(order),
     )
 
 
@@ -610,20 +767,18 @@ def close_table_session(
     if has_open_orders > 0:
         raise HTTPException(status_code=409, detail="Cannot close table session with active non-delivered orders")
 
-    has_pending_bill_parts = db.scalar(
-        select(func.count())
-        .select_from(BillSplitPart)
-        .join(BillSplit, BillSplit.id == BillSplitPart.bill_split_id)
-        .join(Order, Order.id == BillSplit.order_id)
+    related_orders = db.scalars(
+        select(Order)
         .where(
             Order.table_session_id == table_session.id,
             Order.store_id == current_staff.store_id,
-            BillSplit.status != BillSplitStatus.CLOSED.value,
-            BillSplitPart.payment_status == BillPartPaymentStatus.PENDING.value,
         )
-    ) or 0
-    if has_pending_bill_parts > 0:
-        raise HTTPException(status_code=409, detail="Cannot close table session with pending bill split payments")
+        .options(joinedload(Order.items))
+        .order_by(Order.created_at.desc(), Order.id.desc())
+    ).unique().all()
+    unpaid_orders = [order for order in related_orders if not _order_payment_confirmed(db, order)]
+    if unpaid_orders:
+        raise HTTPException(status_code=409, detail="Cannot close table session without confirmed payment")
 
     closable_splits = db.scalars(
         select(BillSplit)

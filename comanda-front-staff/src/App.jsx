@@ -4,17 +4,22 @@ import {
   fetchAdminOrderItems,
   fetchAdminOrders,
   fetchFeedbackSummary,
+  fetchStorePrintMode,
   fetchStaffBoardItems,
   fetchTableSessions,
+  fetchTableSessionConsumption,
   fetchStaffOrderItems,
   fetchTableSessionCashRequests,
+  markOrderPrintStatus,
   fetchStoreClientVisibility,
   openStaffEvents,
   closeTableSession,
   forceCloseTableSession,
   confirmSplitPart,
+  forceConfirmOrderPayment,
   createEqualSplit,
   patchStoreClientVisibility,
+  patchStorePrintMode,
   resolveCashRequest,
   patchItemStatus,
   patchTableSessionStatus,
@@ -29,10 +34,21 @@ import { FeedbackSummaryPage } from "./pages/FeedbackSummaryPage";
 import { MenuEditorPage } from "./pages/MenuEditorPage";
 import { TableSessionsPanel } from "./pages/TableSessionsPanel";
 import { elapsedMinutes } from "./utils/boardMeta";
+import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
 const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU"];
+const ARG_TZ = "America/Argentina/Buenos_Aires";
+
+function formatArgentinaClock(value) {
+  return new Intl.DateTimeFormat("es-AR", {
+    timeZone: ARG_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(value);
+}
 
 function getNextStatusForAction({ currentStatus, sector, actorSector }) {
   if (actorSector === "ADMIN") {
@@ -98,6 +114,7 @@ function mediumThresholdBySector(sector) {
 }
 
 export function App() {
+  const [clockNow, setClockNow] = useState(() => new Date());
   const [session, setSession] = useState(null);
   const [boardRows, setBoardRows] = useState([]);
   const [error, setError] = useState("");
@@ -110,6 +127,8 @@ export function App() {
   const [feedbackSummary, setFeedbackSummary] = useState(null);
   const [showLiveTotalToClient, setShowLiveTotalToClient] = useState(true);
   const [updatingClientVisibility, setUpdatingClientVisibility] = useState(false);
+  const [printMode, setPrintMode] = useState("MANUAL");
+  const [printModeSaving, setPrintModeSaving] = useState(false);
   const [advancingKey, setAdvancingKey] = useState("");
   const [tableSessionsRows, setTableSessionsRows] = useState([]);
   const [tableSessionsLoading, setTableSessionsLoading] = useState(false);
@@ -121,12 +140,15 @@ export function App() {
   const [closingTable, setClosingTable] = useState(false);
   const [validatingPaymentKey, setValidatingPaymentKey] = useState("");
   const [billingBusy, setBillingBusy] = useState(false);
+  const [printingKey, setPrintingKey] = useState("");
   const [liveConnected, setLiveConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [alarmText, setAlarmText] = useState("");
   const lastDoneAlertRef = useRef("");
   const lastDelayAlertRef = useRef("");
   const lastCashAlertRef = useRef("");
+  const attemptedAutoPrintRef = useRef(new Set());
+  const autoPrintBusyRef = useRef(false);
 
   const playAlarm = useCallback((kind) => {
     if (!soundEnabled || typeof window === "undefined") return;
@@ -243,6 +265,14 @@ export function App() {
     [session]
   );
 
+  const requestTableSessionConsumption = useCallback(
+    async (tableSessionId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !tableSessionId) return null;
+      return fetchTableSessionConsumption(tableSessionId);
+    },
+    [session]
+  );
+
   const loadTableSessions = useCallback(async () => {
     if (!session) return;
     setTableSessionsLoading(true);
@@ -290,6 +320,56 @@ export function App() {
       setError(err.message || "No se pudo cargar visibilidad de total para cliente.");
     }
   }, [session]);
+
+  const loadStorePrintMode = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    try {
+      const data = await fetchStorePrintMode({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+      });
+      setPrintMode(data.print_mode === "AUTOMATIC" ? "AUTOMATIC" : "MANUAL");
+    } catch (err) {
+      setError(err.message || "No se pudo cargar modo de impresion.");
+    }
+  }, [session]);
+
+  const handleTogglePrintMode = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    const nextMode = printMode === "AUTOMATIC" ? "MANUAL" : "AUTOMATIC";
+    setPrintModeSaving(true);
+    setError("");
+    try {
+      const data = await patchStorePrintMode({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+        printMode: nextMode,
+      });
+      setPrintMode(data.print_mode === "AUTOMATIC" ? "AUTOMATIC" : "MANUAL");
+    } catch (err) {
+      setError(err.message || "No se pudo actualizar modo de impresion.");
+    } finally {
+      setPrintModeSaving(false);
+    }
+  }, [session, printMode]);
+
+  const toggleClientTotalVisibility = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    setUpdatingClientVisibility(true);
+    setError("");
+    try {
+      const data = await patchStoreClientVisibility({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+        showLiveTotalToClient: !showLiveTotalToClient,
+      });
+      setShowLiveTotalToClient(Boolean(data.show_live_total_to_client));
+    } catch (err) {
+      setError(err.message || "No se pudo actualizar visibilidad de total para cliente.");
+    } finally {
+      setUpdatingClientVisibility(false);
+    }
+  }, [session, showLiveTotalToClient]);
 
   useEffect(() => {
     if (!selectedOrderId) {
@@ -409,14 +489,20 @@ export function App() {
       try {
         for (const orderId of ids) {
           // eslint-disable-next-line no-await-in-loop
-          const detail = await fetchAdminOrderItems({
+          let detail = await fetchAdminOrderItems({
             token: session.access_token,
             orderId,
           });
-          const reportedParts = (detail?.bill_split?.parts || []).filter((part) => part.payment_status === "REPORTED");
-          for (const part of reportedParts) {
-            // eslint-disable-next-line no-await-in-loop
-            await confirmSplitPart({ token: session.access_token, partId: part.id });
+          let reportedParts = (detail?.bill_split?.parts || []).filter(
+            (part) => part.payment_status === "REPORTED"
+          );
+          if (reportedParts.length > 0) {
+            for (const part of reportedParts) {
+              // eslint-disable-next-line no-await-in-loop
+              await confirmSplitPart({ token: session.access_token, partId: part.id });
+            }
+          } else {
+            await forceConfirmOrderPayment({ token: session.access_token, orderId });
           }
         }
         await loadBoard();
@@ -501,6 +587,70 @@ export function App() {
     [session, selectedOrderId, loadTableSessions, loadBoard, loadOrderDetail]
   );
 
+  const updateOrderPrintTracking = useCallback(
+    async ({ orderId, target }) => {
+      if (!session || session.staff.sector !== "ADMIN" || !orderId || !target) return;
+      const key = `${orderId}:${target}`;
+      setPrintingKey(key);
+      setError("");
+      try {
+        await markOrderPrintStatus({
+          token: session.access_token,
+          orderId,
+          target,
+        });
+        await loadBoard();
+        await loadTableSessions();
+        if (selectedOrderId === orderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo actualizar impresion del pedido.");
+      } finally {
+        setPrintingKey("");
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadTableSessions, loadOrderDetail]
+  );
+
+  const autoPrintOrder = useCallback(
+    async (orderId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !orderId) return;
+      if (autoPrintBusyRef.current) return;
+
+      autoPrintBusyRef.current = true;
+      attemptedAutoPrintRef.current.add(String(orderId));
+      try {
+        const detail = await fetchAdminOrderItems({
+          token: session.access_token,
+          orderId,
+        });
+        printFullOrderTicket(detail);
+        await markOrderPrintStatus({
+          token: session.access_token,
+          orderId,
+          target: "FULL",
+        });
+        printOrderCommands(detail);
+        await markOrderPrintStatus({
+          token: session.access_token,
+          orderId,
+          target: "COMMANDS",
+        });
+        await loadBoard();
+        await loadTableSessions();
+        if (selectedOrderId === orderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || `No se pudo imprimir automaticamente el pedido #${orderId}.`);
+      } finally {
+        autoPrintBusyRef.current = false;
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadTableSessions, loadOrderDetail]
+  );
+
   const markTableSession = useCallback(
     async (tableSessionId, toStatus) => {
       if (!session || !tableSessionId) return;
@@ -522,24 +672,6 @@ export function App() {
     },
     [session, loadTableSessions, loadBoard]
   );
-
-  const toggleClientTotalVisibility = useCallback(async () => {
-    if (!session || session.staff.sector !== "ADMIN") return;
-    setUpdatingClientVisibility(true);
-    setError("");
-    try {
-      const data = await patchStoreClientVisibility({
-        token: session.access_token,
-        storeId: session.staff.store_id,
-        showLiveTotalToClient: !showLiveTotalToClient,
-      });
-      setShowLiveTotalToClient(Boolean(data.show_live_total_to_client));
-    } catch (err) {
-      setError(err.message || "No se pudo actualizar visibilidad de total para cliente.");
-    } finally {
-      setUpdatingClientVisibility(false);
-    }
-  }, [session, showLiveTotalToClient]);
 
   const board = useMemo(() => {
     const alertMetaByOrder = boardRows.reduce((acc, row) => {
@@ -642,9 +774,13 @@ export function App() {
           onForceCloseTableByCode={forceCloseTableByCode}
           closingTable={closingTable}
           onRequestWaiterCalls={requestAdminWaiterCalls}
+          onRequestTableSessionConsumption={requestTableSessionConsumption}
           onResolveWaiterCall={resolveWaiterCall}
           onConfirmReportedPayments={confirmReportedPayments}
           validatingPaymentKey={validatingPaymentKey}
+          onMarkPrint={updateOrderPrintTracking}
+          printingKey={printingKey}
+          printMode={printMode}
         />
       );
     }
@@ -670,6 +806,11 @@ export function App() {
     confirmReportedPayments,
     validatingPaymentKey,
   ]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -700,10 +841,11 @@ export function App() {
     poll();
     if (session.staff.sector === "ADMIN") {
       loadStoreClientVisibility();
+      loadStorePrintMode();
     }
     const timer = setInterval(poll, 10000);
     return () => clearInterval(timer);
-  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility]);
+  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode]);
 
   useEffect(() => {
     if (!session || (session.staff.sector === "ADMIN" && adminView === "MENU")) return;
@@ -821,6 +963,24 @@ export function App() {
     return () => clearTimeout(timer);
   }, [alarmText]);
 
+  useEffect(() => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    if (adminView !== "BOARD" || printMode !== "AUTOMATIC") return;
+    if (autoPrintBusyRef.current) return;
+
+    const candidate = [...boardRows]
+      .filter(
+        (row) =>
+          Boolean(row.is_active_session) &&
+          row.print_status?.overall_status === "NONE" &&
+          !attemptedAutoPrintRef.current.has(String(row.order_id))
+      )
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0];
+
+    if (!candidate?.order_id) return;
+    autoPrintOrder(candidate.order_id);
+  }, [session, adminView, printMode, boardRows, autoPrintOrder]);
+
   if (!session) {
     return <LoginPage onLogin={setSession} />;
   }
@@ -840,6 +1000,10 @@ export function App() {
           {alarmText && <p className="alarm-text">{alarmText}</p>}
         </div>
         <div className="hero-actions">
+          <div className="hero-clock" aria-live="polite">
+            <span className="hero-clock-label">Hora AR</span>
+            <strong>{formatArgentinaClock(clockNow)}</strong>
+          </div>
           <button className={soundEnabled ? "btn-secondary" : "btn-primary"} onClick={() => setSoundEnabled((v) => !v)}>
             {soundEnabled ? "Silenciar alarmas" : "Activar alarmas"}
           </button>
@@ -922,6 +1086,12 @@ export function App() {
               disabled={updatingClientVisibility}
             />
           </label>
+          <div className="field inline-field">
+            <span>Impresion</span>
+            <button className={printMode === "AUTOMATIC" ? "btn-primary" : "btn-secondary"} onClick={handleTogglePrintMode} disabled={printModeSaving}>
+              {printModeSaving ? "Guardando..." : printMode === "AUTOMATIC" ? "Automatico" : "Manual"}
+            </button>
+          </div>
         </section>
       )}
 

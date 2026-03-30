@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { sectorClass, sectorLabel, elapsedMinutes } from "../utils/boardMeta";
+import { formatArgentinaTime } from "../utils/dateTime";
+import { printFullOrderTicket, printOrderCommands, printSectorCommand } from "../utils/printTickets";
 
 function formatMoney(value) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(
@@ -18,21 +20,25 @@ function elapsedLabel(minutesValue) {
 
 function statusText(status) {
   if (status === "SIN_PEDIDO") return "Sin pedido";
-  if (status === "EN_PROCESO") return "En proceso";
-  if (status === "PAGO_SOLICITADO") return "Pago solicitado";
-  if (status === "PAGO_TOMADO") return "Pago tomado";
-  if (status === "LISTO_CUENTA") return "Listo para cobrar";
+  if (status === "EN_SERVICIO") return "En servicio";
+  if (status === "PAGO_SOLICITADO") return "Solicitud de pago";
   if (status === "PAGO_REPORTADO") return "Pago reportado";
+  if (status === "PAGO_CONFIRMADO") return "Pago confirmado";
+  if (status === "ESPERANDO_PAGO") return "Esperando pago";
+  if (status === "LISTA_PARA_CERRAR") return "Lista para cerrar";
+  if (status === "CERRADA") return "Cerrada";
   return status;
 }
 
 function statusClass(status) {
   if (status === "SIN_PEDIDO") return "badge";
-  if (status === "EN_PROCESO") return "badge badge-progress";
-  if (status === "PAGO_SOLICITADO") return "badge badge-received";
-  if (status === "PAGO_TOMADO") return "badge badge-done";
-  if (status === "LISTO_CUENTA") return "badge badge-done";
-  if (status === "PAGO_REPORTADO") return "badge badge-delivered";
+  if (status === "EN_SERVICIO") return "badge badge-received";
+  if (status === "PAGO_SOLICITADO") return "badge badge-progress";
+  if (status === "PAGO_REPORTADO") return "badge badge-progress";
+  if (status === "PAGO_CONFIRMADO") return "badge badge-done";
+  if (status === "ESPERANDO_PAGO") return "badge badge-received";
+  if (status === "LISTA_PARA_CERRAR") return "badge badge-delivered";
+  if (status === "CERRADA") return "badge badge-neutral";
   return "badge";
 }
 
@@ -45,9 +51,53 @@ function itemStatusLabel(status) {
   return status;
 }
 
+function printStatusLabel(status) {
+  if (status === "TOTAL") return "total";
+  if (status === "PARTIAL") return "faltan";
+  if (status === "NONE") return "ninguna";
+  if (status === "PRINTED") return "impreso";
+  if (status === "PENDING") return "pendiente";
+  if (status === "NOT_APPLICABLE") return "no aplica";
+  return status || "-";
+}
+
+function printStatusClass(status) {
+  if (status === "TOTAL" || status === "PRINTED") return "badge badge-delivered";
+  if (status === "PARTIAL") return "badge badge-progress";
+  if (status === "NONE" || status === "PENDING") return "badge badge-received";
+  return "badge";
+}
+
+function printButtonLabel({ target, status, sector }) {
+  const printed = status === "PRINTED";
+  if (target === "FULL") return printed ? "Ya impreso" : "Imprimir pedido completo";
+  if (target === "COMMANDS") return printed ? "Ya impresas" : "Imprimir comandas";
+  return printed ? `Ya impreso ${sectorLabel(sector)}` : `Imprimir ${sectorLabel(sector)}`;
+}
+
+function missingPrintTargets(printStatus) {
+  const targets = [];
+  if (printStatus?.full_status === "PENDING") {
+    targets.push("FULL");
+  }
+  if (printStatus?.commands_status === "PENDING") {
+    targets.push("COMMANDS");
+  }
+  return targets;
+}
+
+function getSectorPrintState(printStatus, sector) {
+  return (printStatus?.sectors || []).find((entry) => entry.sector === sector) || null;
+}
+
+function requiredPrintSectors(printStatus) {
+  return (printStatus?.sectors || []).filter((entry) => entry.required);
+}
+
 function itemLabelWithNotes(item) {
   const notes = String(item?.notes || "").trim();
-  return notes ? `${item.qty}x ${item.item_name} (${notes})` : `${item.qty}x ${item.item_name}`;
+  const label = item?.item_name || item?.product_name || `Item ${item?.item_id || item?.id || "-"}`;
+  return notes ? `${item.qty}x ${label} (${notes})` : `${item.qty}x ${label}`;
 }
 
 function batchKeyForItem(item, fallbackOrderId) {
@@ -83,10 +133,7 @@ function buildSectorLots(items = [], fallbackOrderId = null) {
 
 function batchLabel(createdAt) {
   if (!createdAt) return "Ingreso";
-  return `Ingreso ${new Date(createdAt).toLocaleTimeString("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
+  return `Ingreso ${formatArgentinaTime(createdAt)}`;
 }
 
 function Modal({ title, subtitle, children, onClose }) {
@@ -168,8 +215,8 @@ function nextStatusForAction({ currentStatus, itemSector, actorSector }) {
 }
 
 export function AdminBoardPage({
-  rows,
-  loading,
+  rows = [],
+  loading = false,
   tableSessionsRows = [],
   onRequestOrderDetail,
   onAdvanceItem,
@@ -179,14 +226,19 @@ export function AdminBoardPage({
   onForceCloseTableByCode = () => {},
   closingTable = false,
   onRequestWaiterCalls = async () => [],
+  onRequestTableSessionConsumption = async () => null,
   onResolveWaiterCall = async () => {},
   onConfirmReportedPayments = async () => {},
   validatingPaymentKey = "",
+  onMarkPrint = async () => {},
+  printingKey = "",
+  printMode = "MANUAL",
 }) {
   const [activeModal, setActiveModal] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState("");
   const [modalDetail, setModalDetail] = useState(null);
+  const [modalSessionConsumption, setModalSessionConsumption] = useState(null);
   const [waiterPopover, setWaiterPopover] = useState(null);
   const [waiterSignals, setWaiterSignals] = useState({});
   const [cashSignals, setCashSignals] = useState({});
@@ -194,8 +246,14 @@ export function AdminBoardPage({
   const [acceptingCashRequestId, setAcceptingCashRequestId] = useState(null);
   const [forceCloseTarget, setForceCloseTarget] = useState(null);
   const seenCashAlarmRef = useRef("");
+  const autoPrintModalRef = useRef("");
 
   const tableRows = useMemo(() => {
+    const sessionByTable = tableSessionsRows.reduce((acc, session) => {
+      acc[session.table_code] = session;
+      return acc;
+    }, {});
+
     const groupedOrders = rows.reduce((acc, row) => {
       if (!acc[row.table_code]) {
         acc[row.table_code] = [];
@@ -204,12 +262,7 @@ export function AdminBoardPage({
       return acc;
     }, {});
 
-    const sessionByTable = tableSessionsRows.reduce((acc, session) => {
-      acc[session.table_code] = session;
-      return acc;
-    }, {});
-
-    const tableCodes = [...new Set([...Object.keys(groupedOrders), ...Object.keys(sessionByTable)])];
+    const tableCodes = Object.keys(sessionByTable);
 
     return tableCodes
       .map((tableCode) => {
@@ -217,38 +270,66 @@ export function AdminBoardPage({
           (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
         const tableSession = sessionByTable[tableCode];
-        const activeOrders = tableOrders.filter((order) => order.is_active_session);
-        const effectiveOrders = activeOrders.length > 0 ? activeOrders : tableOrders;
-        const leadOrder = effectiveOrders[0] || null;
-        const qty = effectiveOrders.reduce((sum, order) => sum + Number(order.total_items || 0), 0);
-        const delivered = effectiveOrders.reduce((sum, order) => sum + Number(order.delivered_items || 0), 0);
-        const total = effectiveOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+        const sessionOrders = tableOrders.filter((order) => order.is_active_session);
+        const effectiveOrders = sessionOrders.length > 0 ? sessionOrders : tableOrders;
+        const liveOrders = effectiveOrders.filter(
+          (order) => Number(order.delivered_items || 0) < Number(order.total_items || 0)
+        );
+        const pendingOrders = effectiveOrders.filter((order) => !order.payment_confirmed);
+        const visibleOrders =
+          liveOrders.length > 0 ? liveOrders : pendingOrders.length > 0 ? pendingOrders : effectiveOrders;
+        const leadOrder = visibleOrders[0] || effectiveOrders[0] || null;
+        const qty = visibleOrders.reduce((sum, order) => sum + Number(order.total_items || 0), 0);
+        const delivered = visibleOrders.reduce((sum, order) => sum + Number(order.delivered_items || 0), 0);
+        const total = visibleOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
         const hasPendingPayment = effectiveOrders.some((order) => Boolean(order.has_pending_payment));
+        const hasConfirmedPayment =
+          effectiveOrders.length > 0 && effectiveOrders.every((order) => Boolean(order.payment_confirmed));
         const cashSignal = tableSession?.table_session_id ? cashSignals[tableSession.table_session_id] : null;
         const hasPendingCashPayment = Number(cashSignal?.pending || 0) > 0;
         const hasAcceptedCashPayment = Boolean(cashSignal?.latestResolved);
         const sectorList = [
           ...new Set(
-            effectiveOrders.flatMap((order) =>
+            visibleOrders.flatMap((order) =>
               (order.sectors || [])
                 .filter((sectorState) => sectorState.status !== "DELIVERED")
                 .map((sectorState) => sectorState.sector)
             )
           ),
         ];
+        const sessionOpen = tableSession?.status !== "CLOSED";
+        const hasItems = qty > 0;
+        const allDelivered = hasItems && delivered >= qty;
         const status =
-          qty === 0
+          !hasItems
             ? "SIN_PEDIDO"
+            : !sessionOpen
+            ? "CERRADA"
             : hasPendingCashPayment
             ? "PAGO_SOLICITADO"
             : hasPendingPayment
             ? "PAGO_REPORTADO"
-            : hasAcceptedCashPayment
-            ? "PAGO_TOMADO"
-            : delivered < qty
-            ? "EN_PROCESO"
-            : "LISTO_CUENTA";
-        const referenceDate = tableSession?.created_at || leadOrder?.created_at || null;
+            : hasConfirmedPayment && allDelivered
+            ? "LISTA_PARA_CERRAR"
+            : hasConfirmedPayment
+            ? "PAGO_CONFIRMADO"
+            : allDelivered
+            ? "ESPERANDO_PAGO"
+            : "EN_SERVICIO";
+        const printStatuses = visibleOrders.map((order) => order.print_status?.overall_status || "NONE");
+        const printStatus = printStatuses.every((value) => value === "TOTAL")
+          ? "TOTAL"
+          : printStatuses.every((value) => value === "NONE")
+          ? "NONE"
+          : "PARTIAL";
+        const referenceDate =
+          leadOrder?.created_at || tableSession?.active_order_created_at || tableSession?.created_at || null;
+        const shouldShowRow =
+          Number(tableSession?.connected_clients || 0) > 0 ||
+          effectiveOrders.length > 0 ||
+          hasPendingCashPayment ||
+          hasPendingPayment ||
+          hasConfirmedPayment;
 
         return {
           id: tableSession?.table_session_id || `table-${tableCode}`,
@@ -261,7 +342,10 @@ export function AdminBoardPage({
           status,
           has_pending_payment: hasPendingPayment,
           has_pending_cash_payment: hasPendingCashPayment,
+          all_delivered: allDelivered,
+          payment_confirmed: hasConfirmedPayment,
           total,
+          print_status: printStatus,
           elapsed_minutes:
             typeof tableSession?.elapsed_minutes === "number"
               ? tableSession.elapsed_minutes
@@ -270,8 +354,10 @@ export function AdminBoardPage({
               : 0,
           latest_at: leadOrder?.created_at || tableSession?.created_at || null,
           lead_order_id: leadOrder?.order_id || null,
+          should_show_row: shouldShowRow,
         };
       })
+      .filter((row) => row.table_session_id && row.should_show_row)
       .sort((a, b) => new Date(b.latest_at || 0).getTime() - new Date(a.latest_at || 0).getTime());
   }, [rows, tableSessionsRows, cashSignals]);
 
@@ -337,25 +423,35 @@ export function AdminBoardPage({
     if (!rowWithPendingCash?.table_session_id) return;
     const latestPending = cashSignals[rowWithPendingCash.table_session_id]?.latestPending;
     if (!latestPending?.id) return;
-    if (seenCashAlarmRef.current === String(latestPending.id)) return;
     seenCashAlarmRef.current = String(latestPending.id);
-    setWaiterPopover(null);
-    setActiveModal({
-      kind: "CASH_REQUEST",
-      row: rowWithPendingCash,
-      sector: null,
-    });
   }, [cashSignals, tableRows]);
 
   async function openModal(kind, row, sector = null) {
     setActiveModal({ kind, row, sector });
     setModalDetail(null);
+    setModalSessionConsumption(null);
     setModalError("");
-    if (!row.lead_order_id || typeof onRequestOrderDetail !== "function") return;
     setModalLoading(true);
     try {
-      const detail = await onRequestOrderDetail(row.lead_order_id);
+      const results = await Promise.allSettled([
+        row.lead_order_id && typeof onRequestOrderDetail === "function"
+          ? onRequestOrderDetail(row.lead_order_id)
+          : Promise.resolve(null),
+        kind === "TABLE" && row.table_session_id && typeof onRequestTableSessionConsumption === "function"
+          ? onRequestTableSessionConsumption(row.table_session_id)
+          : Promise.resolve(null),
+      ]);
+      const detail = results[0]?.status === "fulfilled" ? results[0].value : null;
+      const sessionConsumption = results[1]?.status === "fulfilled" ? results[1].value : null;
       setModalDetail(detail);
+      setModalSessionConsumption(sessionConsumption);
+      if (!detail && !sessionConsumption) {
+        const detailError = results[0]?.status === "rejected" ? results[0].reason : null;
+        const sessionError = results[1]?.status === "rejected" ? results[1].reason : null;
+        throw new Error(
+          detailError?.message || sessionError?.message || "No se pudo cargar detalle de la mesa."
+        );
+      }
     } catch (error) {
       setModalError(error?.message || "No se pudo cargar detalle de la mesa.");
     } finally {
@@ -448,6 +544,20 @@ export function AdminBoardPage({
     await onForceCloseTableByCode(target.table_code);
   }
 
+  const hasTableConsumption = activeModal?.kind === "TABLE" && Boolean(modalSessionConsumption);
+  const modalItems =
+    activeModal?.kind === "TABLE"
+      ? modalSessionConsumption?.items || modalDetail?.items || []
+      : activeModal?.kind === "SECTOR"
+      ? itemsInProcess(modalDetail?.items || []).filter((item) => item.sector === activeModal.sector)
+      : itemsInProcess(modalDetail?.items || []);
+  const modalConsumptionTotal =
+    activeModal?.kind === "TABLE"
+      ? modalItems.reduce((sum, item) => sum + Number(item.unit_price || 0) * Number(item.qty || 0), 0)
+      : 0;
+  const modalTableElapsedLabel =
+    activeModal?.kind === "TABLE" ? elapsedLabel(activeModal?.row?.elapsed_minutes || 0) : "-";
+
   async function takeWaiterCall(requestId, tableSessionId) {
     if (!requestId || typeof onResolveWaiterCall !== "function") return;
     setTakingCallId(requestId);
@@ -523,6 +633,51 @@ export function AdminBoardPage({
     }
   }
 
+  async function handlePrintAction(detail, target) {
+    if (!detail?.order_id) return;
+    setModalError("");
+    try {
+      if (target === "FULL") {
+        printFullOrderTicket(detail);
+        await onMarkPrint({ orderId: detail.order_id, target: "FULL" });
+        return;
+      }
+      if (target === "COMMANDS") {
+        printOrderCommands(detail);
+        await onMarkPrint({ orderId: detail.order_id, target: "COMMANDS" });
+        return;
+      }
+      printSectorCommand(detail, target);
+      await onMarkPrint({ orderId: detail.order_id, target });
+    } catch (error) {
+      setModalError(error?.message || "No se pudo imprimir el pedido.");
+    }
+  }
+
+  async function handlePrintMissing(detail) {
+    const targets = missingPrintTargets(detail?.print_status);
+    if (targets.length === 0) {
+      setModalError("No hay faltantes de impresion para este pedido.");
+      return;
+    }
+    for (const target of targets) {
+      // eslint-disable-next-line no-await-in-loop
+      await handlePrintAction(detail, target);
+    }
+  }
+
+  useEffect(() => {
+    if (printMode !== "AUTOMATIC") return;
+    if (activeModal?.kind !== "TABLE") return;
+    if (!modalDetail?.order_id) return;
+    if (missingPrintTargets(modalDetail.print_status).length === 0) return;
+
+    const key = `${activeModal.kind}:${modalDetail.order_id}:${modalDetail.print_status?.overall_status}`;
+    if (autoPrintModalRef.current === key) return;
+    autoPrintModalRef.current = key;
+    handlePrintMissing(modalDetail);
+  }, [printMode, activeModal, modalDetail]);
+
   return (
     <section className="panel ops-panel">
       <div className="section-head">
@@ -543,6 +698,7 @@ export function AdminBoardPage({
                 <th>Personas</th>
                 <th>QTY</th>
                 <th>Sectores</th>
+                <th>Impresion</th>
                 <th>Estado</th>
                 <th>Tiempo</th>
                 <th>Total</th>
@@ -602,6 +758,9 @@ export function AdminBoardPage({
                     </div>
                   </td>
                   <td>
+                    <span className={printStatusClass(row.print_status)}>{printStatusLabel(row.print_status)}</span>
+                  </td>
+                  <td>
                     <div className="status-cell">
                       <button
                         className={statusClass(row.status)}
@@ -614,51 +773,52 @@ export function AdminBoardPage({
                   <td>{elapsedLabel(row.elapsed_minutes)}</td>
                   <td>{formatMoney(row.total)}</td>
                   <td>
-                    {row.status === "PAGO_SOLICITADO" ? (
-                      <button
-                        className="btn-primary"
-                        disabled={
-                          acceptingCashRequestId === cashSignals[row.table_session_id]?.latestPending?.id
-                        }
-                        onClick={() =>
-                          acceptCashRequest(
-                            cashSignals[row.table_session_id]?.latestPending?.id,
-                            row.table_session_id
-                          )
-                        }
-                      >
-                        {acceptingCashRequestId === cashSignals[row.table_session_id]?.latestPending?.id
-                          ? "Aceptando..."
-                          : "Aceptar pago"}
-                      </button>
-                    ) : row.status === "PAGO_REPORTADO" ? (
-                      <div className="order-actions">
-                        <button
-                          className="btn-primary"
-                          disabled={validatingPaymentKey === String(row.lead_order_id || "")}
-                          onClick={() => confirmReportedPayments(row)}
-                        >
-                          {validatingPaymentKey === String(row.lead_order_id || "")
-                            ? "Confirmando..."
-                            : "Confirmar pago"}
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          disabled={closingTable}
-                          onClick={() => forceCloseTable(row)}
-                        >
-                          {closingTable ? "Cerrando..." : "Forzar cierre"}
-                        </button>
-                      </div>
+                    {row.status === "CERRADA" ? (
+                      <span className="muted">Mesa cerrada</span>
                     ) : (
                       <div className="order-actions">
-                        <button
-                          className="btn-secondary"
-                          disabled={closingTable || row.status === "EN_PROCESO"}
-                          onClick={() => onCloseTableByCode(row.table_code)}
-                        >
-                          {closingTable ? "Cerrando..." : "Cerrar mesa"}
-                        </button>
+                        {row.status === "PAGO_SOLICITADO" ? (
+                          <button
+                            className="btn-primary"
+                            disabled={
+                              acceptingCashRequestId === cashSignals[row.table_session_id]?.latestPending?.id
+                            }
+                            onClick={() =>
+                              acceptCashRequest(
+                                cashSignals[row.table_session_id]?.latestPending?.id,
+                                row.table_session_id
+                              )
+                            }
+                          >
+                            {acceptingCashRequestId === cashSignals[row.table_session_id]?.latestPending?.id
+                              ? "Aceptando..."
+                              : "Aceptar pago"}
+                          </button>
+                        ) : row.status === "PAGO_REPORTADO" ? (
+                          <button
+                            className="btn-primary"
+                            disabled={validatingPaymentKey === String(row.lead_order_id || "")}
+                            onClick={() => confirmReportedPayments(row)}
+                          >
+                            {validatingPaymentKey === String(row.lead_order_id || "")
+                              ? "Confirmando..."
+                              : "Confirmar pago"}
+                          </button>
+                        ) : row.status === "LISTA_PARA_CERRAR" ? (
+                          <button
+                            className="btn-secondary"
+                            disabled={closingTable}
+                            onClick={() => onCloseTableByCode(row.table_code)}
+                          >
+                            {closingTable ? "Cerrando..." : "Cerrar mesa"}
+                          </button>
+                        ) : row.status === "PAGO_CONFIRMADO" ? (
+                          <span className="muted">Pago listo. Falta entrega para cerrar.</span>
+                        ) : row.status === "ESPERANDO_PAGO" ? (
+                          <span className="muted">Todo entregado. Falta pago.</span>
+                        ) : (
+                          <span className="muted">Servicio en curso</span>
+                        )}
                         <button
                           className="btn-secondary"
                           disabled={closingTable}
@@ -713,7 +873,7 @@ export function AdminBoardPage({
                       <span className="badge badge-received">Pendiente</span>
                     </div>
                     <p>{pendingRequest.note || "Quiero pagar"}</p>
-                    <span className="muted">{new Date(pendingRequest.created_at).toLocaleTimeString("es-AR")}</span>
+                    <span className="muted">{formatArgentinaTime(pendingRequest.created_at)}</span>
                     <button
                       className="btn-primary"
                       disabled={acceptingCashRequestId === pendingRequest.id}
@@ -730,11 +890,113 @@ export function AdminBoardPage({
             <>
               {modalLoading && <p className="muted">Cargando detalle...</p>}
               {modalError && <p className="error-text">{modalError}</p>}
-              {!modalLoading && !modalError && !modalDetail && (
+              {!modalLoading && !modalError && !modalDetail && !hasTableConsumption && (
                 <p className="muted">Esta mesa aun no tiene pedido enviado.</p>
               )}
-              {!modalLoading && !modalError && modalDetail && (
+              {!modalLoading && !modalError && (modalDetail || hasTableConsumption) && (
                 <div className="staff-modal-list">
+                  {activeModal.kind === "TABLE_PRINT" && <article className="detail-card">
+                    <h4>Impresion</h4>
+                    <div className="sector-list">
+                      <div className="sector-row">
+                        <span>Estado general</span>
+                        <span className={printStatusClass(modalDetail.print_status?.overall_status)}>
+                          {printStatusLabel(modalDetail.print_status?.overall_status)}
+                        </span>
+                        {missingPrintTargets(modalDetail.print_status).length > 0 ? (
+                          <button
+                            className="btn-primary"
+                            disabled={Boolean(printingKey)}
+                            onClick={() => handlePrintMissing(modalDetail)}
+                          >
+                            {printingKey ? "..." : "Reimprimir faltantes"}
+                          </button>
+                        ) : (
+                          <span className="muted">
+                            Mesa {modalDetail.table_code} · Pedido #{modalDetail.order_id}
+                          </span>
+                        )}
+                      </div>
+                      <div className="sector-row">
+                        <span>Pedido completo</span>
+                        <span className={printStatusClass(modalDetail.print_status?.full_status)}>
+                          {printStatusLabel(modalDetail.print_status?.full_status)}
+                        </span>
+                        <button
+                          className="btn-secondary"
+                          disabled={printingKey === `${modalDetail.order_id}:FULL`}
+                          onClick={() => handlePrintAction(modalDetail, "FULL")}
+                        >
+                          {printingKey === `${modalDetail.order_id}:FULL`
+                            ? "..."
+                            : printButtonLabel({
+                                target: "FULL",
+                                status: modalDetail.print_status?.full_status,
+                              })}
+                        </button>
+                      </div>
+                      <div className="sector-row">
+                        <span>Comandas</span>
+                        <span className={printStatusClass(modalDetail.print_status?.commands_status)}>
+                          {printStatusLabel(modalDetail.print_status?.commands_status)}
+                        </span>
+                        <button
+                          className="btn-secondary"
+                          disabled={printingKey === `${modalDetail.order_id}:COMMANDS`}
+                          onClick={() => handlePrintAction(modalDetail, "COMMANDS")}
+                        >
+                          {printingKey === `${modalDetail.order_id}:COMMANDS`
+                            ? "..."
+                            : printButtonLabel({
+                                target: "COMMANDS",
+                                status: modalDetail.print_status?.commands_status,
+                              })}
+                        </button>
+                      </div>
+                      {(modalDetail.print_status?.sectors || []).map((sectorState) => (
+                        <div className="sector-row" key={`print-${sectorState.sector}`}>
+                          <span>{sectorLabel(sectorState.sector)}</span>
+                          <span className={printStatusClass(sectorState.status)}>
+                            {printStatusLabel(sectorState.status)}
+                          </span>
+                          {sectorState.required ? (
+                            <button
+                              className="btn-secondary"
+                              disabled={printingKey === `${modalDetail.order_id}:${sectorState.sector}`}
+                              onClick={() => handlePrintAction(modalDetail, sectorState.sector)}
+                            >
+                              {printingKey === `${modalDetail.order_id}:${sectorState.sector}`
+                                ? "..."
+                                : printButtonLabel({
+                                    target: sectorState.sector,
+                                    status: sectorState.status,
+                                    sector: sectorState.sector,
+                                  })}
+                            </button>
+                          ) : (
+                            <span className="muted">No aplica</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </article>}
+                  {activeModal.kind === "SECTOR" && (
+                    <div className="sector-row">
+                      <span>Comanda</span>
+                      <span
+                        className={printStatusClass(
+                          getSectorPrintState(modalDetail.print_status, activeModal.sector)?.status
+                        )}
+                      >
+                        {printStatusLabel(getSectorPrintState(modalDetail.print_status, activeModal.sector)?.status)}
+                      </span>
+                      <span className="muted">
+                        {getSectorPrintState(modalDetail.print_status, activeModal.sector)?.status === "PRINTED"
+                          ? "La comanda del sector ya fue impresa."
+                          : "La comanda del sector sigue pendiente."}
+                      </span>
+                    </div>
+                  )}
                   {activeModal.kind === "STATUS" && activeModal.row.status === "PAGO_REPORTADO" && (
                     <div className="order-actions">
                       <button
@@ -749,6 +1011,42 @@ export function AdminBoardPage({
                       <button
                         className="btn-secondary"
                         disabled={closingTable}
+                        onClick={() => forceCloseTable(activeModal.row)}
+                      >
+                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                      </button>
+                      <span className="muted">Cerrar mesa queda habilitado recien despues de confirmar el pago.</span>
+                    </div>
+                  )}
+                  {activeModal.kind === "STATUS" && activeModal.row.status === "PAGO_CONFIRMADO" && (
+                    <div className="order-actions">
+                      <span className="muted">Pago confirmado. La mesa sigue abierta hasta terminar la entrega.</span>
+                      <button
+                        className="btn-secondary"
+                        disabled={closingTable}
+                        onClick={() => forceCloseTable(activeModal.row)}
+                      >
+                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                      </button>
+                    </div>
+                  )}
+                  {activeModal.kind === "STATUS" && activeModal.row.status === "ESPERANDO_PAGO" && (
+                    <div className="order-actions">
+                      <span className="muted">Todo esta entregado, pero todavia falta confirmar el pago.</span>
+                      <button
+                        className="btn-secondary"
+                        disabled={closingTable}
+                        onClick={() => forceCloseTable(activeModal.row)}
+                      >
+                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                      </button>
+                    </div>
+                  )}
+                  {activeModal.kind === "STATUS" && activeModal.row.status === "LISTA_PARA_CERRAR" && (
+                    <div className="order-actions">
+                      <button
+                        className="btn-secondary"
+                        disabled={closingTable}
                         onClick={() => onCloseTableByCode(activeModal.row.table_code)}
                       >
                         {closingTable ? "Cerrando..." : "Cerrar mesa"}
@@ -760,6 +1058,7 @@ export function AdminBoardPage({
                       >
                         {closingTable ? "Cerrando..." : "Forzar cierre"}
                       </button>
+                      <span className="muted">Todo entregado y pago confirmado. Ya podes cerrar la mesa.</span>
                     </div>
                   )}
                   {activeModal.kind === "SECTOR" ? (
@@ -792,7 +1091,7 @@ export function AdminBoardPage({
                                 <div className="staff-modal-meta-inline">
                                   <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
                                   <span className="badge">{itemStatusLabel(item.status)}</span>
-                                  <span className="muted">{elapsedLabel(elapsedMinutes(item.updated_at || item.created_at))}</span>
+                                  <span className="muted">{elapsedLabel(elapsedMinutes(item.created_at || item.updated_at))}</span>
                                   {!showLotAction && nextStatus && (
                                     <button
                                       className="btn-primary"
@@ -821,10 +1120,7 @@ export function AdminBoardPage({
                   });
                 })()
               ) : (
-                (activeModal.kind === "TABLE"
-                  ? modalDetail.items
-                  : itemsInProcess(modalDetail.items)
-                ).map((item) => (
+                modalItems.map((item) => (
                   <div key={item.item_id} className="staff-modal-row">
                     <p className="staff-modal-item-name">
                       {itemLabelWithNotes(item)}
@@ -832,7 +1128,8 @@ export function AdminBoardPage({
                     <div className="staff-modal-meta-inline">
                       <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
                       <span className="badge">{itemStatusLabel(item.status)}</span>
-                      <span className="muted">{elapsedLabel(elapsedMinutes(item.updated_at || item.created_at))}</span>
+                      <span className="muted">{elapsedLabel(elapsedMinutes(item.created_at || item.updated_at))}</span>
+                      {activeModal.kind === "TABLE" && <strong>{formatMoney(Number(item.unit_price || 0) * Number(item.qty || 0))}</strong>}
                       {nextStatusForAction({
                         currentStatus: item.status,
                         itemSector: item.sector,
@@ -868,12 +1165,111 @@ export function AdminBoardPage({
                   </div>
                 ))
               )}
-              {(activeModal.kind === "TABLE"
-                ? modalDetail.items
-                : activeModal.kind === "SECTOR"
-                ? itemsInProcess(modalDetail.items).filter((item) => item.sector === activeModal.sector)
-                : itemsInProcess(modalDetail.items)
-              ).length === 0 && <p className="muted">No hay items para mostrar en este estado.</p>}
+              {modalItems.length === 0 && <p className="muted">No hay items para mostrar en este estado.</p>}
+                  {activeModal.kind === "TABLE" && (
+                    <article className="detail-card">
+                      <div className="sector-row" style={{ justifyContent: "flex-end" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-end",
+                            gap: "0.2rem",
+                          }}
+                        >
+                          <span className="muted">
+                            Tiempo mesa: <strong>{modalTableElapsedLabel}</strong>
+                          </span>
+                          <span>
+                            Total consumo: <strong>{formatMoney(modalConsumptionTotal)}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  )}
+                  {activeModal.kind === "TABLE" && <article className="detail-card">
+                    <h4>Impresion</h4>
+                    <div className="sector-list">
+                      <div className="sector-row">
+                        <span>Estado general</span>
+                        <span className={printStatusClass(modalDetail.print_status?.overall_status)}>
+                          {printStatusLabel(modalDetail.print_status?.overall_status)}
+                        </span>
+                        {missingPrintTargets(modalDetail.print_status).length > 0 ? (
+                          <button
+                            className="btn-primary"
+                            disabled={Boolean(printingKey)}
+                            onClick={() => handlePrintMissing(modalDetail)}
+                          >
+                            {printingKey ? "..." : "Reimprimir faltantes"}
+                          </button>
+                        ) : (
+                          <span className="muted">
+                            Mesa {modalDetail.table_code} · Pedido #{modalDetail.order_id}
+                          </span>
+                        )}
+                      </div>
+                      <div className="sector-row">
+                        <span>Pedido completo</span>
+                        <span className={printStatusClass(modalDetail.print_status?.full_status)}>
+                          {printStatusLabel(modalDetail.print_status?.full_status)}
+                        </span>
+                        <button
+                          className="btn-secondary"
+                          disabled={printingKey === `${modalDetail.order_id}:FULL`}
+                          onClick={() => handlePrintAction(modalDetail, "FULL")}
+                        >
+                          {printingKey === `${modalDetail.order_id}:FULL`
+                            ? "..."
+                            : printButtonLabel({
+                                target: "FULL",
+                                status: modalDetail.print_status?.full_status,
+                              })}
+                        </button>
+                      </div>
+                      {requiredPrintSectors(modalDetail.print_status).length > 1 && (
+                        <div className="sector-row">
+                          <span>Comandas</span>
+                          <span className={printStatusClass(modalDetail.print_status?.commands_status)}>
+                            {printStatusLabel(modalDetail.print_status?.commands_status)}
+                          </span>
+                          <button
+                            className="btn-secondary"
+                            disabled={printingKey === `${modalDetail.order_id}:COMMANDS`}
+                            onClick={() => handlePrintAction(modalDetail, "COMMANDS")}
+                          >
+                            {printingKey === `${modalDetail.order_id}:COMMANDS`
+                              ? "..."
+                              : printButtonLabel({
+                                  target: "COMMANDS",
+                                  status: modalDetail.print_status?.commands_status,
+                                })}
+                          </button>
+                        </div>
+                      )}
+                      {requiredPrintSectors(modalDetail.print_status).map((sectorState) => (
+                        <div className="sector-row" key={`print-bottom-${sectorState.sector}`}>
+                          <span>{sectorLabel(sectorState.sector)}</span>
+                          <span className={printStatusClass(sectorState.status)}>
+                            {printStatusLabel(sectorState.status)}
+                          </span>
+                          <button
+                            className="btn-secondary"
+                            disabled={printingKey === `${modalDetail.order_id}:${sectorState.sector}`}
+                            onClick={() => handlePrintAction(modalDetail, sectorState.sector)}
+                          >
+                            {printingKey === `${modalDetail.order_id}:${sectorState.sector}`
+                              ? "..."
+                              : printButtonLabel({
+                                  target: sectorState.sector,
+                                  status: sectorState.status,
+                                  sector: sectorState.sector,
+                                })}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </article>}
                 </div>
               )}
             </>
@@ -914,7 +1310,7 @@ export function AdminBoardPage({
                     )}
                   </div>
                   <p>{request.note || "Sin mensaje"}</p>
-                  <span className="muted">{new Date(request.created_at).toLocaleTimeString("es-AR")}</span>
+                  <span className="muted">{formatArgentinaTime(request.created_at)}</span>
                 </article>
               ))}
           </article>
@@ -940,3 +1336,6 @@ export function AdminBoardPage({
     </section>
   );
 }
+export default AdminBoardPage;
+
+

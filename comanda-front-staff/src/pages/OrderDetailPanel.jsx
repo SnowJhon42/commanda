@@ -1,5 +1,6 @@
 ﻿import { sectorClass, sectorLabel } from "../utils/boardMeta";
 import { statusLabel } from "../utils/statusLabels";
+import { formatArgentinaDateTime, formatArgentinaTime } from "../utils/dateTime";
 
 function badgeClass(status) {
   if (status === "RECEIVED") return "badge badge-received";
@@ -22,6 +23,15 @@ function formatMoney(value) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(
     value || 0
   );
+}
+
+function elapsedLabel(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value < 0) return "-";
+  if (value < 60) return `${value} min`;
+  const hours = Math.floor(value / 60);
+  const remainder = value % 60;
+  return `${hours}h ${remainder}m`;
 }
 
 function delayClass(minutes) {
@@ -59,6 +69,15 @@ export function OrderDetailPanel({
   onResolveCashRequest = () => {},
   billingBusy = false,
 }) {
+  const allDelivered =
+    Array.isArray(orderDetail?.items) &&
+    orderDetail.items.length > 0 &&
+    orderDetail.items.every((item) => item.status === "DELIVERED");
+  const normalCloseEnabled =
+    !orderDetail ||
+    Number(orderDetail.total_amount || 0) <= 0 ||
+    (orderDetail.bill_split?.status === "CLOSED" && allDelivered);
+
   return (
     <section className="panel">
       <div className="section-head">
@@ -85,15 +104,21 @@ export function OrderDetailPanel({
             <p className="muted">
               Comensales: {orderDetail.guest_count} | Entregados: {orderDetail.delivered_items} / {orderDetail.total_items}
             </p>
-            <p className="muted">Total: {formatMoney(orderDetail.total_amount)}</p>
+            <p className="muted">
+              Total: {formatMoney(orderDetail.total_amount)} | Mesa abierta: {elapsedLabel(orderDetail.table_elapsed_minutes)} | Pedido actual:{" "}
+              {elapsedLabel(orderDetail.order_elapsed_minutes)}
+            </p>
             {actorSector === "ADMIN" && (
               <div className="order-actions">
-                <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable}>
+                <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable || !normalCloseEnabled}>
                   {closingTable ? "Cerrando..." : "Cerrar mesa"}
                 </button>
                 <button className="btn-secondary" onClick={onForceCloseTable} disabled={closingTable}>
                   {closingTable ? "Cerrando..." : "Forzar cierre"}
                 </button>
+                {!normalCloseEnabled && (
+                  <span className="muted">Cerrar mesa requiere pago confirmado y entrega completa.</span>
+                )}
                 {orderDetail.bill_split?.status === "CLOSED" && (
                   <span className="badge badge-delivered">Pago confirmado</span>
                 )}
@@ -151,7 +176,7 @@ export function OrderDetailPanel({
                         {advancingKey === key ? "..." : `Pasar a ${next}`}
                       </button>
                     ) : (
-                      <span className="muted">{new Date(item.updated_at).toLocaleTimeString("es-AR")}</span>
+                      <span className="muted">{formatArgentinaTime(item.updated_at)}</span>
                     )}
                   </div>
                 );
@@ -169,7 +194,7 @@ export function OrderDetailPanel({
                   <li key={event.id}>
                     Item #{event.item_id} ({event.sector}): {event.from_status ? statusLabel(event.from_status) : "-"} {"->"} {statusLabel(event.to_status)}
                     {" | "}
-                    <span className="muted">{new Date(event.created_at).toLocaleString("es-AR")}</span>
+                    <span className="muted">{formatArgentinaDateTime(event.created_at)}</span>
                   </li>
                 ))}
               </ul>
@@ -207,9 +232,9 @@ export function OrderDetailPanel({
                     ) : (
                       <span className="muted">
                         {part.confirmed_at
-                          ? new Date(part.confirmed_at).toLocaleTimeString("es-AR")
+                          ? formatArgentinaTime(part.confirmed_at)
                           : part.reported_at
-                            ? new Date(part.reported_at).toLocaleTimeString("es-AR")
+                            ? formatArgentinaTime(part.reported_at)
                             : "-"}
                       </span>
                     )}
@@ -249,7 +274,7 @@ export function OrderDetailPanel({
                       </button>
                     ) : (
                       <span className="muted">
-                        {req.resolved_at ? new Date(req.resolved_at).toLocaleTimeString("es-AR") : "-"}
+                        {req.resolved_at ? formatArgentinaTime(req.resolved_at) : "-"}
                       </span>
                     )}
                   </div>
@@ -262,3 +287,5 @@ export function OrderDetailPanel({
     </section>
   );
 }
+
+export default OrderDetailPanel;
