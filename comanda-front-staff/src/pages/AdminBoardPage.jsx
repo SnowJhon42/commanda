@@ -271,7 +271,7 @@ export function AdminBoardPage({
         );
         const tableSession = sessionByTable[tableCode];
         const sessionOrders = tableOrders.filter((order) => order.is_active_session);
-        const effectiveOrders = sessionOrders.length > 0 ? sessionOrders : tableOrders;
+        const effectiveOrders = sessionOrders;
         const liveOrders = effectiveOrders.filter(
           (order) => Number(order.delivered_items || 0) < Number(order.total_items || 0)
         );

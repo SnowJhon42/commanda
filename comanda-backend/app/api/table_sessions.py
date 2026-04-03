@@ -52,10 +52,14 @@ ACTIVE_TABLE_SESSION_STATUSES = (
 )
 
 
-def _active_order_for_table(db: Session, *, store_id: int, table_id: int) -> Order | None:
+def _active_order_for_session(db: Session, *, table_session_id: int, store_id: int) -> Order | None:
     return db.scalar(
         select(Order)
-        .where(Order.store_id == store_id, Order.table_id == table_id, Order.status_aggregated != OrderStatus.DELIVERED.value)
+        .where(
+            Order.store_id == store_id,
+            Order.table_session_id == table_session_id,
+            Order.status_aggregated != OrderStatus.DELIVERED.value,
+        )
         .order_by(Order.created_at.desc(), Order.id.desc())
         .limit(1)
     )
@@ -80,20 +84,23 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
         .order_by(TableSession.id.desc())
         .limit(1)
     )
-    active_order = _active_order_for_table(db, store_id=payload.store_id, table_id=table.id)
     if not table_session:
         table_session = TableSession(
             store_id=payload.store_id,
             table_id=table.id,
             guest_count=payload.guest_count,
-            status=TableSessionStatus.CON_PEDIDO.value if active_order else TableSessionStatus.MESA_OCUPADA.value,
+            status=TableSessionStatus.MESA_OCUPADA.value,
         )
         db.add(table_session)
         db.flush()
     else:
+        active_order = _active_order_for_session(
+            db, table_session_id=table_session.id, store_id=payload.store_id
+        )
         table_session.guest_count = payload.guest_count
         table_session.status = TableSessionStatus.CON_PEDIDO.value if active_order else TableSessionStatus.MESA_OCUPADA.value
         db.add(table_session)
+    active_order = _active_order_for_session(db, table_session_id=table_session.id, store_id=payload.store_id)
     db.commit()
     event_bus.publish(
         "table.session.opened",
@@ -191,7 +198,9 @@ def get_table_session_state(
         raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
 
     table = db.scalar(select(Table).where(Table.id == table_session.table_id))
-    active_order = _active_order_for_table(db, store_id=table_session.store_id, table_id=table_session.table_id)
+    active_order = _active_order_for_session(
+        db, table_session_id=table_session.id, store_id=table_session.store_id
+    )
     connected_clients = db.scalar(
         select(func.count()).select_from(TableSessionClient).where(TableSessionClient.table_session_id == table_session_id)
     ) or 0
@@ -385,7 +394,9 @@ def upsert_order_by_table(
     if not table or not table.active:
         raise HTTPException(status_code=404, detail="Table not found or inactive")
 
-    order = _active_order_for_table(db, store_id=payload.store_id, table_id=table.id)
+    order = _active_order_for_session(
+        db, table_session_id=table_session.id, store_id=payload.store_id
+    )
     created_new = False
     if not order:
         created_new = True
@@ -402,9 +413,9 @@ def upsert_order_by_table(
         db.add(order)
         db.flush()
     else:
+        if order.table_session_id != table_session.id:
+            raise HTTPException(status_code=409, detail="Active order belongs to a different table session")
         order.guest_count = max(order.guest_count, payload.guest_count)
-        if not order.table_session_id:
-            order.table_session_id = table_session.id
         db.add(order)
         db.flush()
 
