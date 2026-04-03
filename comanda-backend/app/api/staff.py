@@ -10,6 +10,7 @@ from app.db.models import (
     BillSplit,
     BillSplitPart,
     BillSplitStatus,
+    CashRequestStatus,
     ItemStatusEvent,
     Order,
     OrderItem,
@@ -87,6 +88,74 @@ def _minutes_since(reference_dt: datetime | None, now_utc: datetime) -> int:
         return 0
     reference_aware = reference_dt.replace(tzinfo=timezone.utc) if reference_dt.tzinfo is None else reference_dt
     return max(0, int((now_utc - reference_aware).total_seconds() // 60))
+
+
+def _finalize_table_session_orders(db: Session, *, table_session: TableSession, staff_id: int) -> list[Order]:
+    related_orders = db.scalars(
+        select(Order)
+        .where(Order.table_session_id == table_session.id, Order.store_id == table_session.store_id)
+        .options(joinedload(Order.items))
+        .order_by(Order.created_at.desc(), Order.id.desc())
+    ).unique().all()
+
+    for order in related_orders:
+        for item in order.items:
+            if item.status == OrderStatus.DELIVERED.value:
+                continue
+            previous_status = item.status
+            item.status = OrderStatus.DELIVERED.value
+            db.add(item)
+            db.add(
+                ItemStatusEvent(
+                    order_id=order.id,
+                    item_id=item.id,
+                    sector=item.sector,
+                    from_status=previous_status,
+                    to_status=OrderStatus.DELIVERED.value,
+                    changed_by_staff_id=staff_id,
+                )
+            )
+        order.status_aggregated = OrderStatus.DELIVERED.value
+        db.add(order)
+
+    closable_splits = db.scalars(
+        select(BillSplit)
+        .join(Order, Order.id == BillSplit.order_id)
+        .where(
+            Order.table_session_id == table_session.id,
+            Order.store_id == table_session.store_id,
+        )
+    ).all()
+    for split in closable_splits:
+        split_parts = db.scalars(
+            select(BillSplitPart).where(BillSplitPart.bill_split_id == split.id)
+        ).all()
+        for part in split_parts:
+            if part.payment_status != BillPartPaymentStatus.CONFIRMED.value:
+                part.payment_status = BillPartPaymentStatus.CONFIRMED.value
+                if not part.confirmed_at:
+                    part.confirmed_at = datetime.utcnow()
+                if not part.confirmed_by_staff_id:
+                    part.confirmed_by_staff_id = staff_id
+                db.add(part)
+        split.status = BillSplitStatus.CLOSED.value
+        if not split.closed_at:
+            split.closed_at = datetime.utcnow()
+        db.add(split)
+
+    pending_requests = db.scalars(
+        select(TableSessionCashRequest).where(
+            TableSessionCashRequest.table_session_id == table_session.id,
+            TableSessionCashRequest.status == CashRequestStatus.PENDING.value,
+        )
+    ).all()
+    for req in pending_requests:
+        req.status = CashRequestStatus.RESOLVED.value
+        req.resolved_by_staff_id = staff_id
+        req.resolved_at = datetime.utcnow()
+        db.add(req)
+
+    return related_orders
 
 
 def _board_filter_for_sector(sector: str):
@@ -370,30 +439,7 @@ def patch_table_session_status(
         raise HTTPException(status_code=422, detail="Unsupported table session status")
 
     if target_status in {TableSessionStatus.CLOSED.value, TableSessionStatus.SE_RETIRARON.value}:
-        if target_status == TableSessionStatus.CLOSED.value:
-            has_open_orders = db.scalar(
-                select(func.count())
-                .select_from(Order)
-                .where(
-                    Order.table_session_id == table_session.id,
-                    Order.store_id == current_staff.store_id,
-                    Order.status_aggregated != OrderStatus.DELIVERED.value,
-                )
-            ) or 0
-            if has_open_orders > 0:
-                raise HTTPException(status_code=409, detail="Cannot close table session with active non-delivered orders")
-            related_orders = db.scalars(
-                select(Order)
-                .where(
-                    Order.table_session_id == table_session.id,
-                    Order.store_id == current_staff.store_id,
-                )
-                .options(joinedload(Order.items))
-                .order_by(Order.created_at.desc(), Order.id.desc())
-            ).unique().all()
-            unpaid_orders = [order for order in related_orders if not _order_payment_confirmed(db, order)]
-            if unpaid_orders:
-                raise HTTPException(status_code=409, detail="Cannot close table session without confirmed payment")
+        _finalize_table_session_orders(db, table_session=table_session, staff_id=current_staff.id)
         table_session.closed_at = datetime.utcnow()
     else:
         table_session.closed_at = None
@@ -742,45 +788,7 @@ def close_table_session(
     if not table_session:
         raise HTTPException(status_code=404, detail="No open table session for this table")
 
-    has_open_orders = db.scalar(
-        select(func.count())
-        .select_from(Order)
-        .where(
-            Order.table_session_id == table_session.id,
-            Order.store_id == current_staff.store_id,
-            Order.status_aggregated != OrderStatus.DELIVERED.value,
-        )
-    ) or 0
-    if has_open_orders > 0:
-        raise HTTPException(status_code=409, detail="Cannot close table session with active non-delivered orders")
-
-    related_orders = db.scalars(
-        select(Order)
-        .where(
-            Order.table_session_id == table_session.id,
-            Order.store_id == current_staff.store_id,
-        )
-        .options(joinedload(Order.items))
-        .order_by(Order.created_at.desc(), Order.id.desc())
-    ).unique().all()
-    unpaid_orders = [order for order in related_orders if not _order_payment_confirmed(db, order)]
-    if unpaid_orders:
-        raise HTTPException(status_code=409, detail="Cannot close table session without confirmed payment")
-
-    closable_splits = db.scalars(
-        select(BillSplit)
-        .join(Order, Order.id == BillSplit.order_id)
-        .where(
-            Order.table_session_id == table_session.id,
-            Order.store_id == current_staff.store_id,
-            BillSplit.status == BillSplitStatus.OPEN.value,
-        )
-    ).all()
-    for split in closable_splits:
-        split.status = BillSplitStatus.CLOSED.value
-        if not split.closed_at:
-            split.closed_at = datetime.utcnow()
-        db.add(split)
+    _finalize_table_session_orders(db, table_session=table_session, staff_id=current_staff.id)
 
     table_session.status = TableSessionStatus.CLOSED.value
     table_session.closed_at = datetime.utcnow()
@@ -843,50 +851,8 @@ def force_close_table_session(
     if not table_session and not latest_order:
         raise HTTPException(status_code=404, detail="No active session or order found for this table")
 
-    open_split_query = (
-        select(BillSplit)
-        .join(Order, Order.id == BillSplit.order_id)
-        .where(
-            Order.store_id == current_staff.store_id,
-        )
-    )
     if table_session:
-        open_split_query = open_split_query.where(Order.table_session_id == table_session.id)
-    else:
-        open_split_query = open_split_query.where(Order.table_id == table.id)
-
-    related_splits = db.scalars(open_split_query).all()
-    for split in related_splits:
-        split_parts = db.scalars(
-            select(BillSplitPart).where(BillSplitPart.bill_split_id == split.id)
-        ).all()
-        for part in split_parts:
-            if part.payment_status != BillPartPaymentStatus.CONFIRMED.value:
-                part.payment_status = BillPartPaymentStatus.CONFIRMED.value
-                if not part.confirmed_at:
-                    part.confirmed_at = datetime.utcnow()
-                if not part.confirmed_by_staff_id:
-                    part.confirmed_by_staff_id = current_staff.id
-                db.add(part)
-
-        split.status = BillSplitStatus.CLOSED.value
-        if not split.closed_at:
-            split.closed_at = datetime.utcnow()
-        db.add(split)
-
-    if table_session:
-        pending_requests = db.scalars(
-            select(TableSessionCashRequest).where(
-                TableSessionCashRequest.table_session_id == table_session.id,
-                TableSessionCashRequest.status == "PENDING",
-            )
-        ).all()
-        for req in pending_requests:
-            req.status = "RESOLVED"
-            req.resolved_by_staff_id = current_staff.id
-            req.resolved_at = datetime.utcnow()
-            db.add(req)
-
+        _finalize_table_session_orders(db, table_session=table_session, staff_id=current_staff.id)
         table_session.status = TableSessionStatus.CLOSED.value
         table_session.closed_at = datetime.utcnow()
         db.add(table_session)
