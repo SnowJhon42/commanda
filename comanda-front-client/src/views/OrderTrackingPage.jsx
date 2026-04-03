@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchOrder, openOrderEvents } from "../api/clientApi";
+import { formatArgentinaTime } from "../utils/dateTime";
 import { statusLabel } from "../utils/statusLabels";
 
 function statusClass(status) {
@@ -26,15 +27,7 @@ function sectorLabel(sector) {
 }
 
 function formatShortDate(value) {
-  if (!value) return "-";
-  try {
-    return new Date(value).toLocaleTimeString("es-AR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "-";
-  }
+  return formatArgentinaTime(value);
 }
 
 export function OrderTrackingPage({ orderId, tableSessionToken }) {

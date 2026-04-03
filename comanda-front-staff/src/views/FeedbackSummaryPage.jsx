@@ -1,9 +1,7 @@
+import { formatArgentinaDateTime } from "../utils/dateTime";
+
 function formatDateTime(value) {
-  try {
-    return new Date(value).toLocaleString("es-AR");
-  } catch {
-    return value || "-";
-  }
+  return formatArgentinaDateTime(value);
 }
 
 function stars(rating) {

@@ -1,5 +1,6 @@
 ﻿import { sectorClass, sectorLabel } from "../utils/boardMeta";
 import { statusLabel } from "../utils/statusLabels";
+import { formatArgentinaDateTime, formatArgentinaTime } from "../utils/dateTime";
 
 function badgeClass(status) {
   if (status === "RECEIVED") return "badge badge-received";
@@ -175,7 +176,7 @@ export function OrderDetailPanel({
                         {advancingKey === key ? "..." : `Pasar a ${next}`}
                       </button>
                     ) : (
-                      <span className="muted">{new Date(item.updated_at).toLocaleTimeString("es-AR")}</span>
+                      <span className="muted">{formatArgentinaTime(item.updated_at)}</span>
                     )}
                   </div>
                 );
@@ -193,7 +194,7 @@ export function OrderDetailPanel({
                   <li key={event.id}>
                     Item #{event.item_id} ({event.sector}): {event.from_status ? statusLabel(event.from_status) : "-"} {"->"} {statusLabel(event.to_status)}
                     {" | "}
-                    <span className="muted">{new Date(event.created_at).toLocaleString("es-AR")}</span>
+                    <span className="muted">{formatArgentinaDateTime(event.created_at)}</span>
                   </li>
                 ))}
               </ul>
@@ -231,9 +232,9 @@ export function OrderDetailPanel({
                     ) : (
                       <span className="muted">
                         {part.confirmed_at
-                          ? new Date(part.confirmed_at).toLocaleTimeString("es-AR")
+                          ? formatArgentinaTime(part.confirmed_at)
                           : part.reported_at
-                            ? new Date(part.reported_at).toLocaleTimeString("es-AR")
+                            ? formatArgentinaTime(part.reported_at)
                             : "-"}
                       </span>
                     )}
@@ -273,7 +274,7 @@ export function OrderDetailPanel({
                       </button>
                     ) : (
                       <span className="muted">
-                        {req.resolved_at ? new Date(req.resolved_at).toLocaleTimeString("es-AR") : "-"}
+                        {req.resolved_at ? formatArgentinaTime(req.resolved_at) : "-"}
                       </span>
                     )}
                   </div>
