@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { sectorClass, sectorLabel, elapsedMinutes } from "../utils/boardMeta";
+import { formatArgentinaTime } from "../utils/dateTime";
 import { printFullOrderTicket, printOrderCommands, printSectorCommand } from "../utils/printTickets";
 
 function formatMoney(value) {
@@ -132,10 +133,7 @@ function buildSectorLots(items = [], fallbackOrderId = null) {
 
 function batchLabel(createdAt) {
   if (!createdAt) return "Ingreso";
-  return `Ingreso ${new Date(createdAt).toLocaleTimeString("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
+  return `Ingreso ${formatArgentinaTime(createdAt)}`;
 }
 
 function Modal({ title, subtitle, children, onClose }) {
@@ -874,7 +872,7 @@ export function AdminBoardPage({
                       <span className="badge badge-received">Pendiente</span>
                     </div>
                     <p>{pendingRequest.note || "Quiero pagar"}</p>
-                    <span className="muted">{new Date(pendingRequest.created_at).toLocaleTimeString("es-AR")}</span>
+                    <span className="muted">{formatArgentinaTime(pendingRequest.created_at)}</span>
                     <button
                       className="btn-primary"
                       disabled={acceptingCashRequestId === pendingRequest.id}
@@ -1092,7 +1090,7 @@ export function AdminBoardPage({
                                 <div className="staff-modal-meta-inline">
                                   <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
                                   <span className="badge">{itemStatusLabel(item.status)}</span>
-                                  <span className="muted">{elapsedLabel(elapsedMinutes(item.updated_at || item.created_at))}</span>
+                                  <span className="muted">{elapsedLabel(elapsedMinutes(item.created_at || item.updated_at))}</span>
                                   {!showLotAction && nextStatus && (
                                     <button
                                       className="btn-primary"
@@ -1129,7 +1127,7 @@ export function AdminBoardPage({
                     <div className="staff-modal-meta-inline">
                       <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
                       <span className="badge">{itemStatusLabel(item.status)}</span>
-                      <span className="muted">{elapsedLabel(elapsedMinutes(item.updated_at || item.created_at))}</span>
+                      <span className="muted">{elapsedLabel(elapsedMinutes(item.created_at || item.updated_at))}</span>
                       {activeModal.kind === "TABLE" && <strong>{formatMoney(Number(item.unit_price || 0) * Number(item.qty || 0))}</strong>}
                       {nextStatusForAction({
                         currentStatus: item.status,
@@ -1311,7 +1309,7 @@ export function AdminBoardPage({
                     )}
                   </div>
                   <p>{request.note || "Sin mensaje"}</p>
-                  <span className="muted">{new Date(request.created_at).toLocaleTimeString("es-AR")}</span>
+                  <span className="muted">{formatArgentinaTime(request.created_at)}</span>
                 </article>
               ))}
           </article>

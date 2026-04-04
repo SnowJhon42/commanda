@@ -65,7 +65,7 @@ export function KitchenBoardPage({
                         <span className="row-main">
                           {item.qty}x {item.item_name}
                           <span className={sectorClass(item.sector)}>{sectorLabel(item.sector)}</span>
-                          <span className="muted row-age">{elapsedMinutes(item.updated_at || item.created_at)} min</span>
+                          <span className="muted row-age">{elapsedMinutes(item.created_at || item.updated_at)} min</span>
                         </span>
                         {item.notes ? <span className="row-note row-note-strong">Aclaracion: {item.notes}</span> : null}
                       </div>
