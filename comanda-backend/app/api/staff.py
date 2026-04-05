@@ -90,6 +90,12 @@ def _minutes_since(reference_dt: datetime | None, now_utc: datetime) -> int:
     return max(0, int((now_utc - reference_aware).total_seconds() // 60))
 
 
+def _as_utc(reference_dt: datetime | None) -> datetime | None:
+    if not reference_dt:
+        return None
+    return reference_dt.replace(tzinfo=timezone.utc) if reference_dt.tzinfo is None else reference_dt
+
+
 def _finalize_table_session_orders(db: Session, *, table_session: TableSession, staff_id: int) -> list[Order]:
     related_orders = db.scalars(
         select(Order)
@@ -396,7 +402,22 @@ def list_staff_table_sessions(
             .order_by(Order.created_at.desc(), Order.id.desc())
             .limit(1)
         )
-        elapsed_minutes = _minutes_since(table_session.created_at, now_utc)
+        latest_client_seen_at = db.scalar(
+            select(func.max(TableSessionClient.last_seen_at)).where(TableSessionClient.table_session_id == table_session.id)
+        )
+        elapsed_reference = max(
+            [
+                candidate
+                for candidate in [
+                    _as_utc(active_order.created_at) if active_order else None,
+                    _as_utc(latest_client_seen_at),
+                    _as_utc(table_session.created_at),
+                ]
+                if candidate is not None
+            ],
+            default=None,
+        )
+        elapsed_minutes = _minutes_since(elapsed_reference, now_utc)
         items.append(
             StaffTableSessionOut(
                 table_session_id=table_session.id,
