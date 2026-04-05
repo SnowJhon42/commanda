@@ -429,3 +429,5 @@ export function MenuEditorPage({ token, storeId }) {
     </section>
   );
 }
+
+export default MenuEditorPage;

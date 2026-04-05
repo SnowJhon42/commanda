@@ -15,7 +15,13 @@ function elapsedLabel(minutesValue) {
   return `${hours}h ${rem}m`;
 }
 
-export function TableSessionsPanel({ rows, loading, actorSector, busyId, onMarkRetired }) {
+export function TableSessionsPanel({
+  rows = [],
+  loading = false,
+  actorSector = "ADMIN",
+  busyId = null,
+  onMarkRetired = () => {},
+}) {
   const canUpdate = actorSector === "ADMIN" || actorSector === "WAITER";
   const sortedRows = [...rows].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
@@ -74,3 +80,5 @@ export function TableSessionsPanel({ rows, loading, actorSector, busyId, onMarkR
     </section>
   );
 }
+
+export default TableSessionsPanel;

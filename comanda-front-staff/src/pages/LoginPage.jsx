@@ -47,3 +47,5 @@ export function LoginPage({ onLogin }) {
     </main>
   );
 }
+
+export default LoginPage;
