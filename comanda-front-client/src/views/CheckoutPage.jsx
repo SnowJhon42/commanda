@@ -52,6 +52,7 @@ export function CheckoutPage({
   onRemoveProductFromCart,
   onSubmitOrder,
   onGoToTracking,
+  onContinueOrdering,
   onRequestTableBill,
   onSplitBill,
   onSelectPaymentMethod,
@@ -268,14 +269,6 @@ export function CheckoutPage({
                     </div>
                   )}
                   {checkoutError && <p className="error-text">{checkoutError}</p>}
-                  <button
-                    className="btn-primary btn-full mesa-submit"
-                    disabled={submittingOrder || cartItems.length === 0}
-                    onClick={onSubmitOrder}
-                    type="button"
-                  >
-                    {submittingOrder ? "Enviando..." : "Pedir ahora"}
-                  </button>
                 </>
               )}
             </div>
@@ -356,6 +349,37 @@ export function CheckoutPage({
         </form>
       ) : (
         <form className="checkout-form mesa-actions" onSubmit={submit}>
+          {cartItems.length > 0 ? (
+            <div className="mesa-flow-inline-wrap">
+              <div className="mesa-flow-bar">
+                <div className="mesa-flow-copy">
+                  <span className="mesa-flow-kicker">Pedido en curso</span>
+                  <strong>{cartItems.length} linea{cartItems.length === 1 ? "" : "s"} por enviar</strong>
+                </div>
+                <div className="mesa-flow-actions">
+                  <button type="button" className="mesa-flow-btn mesa-flow-btn-secondary" onClick={onContinueOrdering}>
+                    Seguir pidiendo
+                  </button>
+                  <button
+                    type="button"
+                    className="mesa-flow-btn mesa-flow-btn-primary"
+                    onClick={onSubmitOrder}
+                    disabled={submittingOrder}
+                  >
+                    {submittingOrder ? "Enviando..." : "Pedir ahora"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mesa-flow-inline-wrap">
+              <button type="button" className="mesa-return-bar" onClick={onContinueOrdering}>
+                <span className="mesa-return-kicker">Menu</span>
+                <strong>Seguir pidiendo</strong>
+              </button>
+            </div>
+          )}
+
           <div className="summary mesa-summary">
             <span>Total ya pedido</span>
             <strong>{toMoney(committedTotal)}</strong>

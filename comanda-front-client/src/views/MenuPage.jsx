@@ -219,21 +219,6 @@ export function MenuPage({
                         <p className="menu-line-price">{toMoney(product.base_price)}</p>
                       </div>
                     </div>
-                    <div className="menu-product-controls">
-                      <button type="button" className="btn-secondary qty-btn" onClick={decreaseQty}>
-                        -
-                      </button>
-                      <button
-                        type="button"
-                        className={inCartQty > 0 || qty > 0 ? "menu-qty-pill menu-qty-pill-active" : "menu-qty-pill"}
-                        onClick={() => addProduct(product)}
-                      >
-                        {buttonQtyLabel}
-                      </button>
-                      <button type="button" className="btn-secondary qty-btn" onClick={increaseQty}>
-                        +
-                      </button>
-                    </div>
                     <div className="menu-notes-wrap">
                       <label className="field">
                         {preparationNoteLabel(product.fulfillment_sector)}
@@ -297,6 +282,21 @@ export function MenuPage({
                         </select>
                       </label>
                     )}
+                    <div className="menu-product-controls menu-product-controls-bottom">
+                      <button type="button" className="btn-secondary qty-btn" onClick={decreaseQty}>
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        className={inCartQty > 0 || qty > 0 ? "menu-qty-pill menu-qty-pill-active" : "menu-qty-pill"}
+                        onClick={() => addProduct(product)}
+                      >
+                        {buttonQtyLabel}
+                      </button>
+                      <button type="button" className="btn-secondary qty-btn" onClick={increaseQty}>
+                        +
+                      </button>
+                    </div>
                   </article>
                 );
               })}
