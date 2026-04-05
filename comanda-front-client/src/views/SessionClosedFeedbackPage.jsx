@@ -79,7 +79,7 @@ export function SessionClosedFeedbackPage({
           Compartir por WhatsApp
         </button>
         <button type="button" className="btn-secondary" onClick={onRestart}>
-          Nueva mesa
+          Cerrar
         </button>
       </div>
     </section>

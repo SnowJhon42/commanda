@@ -1115,6 +1115,7 @@ export function App() {
                 onRemoveProductFromCart={removeProductFromCart}
                 onSubmitOrder={submitOrder}
                 onGoToTracking={goToTracking}
+                onContinueOrdering={() => selectTab(CLIENT_TABS.MENU)}
                 onRequestTableBill={requestPaymentFlow}
                 onSplitBill={splitBillEqually}
                 onSelectPaymentMethod={selectPaymentMethod}
