@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_staff
 from app.db.models import (
+    BillPartPaymentStatus,
+    BillSplitStatus,
     FulfillmentSector,
     ItemStatusEvent,
     MenuCategory,
@@ -45,6 +47,7 @@ from app.schemas.orders import (
 )
 from app.services.billing import get_latest_bill_split, to_bill_split_out
 from app.services.cloudflare_r2 import upload_menu_image_to_r2
+from app.services.print_tracking import build_order_print_status
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -52,6 +55,63 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def _ensure_admin(current_staff: StaffAccount) -> None:
     if current_staff.sector != Sector.ADMIN.value:
         raise HTTPException(status_code=403, detail="Admin only")
+
+
+def _order_total_amount(order: Order) -> float:
+    return float(sum(float(item.unit_price) * item.qty for item in order.items))
+
+
+def _order_has_pending_payment(db: Session, order: Order) -> bool:
+    total_amount = _order_total_amount(order)
+    if total_amount <= 0:
+        return False
+
+    cash_pending = (
+        db.scalar(
+            select(func.count())
+            .select_from(TableSessionCashRequest)
+            .where(
+                TableSessionCashRequest.order_id == order.id,
+                TableSessionCashRequest.request_kind == "CASH_PAYMENT",
+                TableSessionCashRequest.status == "PENDING",
+            )
+        )
+        or 0
+    )
+    if cash_pending > 0:
+        return True
+
+    bill_split = to_bill_split_out(db, get_latest_bill_split(db, order.id))
+    if not bill_split:
+        return False
+
+    if bill_split.status != BillSplitStatus.CLOSED.value:
+        return True
+
+    return any(part.payment_status != BillPartPaymentStatus.CONFIRMED.value for part in bill_split.parts)
+
+
+def _order_payment_confirmed(db: Session, order: Order) -> bool:
+    total_amount = _order_total_amount(order)
+    if total_amount <= 0:
+        return True
+
+    bill_split = to_bill_split_out(db, get_latest_bill_split(db, order.id))
+    if not bill_split:
+        return False
+
+    if bill_split.status != BillSplitStatus.CLOSED.value:
+        return False
+
+    return all(part.payment_status == BillPartPaymentStatus.CONFIRMED.value for part in bill_split.parts)
+
+
+def _minutes_since(reference_dt: datetime | None, now_utc: datetime) -> int:
+    if not reference_dt:
+        return 0
+    reference_aware = reference_dt.replace(tzinfo=timezone.utc) if reference_dt.tzinfo is None else reference_dt
+    current_aware = now_utc.replace(tzinfo=timezone.utc) if now_utc.tzinfo is None else now_utc
+    return max(0, int((current_aware - reference_aware).total_seconds() // 60))
 
 
 def _product_out(product: Product) -> ProductOut:
@@ -345,14 +405,8 @@ def list_admin_orders(
 
     items: list[AdminOrderSummaryOut] = []
     for order, table in orders_with_table:
+        has_pending_payment = _order_has_pending_payment(db, order)
         bill_split = to_bill_split_out(db, get_latest_bill_split(db, order.id))
-        has_pending_payment = bool(
-            bill_split
-            and (
-                bill_split.status != "CLOSED"
-                or any(part.payment_status != "CONFIRMED" for part in bill_split.parts)
-            )
-        )
 
         items.append(
             AdminOrderSummaryOut(
@@ -361,7 +415,7 @@ def list_admin_orders(
                 guest_count=order.guest_count,
                 total_items=sum(item.qty for item in order.items),
                 delivered_items=sum(item.qty for item in order.items if item.status == OrderStatus.DELIVERED.value),
-                total_amount=float(sum(float(item.unit_price) * item.qty for item in order.items)),
+                total_amount=_order_total_amount(order),
                 status_aggregated=order.status_aggregated,
                 has_pending_payment=has_pending_payment,
                 is_active_session=bool(order.table_session_id and order.table_session_id in active_session_ids),
@@ -369,30 +423,15 @@ def list_admin_orders(
                     SectorStatusOut(sector=item.sector, status=item.status)
                     for item in sorted(order.items, key=lambda row: (row.sector, row.id))
                 ],
-                elapsed_minutes=max(
-                    0,
-                    int(
-                        (
-                            (
-                                now_utc
-                                if order.status_aggregated != OrderStatus.DELIVERED.value
-                                else (
-                                    order.updated_at.replace(tzinfo=timezone.utc)
-                                    if order.updated_at.tzinfo is None
-                                    else order.updated_at
-                                )
-                            )
-                            - (
-                                order.created_at.replace(tzinfo=timezone.utc)
-                                if order.created_at.tzinfo is None
-                                else order.created_at
-                            )
-                        ).total_seconds()
-                        // 60
-                    ),
+                elapsed_minutes=_minutes_since(
+                    order.created_at,
+                    now_utc if order.status_aggregated != OrderStatus.DELIVERED.value else order.updated_at,
                 ),
                 created_at=order.created_at,
                 updated_at=order.updated_at,
+                bill_split_closed=bool(bill_split and bill_split.status == BillSplitStatus.CLOSED.value),
+                payment_confirmed=_order_payment_confirmed(db, order),
+                print_status=build_order_print_status(order),
             )
         )
 
@@ -415,6 +454,9 @@ def get_admin_order_items_detail(
         raise HTTPException(status_code=404, detail="Order not found")
 
     now_utc = datetime.now(tz=timezone.utc)
+    table_session = None
+    if order.table_session_id:
+        table_session = db.scalar(select(TableSession).where(TableSession.id == order.table_session_id))
     delays: list[AdminSectorDelayOut] = []
     sectors = sorted({item.sector for item in order.items})
     for sector in sectors:
@@ -502,5 +544,8 @@ def get_admin_order_items_detail(
                 .order_by(TableSessionCashRequest.created_at.desc(), TableSessionCashRequest.id.desc())
             ).all()
         ],
+        print_status=build_order_print_status(order),
+        table_elapsed_minutes=_minutes_since(table_session.created_at if table_session else order.created_at, now_utc),
+        order_elapsed_minutes=_minutes_since(order.created_at, now_utc),
         created_at=order.created_at,
     )

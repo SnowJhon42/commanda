@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 
 def _table_columns(conn: Connection, table_name: str) -> set[str]:
-    inspector = inspect(conn)
-    return {str(column["name"]) for column in inspector.get_columns(table_name)}
-
-
-def _existing_tables(conn: Connection) -> set[str]:
-    inspector = inspect(conn)
-    return set(inspector.get_table_names())
+    return {row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()}
 
 
 def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
@@ -274,7 +268,10 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
         "product_extra_options",
         "item_status_events",
     }
-    existing_tables = _existing_tables(conn)
+    existing_tables = {
+        row[0]
+        for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
+    }
     for table_name in sorted(required_tables - existing_tables):
         issues.append(f"missing table: {table_name}")
 
