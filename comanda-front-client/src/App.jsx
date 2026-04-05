@@ -98,6 +98,14 @@ function paymentStatusMessageFromSplit(split) {
   return "";
 }
 
+function toMoney(value) {
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
 export function App() {
   const [storeId] = useState(DEFAULT_STORE_ID);
   const [clientId] = useState(getStableClientId);
@@ -144,6 +152,12 @@ export function App() {
   const [assistanceRequestStatus, setAssistanceRequestStatus] = useState("");
   const previousTableSessionIdRef = useRef(null);
   const hasPendingToSend = cartItems.length > 0;
+  const pendingUnits = useMemo(
+    () => cartItems.reduce((acc, item) => acc + Number(item.qty || 0), 0),
+    [cartItems]
+  );
+  const shouldShowOrderBar =
+    entryValidated && !closedSession && hasPendingToSend && activeTab !== CLIENT_TABS.TABLE;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1143,6 +1157,26 @@ export function App() {
             </section>
           )}
 
+          {shouldShowOrderBar && (
+            <div className="floating-order-bar-wrap">
+              <button
+                type="button"
+                className="floating-order-bar"
+                onClick={() => selectTab(CLIENT_TABS.TABLE)}
+                aria-label="Ver pedido y revisar la mesa"
+              >
+                <div className="floating-order-copy">
+                  <span className="floating-order-kicker">Tu pedido</span>
+                  <strong>{pendingUnits} producto{pendingUnits === 1 ? "" : "s"} listos</strong>
+                </div>
+                <div className="floating-order-action">
+                  <span className="floating-order-total">{toMoney(cartTotal)}</span>
+                  <span className="floating-order-cta">Ver pedido</span>
+                </div>
+              </button>
+            </div>
+          )}
+
           <nav className="client-bottom-nav" aria-label="Navegacion cliente">
             <button
               className={activeTab === CLIENT_TABS.MENU ? "client-nav-btn client-nav-btn-active" : "client-nav-btn"}
@@ -1176,7 +1210,10 @@ export function App() {
               onClick={() => selectTab(CLIENT_TABS.TABLE)}
             >
               <span className="client-nav-icon">🪑</span>
-              <span>Mesa</span>
+              <span className="client-nav-label-with-badge">
+                <span>Mesa</span>
+                {hasPendingToSend && <span className="client-nav-count">{pendingUnits}</span>}
+              </span>
             </button>
             <button
               className={
