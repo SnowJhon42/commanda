@@ -39,6 +39,16 @@ import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
 const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU"];
+const ARG_TZ = "America/Argentina/Buenos_Aires";
+
+function formatArgentinaClock(value) {
+  return new Intl.DateTimeFormat("es-AR", {
+    timeZone: ARG_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(value);
+}
 
 function getNextStatusForAction({ currentStatus, sector, actorSector }) {
   if (actorSector === "ADMIN") {
@@ -104,6 +114,7 @@ function mediumThresholdBySector(sector) {
 }
 
 export function App() {
+  const [clockNow, setClockNow] = useState(() => new Date());
   const [session, setSession] = useState(null);
   const [boardRows, setBoardRows] = useState([]);
   const [error, setError] = useState("");
@@ -832,6 +843,11 @@ export function App() {
   }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode]);
 
   useEffect(() => {
+    const timer = setInterval(() => setClockNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     if (!session || (session.staff.sector === "ADMIN" && adminView === "MENU")) return;
 
     const stream = openStaffEvents({
@@ -984,6 +1000,10 @@ export function App() {
           {alarmText && <p className="alarm-text">{alarmText}</p>}
         </div>
         <div className="hero-actions">
+          <div className="hero-clock" aria-live="polite">
+            <span className="hero-clock-label">Hora AR</span>
+            <strong>{formatArgentinaClock(clockNow)}</strong>
+          </div>
           <button className={soundEnabled ? "btn-secondary" : "btn-primary"} onClick={() => setSoundEnabled((v) => !v)}>
             {soundEnabled ? "Silenciar alarmas" : "Activar alarmas"}
           </button>
