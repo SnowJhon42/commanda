@@ -938,12 +938,12 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-      {!(staffSector === "ADMIN" && adminView === "BOARD") && (
-        <TableSessionsPanel
-          rows={tableSessionsRows}
-          loading={tableSessionsLoading}
-          actorSector={staffSector}
-          busyId={tableSessionBusyId}
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU")) && (
+          <TableSessionsPanel
+            rows={tableSessionsRows}
+            loading={tableSessionsLoading}
+            actorSector={staffSector}
+            busyId={tableSessionBusyId}
           onMarkRetired={(id) => markTableSession(id, "SE_RETIRARON")}
         />
       )}
@@ -953,12 +953,12 @@ export function App() {
         board
       )}
 
-      {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD")) && (
-        <OrderDetailPanel
-          orderDetail={selectedOrderDetail}
-          selectedOrderId={selectedOrderId}
-          loading={detailLoading}
-          error={detailError}
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU")) && (
+          <OrderDetailPanel
+            orderDetail={selectedOrderDetail}
+            selectedOrderId={selectedOrderId}
+            loading={detailLoading}
+            error={detailError}
           actorSector={staffSector}
           onRefresh={loadOrderDetail}
           onAdvanceItem={advanceItem}
