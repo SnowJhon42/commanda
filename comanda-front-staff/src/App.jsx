@@ -149,6 +149,16 @@ function applyItemStatusToDetail(detail, itemId, nextStatus) {
   };
 }
 
+function applyItemEventPayloadToBoardRows(rows, payload) {
+  if (!payload?.item_id || !payload?.item_status) return rows;
+  return applyItemStatusToBoardRows(rows, payload.item_id, payload.item_status);
+}
+
+function applyItemEventPayloadToDetail(detail, payload) {
+  if (!payload?.item_id || !payload?.item_status) return detail;
+  return applyItemStatusToDetail(detail, payload.item_id, payload.item_status);
+}
+
 export function App() {
   const [clockNow, setClockNow] = useState(() => new Date());
   const [session, setSession] = useState(null);
@@ -909,11 +919,10 @@ export function App() {
         if (selectedOrderId) {
           await loadOrderDetail();
         }
-      }, 250);
+      }, 1200);
     };
 
     const handleItemChanged = (event) => {
-      scheduleRefresh();
       let payload = null;
       try {
         payload = JSON.parse(event.data);
@@ -922,6 +931,9 @@ export function App() {
       }
 
       if (!payload) return;
+      setBoardRows((current) => applyItemEventPayloadToBoardRows(current, payload));
+      setSelectedOrderDetail((current) => applyItemEventPayloadToDetail(current, payload));
+      scheduleRefresh();
       const itemId = payload.item_id ? String(payload.item_id) : "";
       if (payload.item_status === "DONE" && (session.staff.sector === "WAITER" || session.staff.sector === "ADMIN")) {
         if (lastDoneAlertRef.current !== itemId) {
