@@ -113,6 +113,42 @@ function mediumThresholdBySector(sector) {
   return 12;
 }
 
+function applyItemStatusToBoardRows(rows, itemId, nextStatus) {
+  return rows
+    .map((row) => {
+      if (Array.isArray(row.items)) {
+        const nextItems = row.items.map((item) =>
+          item.item_id === itemId || item.id === itemId ? { ...item, status: nextStatus } : item
+        );
+
+        if (row.items.some((item) => item.item_id === itemId || item.id === itemId)) {
+          return { ...row, items: nextItems };
+        }
+      }
+
+      if (row.item_id === itemId || row.id === itemId) {
+        return { ...row, status: nextStatus };
+      }
+
+      return row;
+    })
+    .filter((row) => {
+      if (!Array.isArray(row.items)) return true;
+      return row.items.length > 0;
+    });
+}
+
+function applyItemStatusToDetail(detail, itemId, nextStatus) {
+  if (!detail) return detail;
+  if (!Array.isArray(detail.items)) return detail;
+  return {
+    ...detail,
+    items: detail.items.map((item) =>
+      item.item_id === itemId || item.id === itemId ? { ...item, status: nextStatus } : item
+    ),
+  };
+}
+
 export function App() {
   const [clockNow, setClockNow] = useState(() => new Date());
   const [session, setSession] = useState(null);
@@ -400,10 +436,14 @@ export function App() {
           itemId,
           toStatus,
         });
-        await loadBoard();
+        setBoardRows((current) => applyItemStatusToBoardRows(current, itemId, toStatus));
+        setSelectedOrderDetail((current) => applyItemStatusToDetail(current, itemId, toStatus));
+
+        const refreshTasks = [loadBoard()];
         if (selectedOrderId) {
-          await loadOrderDetail();
+          refreshTasks.push(loadOrderDetail());
         }
+        await Promise.all(refreshTasks);
       } catch (err) {
         setError(err.message || "No se pudo actualizar el item.");
       } finally {
