@@ -32,6 +32,9 @@ export function MenuPage({
   const [commentByProduct, setCommentByProduct] = useState({});
   const [extraOptionsByProduct, setExtraOptionsByProduct] = useState({});
   const [previewProduct, setPreviewProduct] = useState(null);
+  const [commentModalProduct, setCommentModalProduct] = useState(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [configModalProduct, setConfigModalProduct] = useState(null);
 
   const categories = menu?.categories ?? [];
   const products = menu?.products ?? [];
@@ -60,6 +63,8 @@ export function MenuPage({
   useEffect(() => {
     setActiveCategoryId(null);
     setPreviewProduct(null);
+    setCommentModalProduct(null);
+    setConfigModalProduct(null);
   }, [resetToCategoriesSignal]);
 
   const buildDraftConfig = (product, overrides = {}) => {
@@ -99,6 +104,33 @@ export function MenuPage({
     if (!forcedQty) {
       setQtyByProduct((current) => ({ ...current, [product.id]: qty }));
     }
+  };
+
+  const productHasConfig = (product) => product.variants.length > 0 || (product.extra_options?.length || 0) > 0;
+
+  const openCommentModal = (product) => {
+    setCommentModalProduct(product);
+    setCommentDraft(commentByProduct[product.id] ?? "");
+  };
+
+  const saveCommentDraft = () => {
+    if (!commentModalProduct) return;
+    const nextComment = commentDraft;
+    setCommentByProduct((current) => ({
+      ...current,
+      [commentModalProduct.id]: nextComment,
+    }));
+    onSyncDraftConfig(buildDraftConfig(commentModalProduct, { comment: nextComment }));
+    setCommentModalProduct(null);
+    setCommentDraft("");
+  };
+
+  const handlePrimaryAdd = (product) => {
+    if (productHasConfig(product)) {
+      setConfigModalProduct(product);
+      return;
+    }
+    addProduct(product, 1);
   };
 
   if (loading) {
@@ -184,119 +216,72 @@ export function MenuPage({
           ) : (
             <div className="menu-lines">
               {filteredProducts.map((product) => {
-                const qty = qtyByProduct[product.id] ?? 0;
                 const inCartQty = productQtyInCart[product.id] || 0;
-                const buttonQtyLabel = inCartQty > 0 ? String(inCartQty) : qty > 0 ? String(qty) : "Agregar";
-                const selectedVariantId = variantByProduct[product.id] ?? "";
-                const comment = commentByProduct[product.id] ?? "";
-                const selectedExtraIds = extraOptionsByProduct[product.id] || [];
-                const toggleExtra = (extraId) => {
-                  const currentIds = selectedExtraIds;
-                  const exists = currentIds.includes(extraId);
-                  const nextExtraIds = exists
-                    ? currentIds.filter((id) => id !== extraId)
-                    : [...currentIds, extraId];
-                  setExtraOptionsByProduct((current) => ({
-                    ...current,
-                    [product.id]: nextExtraIds,
-                  }));
-                  onSyncDraftConfig(buildDraftConfig(product, { extraOptionIds: nextExtraIds }));
-                };
-                const decreaseQty = () => onDecrementProductInCart?.(product.id);
-                const increaseQty = () =>
-                  addProduct(product, 1);
                 return (
                   <article className="menu-product-row" key={product.id}>
-                    <div className="menu-product-head">
-                      <button
-                        type="button"
-                        className="menu-line-name-btn"
-                        onClick={() => setPreviewProduct(product)}
-                      >
-                        {product.name}
-                      </button>
-                      <div className="menu-product-head-right">
-                        <p className="menu-line-price">{toMoney(product.base_price)}</p>
-                      </div>
-                    </div>
-                    <div className="menu-notes-wrap">
-                      <label className="field">
-                        {preparationNoteLabel(product.fulfillment_sector)}
-                        <input
-                          type="text"
-                          maxLength="120"
-                          value={comment}
-                          onChange={(e) => {
-                            const nextComment = e.target.value;
-                            setCommentByProduct((current) => ({
-                              ...current,
-                              [product.id]: nextComment,
-                            }));
-                            onSyncDraftConfig(buildDraftConfig(product, { comment: nextComment }));
-                          }}
-                          placeholder="Ej: sin cebolla, con hielo, bien cocida"
-                        />
-                      </label>
-                      {product.extra_options?.length > 0 && (
-                        <div className="field">
-                          Agregados
-                          <div className="menu-extra-options">
-                            {product.extra_options.map((extra) => (
-                              <button
-                                key={extra.id}
-                                type="button"
-                                className={
-                                  selectedExtraIds.includes(extra.id)
-                                    ? "menu-extra-chip menu-extra-chip-active"
-                                    : "menu-extra-chip"
-                                }
-                                onClick={() => toggleExtra(extra.id)}
-                              >
-                                {extra.name}
-                                {Number(extra.extra_price || 0) > 0
-                                  ? ` (+${toMoney(Number(extra.extra_price))})`
-                                  : ""}
-                              </button>
-                            ))}
+                    <div className="menu-product-card-shell">
+                      <div className="menu-product-copy">
+                        <div className="menu-product-head">
+                          <button
+                            type="button"
+                            className="menu-line-name-btn"
+                            onClick={() => setPreviewProduct(product)}
+                          >
+                            {product.name}
+                          </button>
+                          <div className="menu-product-head-right">
+                            <p className="menu-line-price">{toMoney(product.base_price)}</p>
                           </div>
                         </div>
-                      )}
-                    </div>
-                    {product.variants.length > 0 && (
-                      <label className="field menu-variant-field">
-                        Opciones
-                        <select
-                          value={selectedVariantId}
-                          onChange={(e) => {
-                            const nextVariantId = e.target.value;
-                            setVariantByProduct((current) => ({ ...current, [product.id]: nextVariantId }));
-                            onSyncDraftConfig(buildDraftConfig(product, { variantId: nextVariantId }));
-                          }}
+                        <p className="menu-product-description">
+                          {product.description || "Producto disponible para agregar al pedido."}
+                        </p>
+                        {commentByProduct[product.id]?.trim() ? (
+                          <p className="menu-product-inline-note">Comentario guardado</p>
+                        ) : null}
+                      </div>
+                      <div className="menu-product-media">
+                        <button
+                          type="button"
+                          className="menu-product-media-button"
+                          onClick={() => setPreviewProduct(product)}
+                          aria-label={`Ver ${product.name}`}
                         >
-                          <option value="">Sin extra</option>
-                          {product.variants.map((variant) => (
-                            <option key={variant.id} value={variant.id}>
-                              {variant.name} ({toMoney(variant.extra_price)})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                    <div className="menu-product-controls menu-product-controls-bottom">
-                      <button type="button" className="btn-secondary qty-btn" onClick={decreaseQty}>
-                        -
-                      </button>
-                      <button
-                        type="button"
-                        className={inCartQty > 0 || qty > 0 ? "menu-qty-pill menu-qty-pill-active" : "menu-qty-pill"}
-                        onClick={() => addProduct(product)}
-                      >
-                        {buttonQtyLabel}
-                      </button>
-                      <button type="button" className="btn-secondary qty-btn" onClick={increaseQty}>
-                        +
-                      </button>
+                          {product.image_url ? (
+                            <img
+                              className="menu-product-image"
+                              src={product.image_url}
+                              alt={product.name}
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="menu-product-image-fallback">Sin imagen</div>
+                          )}
+                        </button>
+                        {inCartQty > 0 ? <span className="menu-product-cart-count">{inCartQty}</span> : null}
+                        <button
+                          type="button"
+                          className="menu-product-overlay-btn menu-product-overlay-btn-comment"
+                          onClick={() => openCommentModal(product)}
+                          aria-label={`Agregar comentario a ${product.name}`}
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          className="menu-product-overlay-btn menu-product-overlay-btn-add"
+                          onClick={() => handlePrimaryAdd(product)}
+                          aria-label={`Agregar ${product.name}`}
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
+                    {configModalProduct?.id === product.id && (
+                      <div className="menu-inline-config-hint">
+                        <span>Este producto necesita configuracion antes de agregarlo.</span>
+                      </div>
+                    )}
                   </article>
                 );
               })}
@@ -328,6 +313,136 @@ export function MenuPage({
             )}
             <h4>{previewProduct.name}</h4>
             <p className="muted">{previewProduct.description || "Sin descripcion."}</p>
+          </article>
+        </div>
+      )}
+
+      {commentModalProduct && (
+        <div className="menu-preview-overlay" onClick={() => setCommentModalProduct(null)}>
+          <article className="menu-config-popup" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="menu-preview-close"
+              aria-label="Cerrar comentarios"
+              onClick={() => setCommentModalProduct(null)}
+            >
+              ×
+            </button>
+            <div className="menu-config-head">
+              <span className="menu-config-kicker">Comentarios</span>
+              <h4>{commentModalProduct.name}</h4>
+              <p className="muted">{preparationNoteLabel(commentModalProduct.fulfillment_sector)}</p>
+            </div>
+            <label className="field">
+              Comentario
+              <textarea
+                className="menu-comment-textarea"
+                maxLength="120"
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                placeholder="Ej: sin cebolla, con hielo, bien cocida"
+              />
+            </label>
+            <div className="menu-config-actions">
+              <button type="button" className="btn-secondary" onClick={() => setCommentModalProduct(null)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn-primary" onClick={saveCommentDraft}>
+                Guardar
+              </button>
+            </div>
+          </article>
+        </div>
+      )}
+
+      {configModalProduct && (
+        <div className="menu-preview-overlay" onClick={() => setConfigModalProduct(null)}>
+          <article className="menu-config-popup" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="menu-preview-close"
+              aria-label="Cerrar configuracion"
+              onClick={() => setConfigModalProduct(null)}
+            >
+              ×
+            </button>
+            <div className="menu-config-head">
+              <span className="menu-config-kicker">Personalizar</span>
+              <h4>{configModalProduct.name}</h4>
+              <p className="muted">{configModalProduct.description || "Elegi como queres pedir este producto."}</p>
+            </div>
+            {configModalProduct.variants.length > 0 && (
+              <label className="field menu-variant-field">
+                Opciones
+                <select
+                  value={variantByProduct[configModalProduct.id] ?? ""}
+                  onChange={(e) => {
+                    const nextVariantId = e.target.value;
+                    setVariantByProduct((current) => ({ ...current, [configModalProduct.id]: nextVariantId }));
+                    onSyncDraftConfig(buildDraftConfig(configModalProduct, { variantId: nextVariantId }));
+                  }}
+                >
+                  <option value="">Sin extra</option>
+                  {configModalProduct.variants.map((variant) => (
+                    <option key={variant.id} value={variant.id}>
+                      {variant.name} ({toMoney(variant.extra_price)})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {configModalProduct.extra_options?.length > 0 && (
+              <div className="field">
+                Agregados
+                <div className="menu-extra-options">
+                  {configModalProduct.extra_options.map((extra) => {
+                    const selectedExtraIds = extraOptionsByProduct[configModalProduct.id] || [];
+                    return (
+                      <button
+                        key={extra.id}
+                        type="button"
+                        className={
+                          selectedExtraIds.includes(extra.id)
+                            ? "menu-extra-chip menu-extra-chip-active"
+                            : "menu-extra-chip"
+                        }
+                        onClick={() => {
+                          const exists = selectedExtraIds.includes(extra.id);
+                          const nextExtraIds = exists
+                            ? selectedExtraIds.filter((id) => id !== extra.id)
+                            : [...selectedExtraIds, extra.id];
+                          setExtraOptionsByProduct((current) => ({
+                            ...current,
+                            [configModalProduct.id]: nextExtraIds,
+                          }));
+                          onSyncDraftConfig(buildDraftConfig(configModalProduct, { extraOptionIds: nextExtraIds }));
+                        }}
+                      >
+                        {extra.name}
+                        {Number(extra.extra_price || 0) > 0
+                          ? ` (+${toMoney(Number(extra.extra_price))})`
+                          : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="menu-config-actions">
+              <button type="button" className="btn-secondary" onClick={() => setConfigModalProduct(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  addProduct(configModalProduct, 1);
+                  setConfigModalProduct(null);
+                }}
+              >
+                Agregar al pedido
+              </button>
+            </div>
           </article>
         </div>
       )}

@@ -343,6 +343,19 @@ body {
   margin-bottom: 8px;
 }
 
+.menu-product-card-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 12px;
+  align-items: start;
+}
+
+.menu-product-copy {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
 .menu-product-row::after {
   content: "";
   position: absolute;
@@ -367,7 +380,7 @@ body {
 
 .menu-product-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   padding-bottom: 6px;
@@ -412,6 +425,114 @@ body {
   white-space: nowrap;
   font-size: 19px;
   letter-spacing: -0.02em;
+}
+
+.menu-product-description {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.menu-product-inline-note {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.menu-product-media {
+  position: relative;
+  width: 110px;
+  min-width: 110px;
+}
+
+.menu-product-media-button {
+  width: 110px;
+  height: 110px;
+  border: 0;
+  padding: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+}
+
+.menu-product-image,
+.menu-product-image-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.menu-product-image-fallback {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  padding: 10px;
+}
+
+.menu-product-overlay-btn {
+  position: absolute;
+  bottom: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
+}
+
+.menu-product-overlay-btn-comment {
+  left: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #334155;
+  font-size: 16px;
+}
+
+.menu-product-overlay-btn-add {
+  right: 8px;
+  background: linear-gradient(180deg, #f59e0b 0%, #ea580c 100%);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.menu-product-cart-count {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #0f766e 0%, #115e59 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
+}
+
+.menu-inline-config-hint {
+  margin-top: -2px;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .menu-notes-wrap,
@@ -500,6 +621,17 @@ body {
   box-shadow: var(--shadow);
 }
 
+.menu-config-popup {
+  width: min(380px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #fff;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 24px 46px rgba(15, 23, 42, 0.24);
+}
+
 .menu-preview-close {
   justify-self: end;
   width: 30px;
@@ -532,6 +664,36 @@ body {
 .menu-preview-popup h4 {
   margin: 0;
   font-size: 17px;
+}
+
+.menu-config-head {
+  display: grid;
+  gap: 4px;
+}
+
+.menu-config-kicker {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.menu-comment-textarea {
+  min-height: 120px;
+  width: 100%;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.9);
+  font: inherit;
+}
+
+.menu-config-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .menu-qty-pill {
@@ -1773,6 +1935,18 @@ button:focus {
   .menu-product-row {
     gap: 10px;
     padding: 11px;
+  }
+
+  .menu-product-card-shell {
+    grid-template-columns: minmax(0, 1fr) 96px;
+    gap: 10px;
+  }
+
+  .menu-product-media,
+  .menu-product-media-button {
+    width: 96px;
+    min-width: 96px;
+    height: 96px;
   }
 
   .menu-product-controls {
