@@ -975,6 +975,43 @@ button:focus {
   border-radius: 999px;
 }
 
+.menu-products-grouped {
+  gap: 18px;
+}
+
+.menu-sector-group {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #d8e2f2;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.menu-sector-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 0 2px 4px;
+}
+
+.menu-sector-head h5 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.menu-sector-head span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .menu-editor-empty-state .menu-editor-card-empty {
   min-height: 180px;
   align-content: center;

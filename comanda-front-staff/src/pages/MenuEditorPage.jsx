@@ -266,6 +266,21 @@ export function MenuEditorPage({ token, storeId }) {
   );
 
   const draftCount = products.filter((product) => !product.image_url || !product.base_price).length;
+  const productsByCategory = useMemo(() => {
+    const categoryGroups = categories.map((category) => ({
+      key: String(category.id),
+      label: category.name,
+      products: products
+        .filter((product) => String(product.category_id || "") === String(category.id))
+        .slice()
+        .sort((a, b) => Number(b.id) - Number(a.id)),
+    }));
+    const uncategorized = products
+      .filter((product) => !product.category_id)
+      .slice()
+      .sort((a, b) => Number(b.id) - Number(a.id));
+    return [...categoryGroups, { key: "__uncategorized", label: "Sin categoría", products: uncategorized }];
+  }, [categories, products]);
 
   return (
     <section className="ops-panel menu-admin-shell">
@@ -598,27 +613,36 @@ export function MenuEditorPage({ token, storeId }) {
         {loading ? (
           <p className="muted">Cargando...</p>
         ) : (
-          <div className="menu-products">
-            {products.map((product) => (
-              <article key={product.id} className="menu-product">
-                <div className="menu-product-meta">
-                  <strong>{product.name}</strong>
-                  <span className="muted">{product.fulfillment_sector}</span>
-                  <span>{product.description}</span>
-                  <span>$ {product.base_price}</span>
-                  <span className="muted">
-                    Extras: {(product.extra_options || []).filter((extra) => extra.active).length} activos / {(product.extra_options || []).length} total
-                  </span>
+          <div className="menu-products menu-products-grouped">
+            {productsByCategory.map((group) => (
+              <section key={group.key} className="menu-sector-group">
+                <div className="menu-sector-head">
+                  <h5>{group.label}</h5>
+                  <span>{group.products.length} productos</span>
                 </div>
-                <div className="menu-product-actions">
-                  <button className="btn-secondary small" type="button" onClick={() => handleEdit(product)}>
-                    Editar
-                  </button>
-                  <button className="btn-secondary small" type="button" onClick={() => toggleActive(product)}>
-                    {product.active ? "Desactivar" : "Activar"}
-                  </button>
-                </div>
-              </article>
+                {group.products.map((product) => (
+                  <article key={product.id} className="menu-product">
+                    <div className="menu-product-meta">
+                      <strong>{product.name}</strong>
+                      <span className="muted">#{product.id} · {product.fulfillment_sector}</span>
+                      <span>{product.description}</span>
+                      <span>$ {product.base_price}</span>
+                      <span className="muted">
+                        Extras: {(product.extra_options || []).filter((extra) => extra.active).length} activos / {(product.extra_options || []).length} total
+                      </span>
+                    </div>
+                    <div className="menu-product-actions">
+                      <button className="btn-secondary small" type="button" onClick={() => handleEdit(product)}>
+                        Editar
+                      </button>
+                      <button className="btn-secondary small" type="button" onClick={() => toggleActive(product)}>
+                        {product.active ? "Desactivar" : "Activar"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                {!group.products.length && <p className="muted">No hay productos en esta categoría.</p>}
+              </section>
             ))}
             {!products.length && <p className="muted">No hay productos cargados.</p>}
           </div>
