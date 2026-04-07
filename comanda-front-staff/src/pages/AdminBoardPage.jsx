@@ -102,8 +102,8 @@ function itemLabelWithNotes(item) {
 
 function batchKeyForItem(item, fallbackOrderId) {
   const orderId = String(item?.order_id || fallbackOrderId || "0");
-  const createdAt = String(item?.created_at || "");
-  return `${orderId}:${createdAt}`;
+  const sector = String(item?.sector || "ALL");
+  return `${orderId}:${sector}`;
 }
 
 function buildSectorLots(items = [], fallbackOrderId = null) {
@@ -116,6 +116,10 @@ function buildSectorLots(items = [], fallbackOrderId = null) {
         createdAt: item?.created_at || null,
         items: [],
       };
+    }
+    const itemCreatedAt = item?.created_at || null;
+    if (itemCreatedAt && (!acc[key].createdAt || new Date(itemCreatedAt) < new Date(acc[key].createdAt))) {
+      acc[key].createdAt = itemCreatedAt;
     }
     acc[key].items.push(item);
     return acc;
