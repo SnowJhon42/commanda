@@ -25,7 +25,7 @@ body {
 }
 
 .staff-shell {
-  width: min(1680px, calc(100vw - 32px));
+  width: min(1920px, calc(100vw - 16px));
   margin: 0 auto;
   padding: 16px 0 28px;
   display: grid;
@@ -1036,51 +1036,60 @@ button:focus {
 .admin-table-ops td {
   padding: 11px 6px;
   vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-table-ops th:nth-child(1),
 .admin-table-ops td:nth-child(1) {
-  width: 9%;
+  width: 6%;
 }
 
 .admin-table-ops th:nth-child(2),
 .admin-table-ops td:nth-child(2) {
-  width: 7%;
+  width: 5%;
 }
 
 .admin-table-ops th:nth-child(3),
 .admin-table-ops td:nth-child(3) {
-  width: 8%;
+  width: 6%;
 }
 
 .admin-table-ops th:nth-child(4),
 .admin-table-ops td:nth-child(4) {
-  width: 8%;
+  width: 5%;
 }
 
 .admin-table-ops th:nth-child(5),
 .admin-table-ops td:nth-child(5) {
-  width: 26%;
+  width: 14%;
 }
 
 .admin-table-ops th:nth-child(6),
 .admin-table-ops td:nth-child(6) {
-  width: 22%;
+  width: 14%;
 }
 
 .admin-table-ops th:nth-child(7),
 .admin-table-ops td:nth-child(7) {
-  width: 12%;
+  width: 13%;
 }
 
 .admin-table-ops th:nth-child(8),
 .admin-table-ops td:nth-child(8) {
-  width: 10%;
+  width: 9%;
 }
 
 .admin-table-ops th:nth-child(9),
 .admin-table-ops td:nth-child(9) {
-  width: 13%;
+  width: 10%;
+}
+
+.admin-table-ops th:nth-child(10),
+.admin-table-ops td:nth-child(10) {
+  width: 18%;
+  white-space: normal;
+  overflow: visible;
 }
 
 .btn-table-link {
