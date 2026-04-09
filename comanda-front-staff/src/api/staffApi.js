@@ -351,6 +351,23 @@ export async function fetchAdminMenuCategories({ token }) {
   }
 }
 
+export async function createAdminMenuCategory({ token, payload }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/categories`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo crear la categoría.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo crear la categoría.");
+  }
+}
+
 export async function fetchAdminMenuProducts({ token }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/products`, {
@@ -428,6 +445,41 @@ export async function patchAdminProductExtraOption({ token, extraOptionId, paylo
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudo actualizar el extra.");
+  }
+}
+
+export async function previewMenuImport({ token, file }) {
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch(`${API_URL}/admin/menu/import/preview`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body,
+    });
+    if (!res.ok) await toApiError(res, "No se pudo interpretar la carta.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo interpretar la carta.");
+  }
+}
+
+export async function commitMenuImport({ token, items }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/import/commit`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ items }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo crear el menú importado.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo crear el menú importado.");
   }
 }
 

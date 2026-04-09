@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAdminProductExtraOption,
   createAdminProduct,
+  commitMenuImport,
   fetchAdminMenuCategories,
   fetchAdminMenuProducts,
   patchAdminProductExtraOption,
   patchAdminProduct,
+  previewMenuImport,
   uploadMenuImage,
 } from "../api/staffApi";
 
@@ -22,6 +24,7 @@ const DEFAULT_FORM = {
 };
 
 const SECTOR_OPTIONS = ["KITCHEN", "BAR", "WAITER"];
+const IMPORT_ACCEPT = ".xlsx,.csv,.tsv,.docx,.pdf,.jpg,.jpeg,.png,.webp";
 
 function productPayloadFromForm(form) {
   return {
@@ -59,6 +62,14 @@ export function MenuEditorPage({ token, storeId }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [extraForm, setExtraForm] = useState({ name: "", extra_price: "0" });
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importDraft, setImportDraft] = useState([]);
+  const [importErrors, setImportErrors] = useState([]);
+  const [importWarnings, setImportWarnings] = useState([]);
+  const [importSource, setImportSource] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importImageUploadingId, setImportImageUploadingId] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -125,6 +136,106 @@ export function MenuEditorPage({ token, storeId }) {
     () => categories.find((category) => String(category.id) === String(form.category_id)) || null,
     [categories, form.category_id]
   );
+
+  const validImportRows = useMemo(
+    () => importDraft.filter((row) => row.name && !row.errors?.length && row.base_price !== null),
+    [importDraft]
+  );
+  const importRowsWithIssues = useMemo(
+    () => importDraft.filter((row) => (row.errors?.length || 0) > 0 || (row.warnings?.length || 0) > 0),
+    [importDraft]
+  );
+
+  const previewImport = useCallback(async () => {
+    if (!importFile) {
+      setError("Subí un archivo de carta primero.");
+      return;
+    }
+    setImporting(true);
+    setMessage("");
+    setError("");
+    setImportErrors([]);
+    setImportWarnings([]);
+    try {
+      const result = await previewMenuImport({ token, file: importFile });
+      setImportDraft(result.items || []);
+      setImportWarnings(result.warnings || []);
+      setImportSource({ filename: result.source_filename, kind: result.source_kind });
+      setMessage(`Borrador listo: ${(result.items || []).length} filas interpretadas.`);
+    } catch (err) {
+      setImportDraft([]);
+      setError(err.message || "No se pudo interpretar la carta.");
+    } finally {
+      setImporting(false);
+    }
+  }, [importFile, token]);
+
+  const openImportExcel = useCallback(() => {
+    setImportOpen(true);
+    setEditorOpen(false);
+    setMessage("");
+    setError("");
+  }, []);
+
+  const updateImportRow = useCallback((rowId, patch) => {
+    setImportDraft((current) =>
+      current.map((row) =>
+        row.row_id === rowId
+          ? {
+              ...row,
+              ...patch,
+              errors:
+                patch.name !== undefined || patch.base_price !== undefined
+                  ? (row.errors || []).filter((item) => item !== "sin producto" && item !== "precio inválido")
+                  : row.errors,
+            }
+          : row
+      )
+    );
+  }, []);
+
+  const handleImportRowImageUpload = useCallback(
+    async (rowId, file) => {
+      if (!file) return;
+      setImportImageUploadingId(rowId);
+      setError("");
+      try {
+        const uploaded = await uploadMenuImage({ token, file });
+        updateImportRow(rowId, { image_url: uploaded.image_url });
+      } catch (err) {
+        setError(err.message || "No se pudo subir la imagen del producto.");
+      } finally {
+        setImportImageUploadingId("");
+      }
+    },
+    [token, updateImportRow]
+  );
+
+  const publishImportDraft = useCallback(async () => {
+    if (validImportRows.length === 0) {
+      setError("No hay filas válidas para importar.");
+      return;
+    }
+    setImporting(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await commitMenuImport({ token, items: validImportRows });
+      await loadData();
+      setImportDraft([]);
+      setImportErrors([]);
+      setImportWarnings([]);
+      setImportFile(null);
+      setImportOpen(false);
+      setMessage(
+        `Importación lista: ${result.created_products} productos creados, ${result.created_categories} categorías nuevas.`
+      );
+    } catch (err) {
+      setError(err.message || "No se pudo importar el menú.");
+    } finally {
+      setImporting(false);
+    }
+  }, [loadData, token, validImportRows]);
 
   const handleFileChange = useCallback(
     async (event) => {
@@ -317,16 +428,16 @@ export function MenuEditorPage({ token, storeId }) {
           <span className="menu-entry-badge menu-entry-badge-warm">IA + revisión humana</span>
           <h4>Importar fotos</h4>
           <p>Subí fotos de la carta y generá un borrador editable antes de publicar.</p>
-          <button className="btn-secondary" type="button" disabled>
-            Próximamente
+          <button className="btn-secondary" type="button" onClick={openImportExcel}>
+            Abrir lector
           </button>
         </article>
         <article className="menu-entry-card menu-entry-card-cool">
           <span className="menu-entry-badge menu-entry-badge-info">Carga masiva</span>
-          <h4>Importar Excel</h4>
-          <p>Importá categorías, productos y precios desde un archivo de trabajo.</p>
-          <button className="btn-secondary" type="button" disabled>
-            Próximamente
+          <h4>Importar carta</h4>
+          <p>Subí Excel, Word, PDF o foto y generá un borrador inteligente.</p>
+          <button className="btn-primary" type="button" onClick={openImportExcel}>
+            Subir archivo
           </button>
         </article>
       </div>
@@ -583,19 +694,254 @@ export function MenuEditorPage({ token, storeId }) {
             </div>
           </aside>
         </div>
+      ) : importOpen ? (
+        <div className="menu-editor-card menu-import-card">
+          <div className="menu-import-hero">
+            <div>
+              <p className="menu-admin-kicker">Lector inteligente de carta</p>
+              <h4>Revisá antes de publicar</h4>
+              <p className="muted">
+                Subí Excel, CSV, Word, PDF o foto. COMANDA interpreta el archivo y te deja cada producto listo para corregir.
+              </p>
+            </div>
+            <div className="menu-import-stats">
+              <div className="menu-import-stat">
+                <span>Interpretados</span>
+                <strong>{importDraft.length}</strong>
+              </div>
+              <div className="menu-import-stat">
+                <span>Listos</span>
+                <strong>{validImportRows.length}</strong>
+              </div>
+              <div className="menu-import-stat">
+                <span>Para revisar</span>
+                <strong>{importRowsWithIssues.length}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="menu-import-topbar">
+            <label className="field menu-import-field">
+              <span>Archivo de carta</span>
+              <input
+                type="file"
+                accept={IMPORT_ACCEPT}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] || null;
+                  setImportFile(file);
+                  setImportDraft([]);
+                  setImportErrors([]);
+                  setImportWarnings([]);
+                  setImportSource(null);
+                  setMessage("");
+                  setError("");
+                }}
+              />
+            </label>
+
+            <div className="menu-import-actions">
+              <button className="btn-primary" type="button" onClick={previewImport} disabled={importing || !importFile}>
+                {importing ? "Interpretando..." : "Leer archivo"}
+              </button>
+              <button
+                className="btn-primary"
+                type="button"
+                onClick={publishImportDraft}
+                disabled={importing || validImportRows.length === 0}
+              >
+                {importing ? "Importando..." : "Crear productos"}
+              </button>
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => {
+                  setImportOpen(false);
+                  setImportDraft([]);
+                  setImportErrors([]);
+                  setImportWarnings([]);
+                  setImportSource(null);
+                  setImportFile(null);
+                }}
+                disabled={importing}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+
+          <div className="menu-import-help">
+            <span>IA activa</span>
+            <span>Borrador editable</span>
+            <span>No publica nada hasta confirmar</span>
+            <span>Las categorías faltantes se crean al confirmar</span>
+          </div>
+
+          {importFile && <p className="muted">Archivo seleccionado: {importFile.name}</p>}
+          {importSource && (
+            <p className="muted">
+              Interpretado como {String(importSource.kind || "").toUpperCase()}: {importSource.filename}
+            </p>
+          )}
+
+          {(importErrors.length > 0 || importWarnings.length > 0) && (
+            <div className="menu-import-errors">
+              {importWarnings.slice(0, 6).map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+              {importErrors.slice(0, 6).map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+              {importErrors.length + importWarnings.length > 12 && <span>Hay más avisos para revisar.</span>}
+            </div>
+          )}
+
+          {importDraft.length > 0 && (
+            <div className="menu-import-preview">
+              {importDraft.slice(0, 20).map((row) => (
+                <article key={row.row_id} className={row.errors?.length ? "menu-import-row menu-import-row-error" : "menu-import-row"}>
+                  <div className="menu-import-row-head">
+                    <span className="menu-entry-badge menu-entry-badge-info">Fila {row.row_id}</span>
+                    <span className="menu-import-confidence">{Math.round(Number(row.confidence || 0) * 100)}% confianza</span>
+                  </div>
+
+                  <div className="menu-import-row-body">
+                    <div className="menu-import-main">
+                      <div className="menu-import-inline">
+                        <label className="field">
+                          Producto
+                          <input
+                            value={row.name || ""}
+                            onChange={(event) => updateImportRow(row.row_id, { name: event.target.value })}
+                            placeholder="Producto"
+                          />
+                        </label>
+                        <label className="field">
+                          Categoría
+                          <input
+                            value={row.category_name || ""}
+                            onChange={(event) => updateImportRow(row.row_id, { category_name: event.target.value })}
+                            placeholder="Categoría"
+                          />
+                        </label>
+                      </div>
+                      <label className="field">
+                        Descripción
+                        <textarea
+                          value={row.description || ""}
+                          onChange={(event) => updateImportRow(row.row_id, { description: event.target.value })}
+                          placeholder="Descripción"
+                        />
+                      </label>
+
+                      <div className="menu-import-image-row">
+                        <div className="menu-import-image-preview">
+                          {row.image_url ? (
+                            <img src={row.image_url} alt={`Vista previa de ${row.name || "producto"}`} />
+                          ) : (
+                            <div className="menu-import-image-empty">Sin imagen</div>
+                          )}
+                        </div>
+                        <div className="menu-import-image-fields">
+                          <label className="field">
+                            URL de imagen
+                            <input
+                              value={row.image_url || ""}
+                              onChange={(event) => updateImportRow(row.row_id, { image_url: event.target.value })}
+                              placeholder="https://.../producto.jpg"
+                            />
+                          </label>
+                          <div className="menu-import-image-actions">
+                            <label className="btn-secondary menu-upload-btn">
+                              {importImageUploadingId === row.row_id ? "Subiendo..." : "Subir imagen"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  event.target.value = "";
+                                  handleImportRowImageUpload(row.row_id, file);
+                                }}
+                              />
+                            </label>
+                            <button
+                              className="btn-secondary"
+                              type="button"
+                              onClick={() => updateImportRow(row.row_id, { image_url: "" })}
+                            >
+                              Quitar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="menu-import-side">
+                      <label className="field">
+                        Precio
+                        <input
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={row.base_price ?? ""}
+                          onChange={(event) =>
+                            updateImportRow(row.row_id, {
+                              base_price: event.target.value === "" ? null : Number(event.target.value),
+                            })
+                          }
+                          placeholder="Precio"
+                        />
+                      </label>
+                      <label className="field">
+                        Sector
+                        <select
+                          value={row.fulfillment_sector || "KITCHEN"}
+                          onChange={(event) => updateImportRow(row.row_id, { fulfillment_sector: event.target.value })}
+                        >
+                          {SECTOR_OPTIONS.map((sector) => (
+                            <option key={sector} value={sector}>
+                              {sector}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field menu-import-visibility">
+                        <span>Visible</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(row.active)}
+                          onChange={(event) => updateImportRow(row.row_id, { active: event.target.checked })}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="menu-import-row-notes">
+                    {row.warnings?.length > 0 && <span className="muted">{row.warnings.join(" · ")}</span>}
+                    {row.errors?.length > 0 && <span className="error-text">{row.errors.join(" · ")}</span>}
+                  </div>
+                </article>
+              ))}
+              {importDraft.length > 20 && <p className="muted">Vista previa limitada a 20 filas.</p>}
+            </div>
+          )}
+
+          {message && <p className="success-text">{message}</p>}
+          {error && <p className="error-text">{error}</p>}
+        </div>
       ) : (
         <div className="menu-editor-empty-state">
           <div className="menu-editor-card menu-editor-card-empty">
             <h4>Elegí cómo querés trabajar tu menú</h4>
             <p className="muted">
-              Empezá creando un producto manualmente o preparate para importar carta por fotos o Excel.
+              Empezá creando un producto manualmente o importá una carta con IA.
             </p>
             <div className="menu-empty-actions">
               <button className="btn-primary" type="button" onClick={startCreate}>
                 Crear producto
               </button>
-              <button className="btn-secondary" type="button" disabled>
-                Revisar borrador
+              <button className="btn-secondary" type="button" onClick={openImportExcel}>
+                Importar carta
               </button>
             </div>
           </div>

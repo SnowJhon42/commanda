@@ -1,6 +1,6 @@
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class CategoryOut(BaseModel):
@@ -8,6 +8,21 @@ class CategoryOut(BaseModel):
     name: str
     image_url: str | None = None
     sort_order: int
+
+
+class CategoryCreateIn(BaseModel):
+    name: str
+    sort_order: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("name is required")
+        if len(candidate) > 100:
+            raise ValueError("name is too long")
+        return candidate
 
 
 class VariantOut(BaseModel):
@@ -103,6 +118,45 @@ class ImageUrlPatchOut(BaseModel):
 
 class ImageUploadOut(BaseModel):
     image_url: str
+
+
+class MenuImportDraftItem(BaseModel):
+    row_id: str
+    category_name: str | None = None
+    name: str
+    description: str | None = None
+    base_price: float | None = None
+    fulfillment_sector: str = "KITCHEN"
+    image_url: str | None = None
+    active: bool = True
+    confidence: float = 0.0
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+    @field_validator("fulfillment_sector")
+    @classmethod
+    def validate_fulfillment_sector(cls, value: str) -> str:
+        sector = value.strip().upper()
+        if sector not in {"KITCHEN", "BAR", "WAITER"}:
+            return "KITCHEN"
+        return sector
+
+
+class MenuImportPreviewOut(BaseModel):
+    source_filename: str
+    source_kind: str
+    items: list[MenuImportDraftItem]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class MenuImportCommitIn(BaseModel):
+    items: list[MenuImportDraftItem]
+
+
+class MenuImportCommitOut(BaseModel):
+    created_categories: int
+    created_products: int
+    skipped_items: int
 
 
 class ExtraOptionCreateIn(BaseModel):

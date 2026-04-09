@@ -24,6 +24,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.schemas.menu import (
+    CategoryCreateIn,
     CategoryOut,
     ExtraOptionCreateIn,
     ExtraOptionOut,
@@ -31,6 +32,10 @@ from app.schemas.menu import (
     ImageUploadOut,
     ImageUrlPatchIn,
     ImageUrlPatchOut,
+    MenuImportCommitIn,
+    MenuImportCommitOut,
+    MenuImportDraftItem,
+    MenuImportPreviewOut,
     ProductCreateIn,
     ProductOut,
     ProductUpdateIn,
@@ -47,6 +52,7 @@ from app.schemas.orders import (
 )
 from app.services.billing import get_latest_bill_split, to_bill_split_out
 from app.services.cloudflare_r2 import upload_menu_image_to_r2
+from app.services.menu_import import build_menu_import_preview
 from app.services.print_tracking import build_order_print_status
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -156,6 +162,159 @@ def list_admin_menu_categories(
         CategoryOut(id=category.id, name=category.name, image_url=category.image_url, sort_order=category.sort_order)
         for category in categories
     ]
+
+
+@router.post("/menu/categories", response_model=CategoryOut, status_code=201)
+def create_admin_menu_category(
+    payload: CategoryCreateIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> CategoryOut:
+    _ensure_admin(current_staff)
+    name = payload.name.strip()
+    existing = db.scalar(
+        select(MenuCategory).where(MenuCategory.store_id == current_staff.store_id, MenuCategory.name == name)
+    )
+    if existing:
+        return CategoryOut(
+            id=existing.id,
+            name=existing.name,
+            image_url=existing.image_url,
+            sort_order=existing.sort_order,
+        )
+
+    sort_order = payload.sort_order
+    if sort_order is None:
+        max_sort = (
+            db.scalar(select(func.max(MenuCategory.sort_order)).where(MenuCategory.store_id == current_staff.store_id))
+            or 0
+        )
+        sort_order = int(max_sort) + 10
+
+    category = MenuCategory(store_id=current_staff.store_id, name=name, sort_order=sort_order)
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return CategoryOut(id=category.id, name=category.name, image_url=category.image_url, sort_order=category.sort_order)
+
+
+def _get_or_create_menu_category(
+    db: Session,
+    store_id: int,
+    name: str | None,
+    category_cache: dict[str, MenuCategory],
+) -> tuple[MenuCategory | None, bool]:
+    clean_name = (name or "").strip()
+    if not clean_name:
+        return None, False
+    key = clean_name.lower()
+    if key in category_cache:
+        return category_cache[key], False
+
+    category = db.scalar(select(MenuCategory).where(MenuCategory.store_id == store_id, MenuCategory.name == clean_name))
+    if category:
+        category_cache[key] = category
+        return category, False
+
+    max_sort = db.scalar(select(func.max(MenuCategory.sort_order)).where(MenuCategory.store_id == store_id)) or 0
+    category = MenuCategory(store_id=store_id, name=clean_name, sort_order=int(max_sort) + 10)
+    db.add(category)
+    db.flush()
+    category_cache[key] = category
+    return category, True
+
+
+def _validated_import_item(item: MenuImportDraftItem) -> bool:
+    if item.errors:
+        return False
+    if not item.name.strip():
+        return False
+    if item.base_price is None or item.base_price < 0:
+        return False
+    return True
+
+
+@router.post("/menu/import/preview", response_model=MenuImportPreviewOut)
+async def preview_menu_import(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> MenuImportPreviewOut:
+    _ensure_admin(current_staff)
+    filename = file.filename or "carta"
+    content = await file.read()
+    source_kind, result = build_menu_import_preview(filename=filename, content=content)
+    items = [MenuImportDraftItem(**item) for item in result.get("items", [])]
+    existing_product_names = {
+        product_name.lower()
+        for product_name in db.scalars(select(Product.name).where(Product.store_id == current_staff.store_id)).all()
+    }
+    for item in items:
+        if item.name.strip().lower() in existing_product_names and "Producto existente" not in item.warnings:
+            item.warnings.append("Producto existente")
+    return MenuImportPreviewOut(
+        source_filename=filename,
+        source_kind=source_kind,
+        items=items,
+        warnings=result.get("warnings", []),
+    )
+
+
+@router.post("/menu/import/commit", response_model=MenuImportCommitOut)
+def commit_menu_import(
+    payload: MenuImportCommitIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> MenuImportCommitOut:
+    _ensure_admin(current_staff)
+    category_cache = {
+        category.name.lower(): category
+        for category in db.scalars(select(MenuCategory).where(MenuCategory.store_id == current_staff.store_id)).all()
+    }
+    existing_product_names = {
+        product_name.lower()
+        for product_name in db.scalars(select(Product.name).where(Product.store_id == current_staff.store_id)).all()
+    }
+
+    created_categories = 0
+    created_products = 0
+    skipped_items = 0
+
+    for item in payload.items:
+        if not _validated_import_item(item):
+            skipped_items += 1
+            continue
+        product_name = item.name.strip()
+        if product_name.lower() in existing_product_names:
+            skipped_items += 1
+            continue
+
+        category, created_category = _get_or_create_menu_category(
+            db, current_staff.store_id, item.category_name, category_cache
+        )
+        if created_category:
+            created_categories += 1
+
+        product = Product(
+            store_id=current_staff.store_id,
+            name=product_name,
+            description=item.description.strip() if item.description else None,
+            base_price=item.base_price,
+            fulfillment_sector=item.fulfillment_sector,
+            category_id=category.id if category else None,
+            image_url=ImageUrlPatchIn(image_url=item.image_url).image_url if item.image_url else None,
+            active=item.active,
+        )
+        db.add(product)
+        existing_product_names.add(product_name.lower())
+        created_products += 1
+
+    db.commit()
+    return MenuImportCommitOut(
+        created_categories=created_categories,
+        created_products=created_products,
+        skipped_items=skipped_items,
+    )
 
 
 @router.get("/menu/products", response_model=list[ProductOut])
