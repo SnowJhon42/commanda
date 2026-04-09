@@ -73,3 +73,31 @@ Validacion:
 
 Notas:
 ```
+
+## Release log actual
+
+```txt
+Release ID: MENU-IMPORT-IA-2026-04-08
+Fecha: 2026-04-08
+Owner: CTO-Agent -> Santiago (Infra-Ops-Agent)
+Cambio: lector inteligente de carta con IA para staff, con borrador revisable y alta de productos al menu
+
+Estado:
+- Local: VERIFIED
+- GitHub: IN_GIT
+- Deploy backend: PENDING
+- Deploy cliente: PENDING
+- Deploy staff: PENDING
+
+Validacion:
+- Backend: http://localhost:8000/health responde 200
+- Cliente: http://localhost:5173 responde 200 y muestra productos importados
+- Staff: http://localhost:5174 responde 200 y permite importar carta
+- E2E: staff importa carta -> revisa borrador -> crea productos -> cliente local los ve
+
+Notas:
+- Rama remota: sec-hardening-runtime-cut
+- Commit de referencia: c163067
+- Requiere OPENAI_API_KEY valida con billing/cuota activa en backend
+- No esta desplegado aun en Render/Vercel
+```
