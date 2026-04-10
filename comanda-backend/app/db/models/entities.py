@@ -157,6 +157,7 @@ class Product(Base):
     base_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     fulfillment_sector: Mapped[str] = mapped_column(String(20), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     variants: Mapped[list["ProductVariant"]] = relationship(back_populates="product")

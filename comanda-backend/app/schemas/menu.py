@@ -49,6 +49,7 @@ class ProductOut(BaseModel):
     variants: list[VariantOut]
     extra_options: list[ExtraOptionOut]
     active: bool
+    archived: bool = False
 
 
 class MenuResponse(BaseModel):
@@ -157,6 +158,13 @@ class MenuImportCommitOut(BaseModel):
     created_categories: int
     created_products: int
     skipped_items: int
+
+
+class ProductDeleteOut(BaseModel):
+    product_id: int
+    deleted: bool
+    archived: bool
+    had_history: bool
 
 
 class ExtraOptionCreateIn(BaseModel):

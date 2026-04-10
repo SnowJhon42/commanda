@@ -241,6 +241,8 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
     product_column_names = _table_columns(conn, "products")
     if "image_url" not in product_column_names:
         conn.execute(text("ALTER TABLE products ADD COLUMN image_url TEXT NULL"))
+    if "archived" not in product_column_names:
+        conn.execute(text("ALTER TABLE products ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"))
 
     conn.execute(text("UPDATE table_sessions SET guest_count = COALESCE(NULLIF(guest_count, 0), 1)"))
     conn.execute(text("UPDATE table_sessions SET status = 'MESA_OCUPADA' WHERE status = 'OPEN'"))
@@ -290,7 +292,7 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
             issues.append(f"stores missing column: {column}")
 
     if "products" in existing_tables:
-        missing = {"image_url"} - _table_columns(conn, "products")
+        missing = {"image_url", "archived"} - _table_columns(conn, "products")
         for column in sorted(missing):
             issues.append(f"products missing column: {column}")
 

@@ -20,7 +20,9 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
             MenuCategory.sort_order.asc(), MenuCategory.id.asc()
         )
     ).all()
-    products = db.scalars(select(Product).where(Product.store_id == store_id, Product.active == True)).all()
+    products = db.scalars(
+        select(Product).where(Product.store_id == store_id, Product.active == True, Product.archived == False)
+    ).all()
     product_ids = [p.id for p in products]
     variants = (
         db.scalars(

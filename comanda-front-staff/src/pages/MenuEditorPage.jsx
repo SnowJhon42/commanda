@@ -5,6 +5,7 @@ import {
   createAdminProductExtraOption,
   createAdminProduct,
   commitMenuImport,
+  deleteAdminProduct,
   fetchAdminMenuCategories,
   fetchAdminMenuProducts,
   patchAdminProductExtraOption,
@@ -313,6 +314,38 @@ export function MenuEditorPage({ token, storeId }) {
       }
     },
     [token, loadData]
+  );
+
+  const handleDeleteProduct = useCallback(
+    async (product) => {
+      const confirmed = window.confirm(
+        `Eliminar "${product.name}"?\n\nSi nunca se usó, se borra definitivamente.\nSi ya tuvo pedidos, se archiva y deja de verse en staff y cliente.`
+      );
+      if (!confirmed) return;
+
+      setSaving(true);
+      setError("");
+      setMessage("");
+      try {
+        const result = await deleteAdminProduct({ token, productId: product.id });
+        await loadData();
+        if (editingId === product.id) {
+          resetForm();
+        }
+        if (result.deleted) {
+          setMessage("Producto eliminado definitivamente.");
+        } else if (result.archived) {
+          setMessage("Producto archivado. Ya no se muestra en staff ni cliente.");
+        } else {
+          setMessage("Producto eliminado.");
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo eliminar el producto.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [token, loadData, editingId, resetForm]
   );
 
   const createExtraOption = useCallback(async () => {
@@ -983,6 +1016,9 @@ export function MenuEditorPage({ token, storeId }) {
                       </button>
                       <button className="btn-secondary small" type="button" onClick={() => toggleActive(product)}>
                         {product.active ? "Desactivar" : "Activar"}
+                      </button>
+                      <button className="btn-secondary small" type="button" onClick={() => handleDeleteProduct(product)}>
+                        Eliminar
                       </button>
                     </div>
                   </article>

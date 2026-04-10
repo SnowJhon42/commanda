@@ -414,6 +414,21 @@ export async function patchAdminProduct({ token, productId, payload }) {
   }
 }
 
+export async function deleteAdminProduct({ token, productId }) {
+  try {
+    const res = await fetch(`${API_URL}/admin/menu/products/${productId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo eliminar el producto.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo eliminar el producto.");
+  }
+}
+
 export async function createAdminProductExtraOption({ token, productId, payload }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/products/${productId}/extra-options`, {

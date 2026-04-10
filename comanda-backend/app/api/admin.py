@@ -15,6 +15,7 @@ from app.db.models import (
     OrderStatus,
     Product,
     ProductExtraOption,
+    ProductVariant,
     Sector,
     StaffAccount,
     Table,
@@ -37,6 +38,7 @@ from app.schemas.menu import (
     MenuImportDraftItem,
     MenuImportPreviewOut,
     ProductCreateIn,
+    ProductDeleteOut,
     ProductOut,
     ProductUpdateIn,
     VariantOut,
@@ -143,6 +145,7 @@ def _product_out(product: Product) -> ProductOut:
             for extra in sorted(product.extra_options, key=lambda extra: extra.id)
         ],
         active=product.active,
+        archived=bool(product.archived),
     )
 
 
@@ -304,6 +307,7 @@ def commit_menu_import(
             category_id=category.id if category else None,
             image_url=ImageUrlPatchIn(image_url=item.image_url).image_url if item.image_url else None,
             active=item.active,
+            archived=False,
         )
         db.add(product)
         existing_product_names.add(product_name.lower())
@@ -325,7 +329,7 @@ def list_admin_menu_products(
     products = (
         db.execute(
             select(Product)
-            .where(Product.store_id == current_staff.store_id)
+            .where(Product.store_id == current_staff.store_id, Product.archived == False)
             .options(joinedload(Product.variants), joinedload(Product.extra_options))
             .order_by(Product.id.asc())
         )
@@ -366,6 +370,7 @@ def create_admin_product(
         category_id=payload.category_id,
         image_url=image_payload.image_url,
         active=payload.active,
+        archived=False,
     )
     db.add(product)
     db.commit()
@@ -520,6 +525,51 @@ def patch_product_image_url(
     db.commit()
     db.refresh(product)
     return ImageUrlPatchOut(id=product.id, image_url=product.image_url)
+
+
+@router.delete("/menu/products/{product_id}", response_model=ProductDeleteOut)
+def delete_admin_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ProductDeleteOut:
+    _ensure_admin(current_staff)
+    product = db.scalar(select(Product).where(Product.id == product_id, Product.store_id == current_staff.store_id))
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    usage_count = (
+        db.scalar(select(func.count()).select_from(OrderItem).where(OrderItem.product_id == product.id))
+        or 0
+    )
+    had_history = usage_count > 0
+
+    if not had_history:
+        extras = db.scalars(select(ProductExtraOption).where(ProductExtraOption.product_id == product.id)).all()
+        for extra in extras:
+            db.delete(extra)
+        variants = db.scalars(select(ProductVariant).where(ProductVariant.product_id == product.id)).all()
+        for variant in variants:
+            db.delete(variant)
+        db.delete(product)
+        db.commit()
+        return ProductDeleteOut(
+            product_id=product_id,
+            deleted=True,
+            archived=False,
+            had_history=False,
+        )
+
+    product.active = False
+    product.archived = True
+    db.add(product)
+    db.commit()
+    return ProductDeleteOut(
+        product_id=product.id,
+        deleted=False,
+        archived=True,
+        had_history=True,
+    )
 
 
 @router.get("/orders", response_model=AdminOrdersResponse)
