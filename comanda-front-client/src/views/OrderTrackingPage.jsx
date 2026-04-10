@@ -89,6 +89,14 @@ export function OrderTrackingPage({ orderId, tableSessionToken }) {
   const summary = useMemo(() => {
     const items = order?.items || [];
     const totalQty = items.reduce((acc, item) => acc + Number(item.qty || 0), 0);
+    const inProgressQty = items.reduce(
+      (acc, item) =>
+        acc +
+        (item.status === "IN_PROGRESS" || item.status === "DONE" || item.status === "DELIVERED"
+          ? Number(item.qty || 0)
+          : 0),
+      0
+    );
     const deliveredQty = items.reduce(
       (acc, item) => acc + (item.status === "DELIVERED" ? Number(item.qty || 0) : 0),
       0
@@ -99,8 +107,9 @@ export function OrderTrackingPage({ orderId, tableSessionToken }) {
       0
     );
     const progress = totalQty > 0 ? Math.round((deliveredQty / totalQty) * 100) : 0;
-    const prepProgress = totalQty > 0 ? Math.round((doneQty / totalQty) * 100) : 0;
-    return { totalQty, deliveredQty, doneQty, progress, prepProgress };
+    const prepProgress = totalQty > 0 ? Math.round((inProgressQty / totalQty) * 100) : 0;
+    const readyProgress = totalQty > 0 ? Math.round((doneQty / totalQty) * 100) : 0;
+    return { totalQty, inProgressQty, deliveredQty, doneQty, progress, prepProgress, readyProgress };
   }, [order?.items]);
 
   const sectorCards = useMemo(() => {
@@ -198,13 +207,22 @@ export function OrderTrackingPage({ orderId, tableSessionToken }) {
 
       <div className="tracking-progress-card">
         <div className="tracking-progress-row">
-          <span>Preparacion</span>
+          <span>En preparación</span>
+          <strong>
+            {summary.inProgressQty}/{summary.totalQty}
+          </strong>
+        </div>
+        <div className="tracking-progress-bar">
+          <div className="tracking-progress-fill tracking-progress-fill-prep" style={{ width: `${summary.prepProgress}%` }} />
+        </div>
+        <div className="tracking-progress-row">
+          <span>Listo</span>
           <strong>
             {summary.doneQty}/{summary.totalQty}
           </strong>
         </div>
         <div className="tracking-progress-bar">
-          <div className="tracking-progress-fill tracking-progress-fill-prep" style={{ width: `${summary.prepProgress}%` }} />
+          <div className="tracking-progress-fill tracking-progress-fill-ready" style={{ width: `${summary.readyProgress}%` }} />
         </div>
         <div className="tracking-progress-row">
           <span>Entregado</span>
