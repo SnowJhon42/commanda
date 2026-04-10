@@ -183,7 +183,7 @@ export function App() {
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
-  const [closingTable, setClosingTable] = useState(false);
+  const [closingTableCode, setClosingTableCode] = useState("");
   const [validatingPaymentKey, setValidatingPaymentKey] = useState("");
   const [billingBusy, setBillingBusy] = useState(false);
   const [printingKey, setPrintingKey] = useState("");
@@ -465,41 +465,45 @@ export function App() {
 
   const closeTable = useCallback(async () => {
     if (!session || !selectedOrderDetail || session.staff.sector !== "ADMIN") return;
+    const tableCode = selectedOrderDetail.table_code;
     setError("");
-    setClosingTable(true);
+    setClosingTableCode(tableCode);
     try {
       await closeTableSession({
         token: session.access_token,
-        tableCode: selectedOrderDetail.table_code,
+        tableCode,
       });
-      await loadBoard();
-      await loadOrderDetail();
+      const refreshTasks = [loadBoard(), loadTableSessions()];
+      if (selectedOrderId) {
+        refreshTasks.push(loadOrderDetail());
+      }
+      await Promise.all(refreshTasks);
     } catch (err) {
       setError(err.message || "No se pudo cerrar la mesa.");
     } finally {
-      setClosingTable(false);
+      setClosingTableCode("");
     }
-  }, [session, selectedOrderDetail, loadBoard, loadOrderDetail]);
+  }, [session, selectedOrderDetail, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]);
 
   const closeTableByCode = useCallback(
     async (tableCode) => {
       if (!session || session.staff.sector !== "ADMIN" || !tableCode) return;
       setError("");
-      setClosingTable(true);
+      setClosingTableCode(tableCode);
       try {
         await closeTableSession({
           token: session.access_token,
           tableCode,
         });
-        await loadBoard();
-        await loadTableSessions();
+        const refreshTasks = [loadBoard(), loadTableSessions()];
         if (selectedOrderId) {
-          await loadOrderDetail();
+          refreshTasks.push(loadOrderDetail());
         }
+        await Promise.all(refreshTasks);
       } catch (err) {
         setError(err.message || "No se pudo cerrar la mesa.");
       } finally {
-        setClosingTable(false);
+        setClosingTableCode("");
       }
     },
     [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
@@ -509,21 +513,21 @@ export function App() {
     async (tableCode) => {
       if (!session || session.staff.sector !== "ADMIN" || !tableCode) return;
       setError("");
-      setClosingTable(true);
+      setClosingTableCode(tableCode);
       try {
         await forceCloseTableSession({
           token: session.access_token,
           tableCode,
         });
-        await loadBoard();
-        await loadTableSessions();
+        const refreshTasks = [loadBoard(), loadTableSessions()];
         if (selectedOrderId) {
-          await loadOrderDetail();
+          refreshTasks.push(loadOrderDetail());
         }
+        await Promise.all(refreshTasks);
       } catch (err) {
         setError(err.message || "No se pudo forzar el cierre de la mesa.");
       } finally {
-        setClosingTable(false);
+        setClosingTableCode("");
       }
     },
     [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
@@ -822,7 +826,7 @@ export function App() {
           actorSector={staffSector}
           onCloseTableByCode={closeTableByCode}
           onForceCloseTableByCode={forceCloseTableByCode}
-          closingTable={closingTable}
+          closingTableCode={closingTableCode}
           onRequestWaiterCalls={requestAdminWaiterCalls}
           onRequestTableSessionConsumption={requestTableSessionConsumption}
           onResolveWaiterCall={resolveWaiterCall}
@@ -1187,7 +1191,7 @@ export function App() {
           advancingKey={advancingKey}
           onCloseTable={closeTable}
           onForceCloseTable={() => forceCloseTableByCode(selectedOrderDetail?.table_code)}
-          closingTable={closingTable}
+          closingTableCode={closingTableCode}
           onCreateSplit={createSplit}
           onConfirmPart={confirmPart}
           onResolveCashRequest={resolveCash}

@@ -228,7 +228,7 @@ export function AdminBoardPage({
   actorSector = "ADMIN",
   onCloseTableByCode = () => {},
   onForceCloseTableByCode = () => {},
-  closingTable = false,
+  closingTableCode = "",
   onRequestWaiterCalls = async () => [],
   onRequestTableSessionConsumption = async () => null,
   onResolveWaiterCall = async () => {},
@@ -811,10 +811,10 @@ export function AdminBoardPage({
                         ) : row.status === "LISTA_PARA_CERRAR" ? (
                           <button
                             className="btn-secondary"
-                            disabled={closingTable}
+                            disabled={closingTableCode === row.table_code}
                             onClick={() => onCloseTableByCode(row.table_code)}
                           >
-                            {closingTable ? "Cerrando..." : "Cerrar mesa"}
+                            {closingTableCode === row.table_code ? "Cerrando..." : "Cerrar mesa"}
                           </button>
                         ) : row.status === "PAGO_CONFIRMADO" ? (
                           <span className="muted">Pago listo. Falta entrega para cerrar.</span>
@@ -825,10 +825,10 @@ export function AdminBoardPage({
                         )}
                         <button
                           className="btn-secondary"
-                          disabled={closingTable}
+                          disabled={closingTableCode === row.table_code}
                           onClick={() => forceCloseTable(row)}
                         >
-                          {closingTable ? "Cerrando..." : "Forzar cierre"}
+                          {closingTableCode === row.table_code ? "Cerrando..." : "Forzar cierre"}
                         </button>
                       </div>
                     )}
@@ -1014,10 +1014,10 @@ export function AdminBoardPage({
                       </button>
                       <button
                         className="btn-secondary"
-                        disabled={closingTable}
+                        disabled={closingTableCode === activeModal.row.table_code}
                         onClick={() => forceCloseTable(activeModal.row)}
                       >
-                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                        {closingTableCode === activeModal.row.table_code ? "Cerrando..." : "Forzar cierre"}
                       </button>
                       <span className="muted">Cerrar mesa queda habilitado recien despues de confirmar el pago.</span>
                     </div>
@@ -1027,10 +1027,10 @@ export function AdminBoardPage({
                       <span className="muted">Pago confirmado. La mesa sigue abierta hasta terminar la entrega.</span>
                       <button
                         className="btn-secondary"
-                        disabled={closingTable}
+                        disabled={closingTableCode === activeModal.row.table_code}
                         onClick={() => forceCloseTable(activeModal.row)}
                       >
-                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                        {closingTableCode === activeModal.row.table_code ? "Cerrando..." : "Forzar cierre"}
                       </button>
                     </div>
                   )}
@@ -1039,10 +1039,10 @@ export function AdminBoardPage({
                       <span className="muted">Todo esta entregado, pero todavia falta confirmar el pago.</span>
                       <button
                         className="btn-secondary"
-                        disabled={closingTable}
+                        disabled={closingTableCode === activeModal.row.table_code}
                         onClick={() => forceCloseTable(activeModal.row)}
                       >
-                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                        {closingTableCode === activeModal.row.table_code ? "Cerrando..." : "Forzar cierre"}
                       </button>
                     </div>
                   )}
@@ -1050,17 +1050,17 @@ export function AdminBoardPage({
                     <div className="order-actions">
                       <button
                         className="btn-secondary"
-                        disabled={closingTable}
+                        disabled={closingTableCode === activeModal.row.table_code}
                         onClick={() => onCloseTableByCode(activeModal.row.table_code)}
                       >
-                        {closingTable ? "Cerrando..." : "Cerrar mesa"}
+                        {closingTableCode === activeModal.row.table_code ? "Cerrando..." : "Cerrar mesa"}
                       </button>
                       <button
                         className="btn-secondary"
-                        disabled={closingTable}
+                        disabled={closingTableCode === activeModal.row.table_code}
                         onClick={() => forceCloseTable(activeModal.row)}
                       >
-                        {closingTable ? "Cerrando..." : "Forzar cierre"}
+                        {closingTableCode === activeModal.row.table_code ? "Cerrando..." : "Forzar cierre"}
                       </button>
                       <span className="muted">Todo entregado y pago confirmado. Ya podes cerrar la mesa.</span>
                     </div>
@@ -1328,11 +1328,19 @@ export function AdminBoardPage({
           onClose={() => setForceCloseTarget(null)}
         >
           <div className="order-actions">
-            <button className="btn-secondary" onClick={() => setForceCloseTarget(null)} disabled={closingTable}>
+            <button
+              className="btn-secondary"
+              onClick={() => setForceCloseTarget(null)}
+              disabled={closingTableCode === forceCloseTarget.table_code}
+            >
               Cancelar
             </button>
-            <button className="btn-primary" onClick={confirmForceClose} disabled={closingTable}>
-              {closingTable ? "Cerrando..." : "Aceptar y forzar cierre"}
+            <button
+              className="btn-primary"
+              onClick={confirmForceClose}
+              disabled={closingTableCode === forceCloseTarget.table_code}
+            >
+              {closingTableCode === forceCloseTarget.table_code ? "Cerrando..." : "Aceptar y forzar cierre"}
             </button>
           </div>
         </Modal>

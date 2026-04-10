@@ -63,7 +63,7 @@ export function OrderDetailPanel({
   advancingKey,
   onCloseTable,
   onForceCloseTable = () => {},
-  closingTable = false,
+  closingTableCode = "",
   onCreateSplit,
   onConfirmPart,
   onResolveCashRequest = () => {},
@@ -73,6 +73,7 @@ export function OrderDetailPanel({
     Array.isArray(orderDetail?.items) &&
     orderDetail.items.length > 0 &&
     orderDetail.items.every((item) => item.status === "DELIVERED");
+  const isClosingCurrentTable = Boolean(orderDetail?.table_code) && closingTableCode === orderDetail.table_code;
   const normalCloseEnabled =
     !orderDetail ||
     Number(orderDetail.total_amount || 0) <= 0 ||
@@ -110,11 +111,11 @@ export function OrderDetailPanel({
             </p>
             {actorSector === "ADMIN" && (
               <div className="order-actions">
-                <button className="btn-secondary" onClick={onCloseTable} disabled={closingTable || !normalCloseEnabled}>
-                  {closingTable ? "Cerrando..." : "Cerrar mesa"}
+                <button className="btn-secondary" onClick={onCloseTable} disabled={isClosingCurrentTable || !normalCloseEnabled}>
+                  {isClosingCurrentTable ? "Cerrando..." : "Cerrar mesa"}
                 </button>
-                <button className="btn-secondary" onClick={onForceCloseTable} disabled={closingTable}>
-                  {closingTable ? "Cerrando..." : "Forzar cierre"}
+                <button className="btn-secondary" onClick={onForceCloseTable} disabled={isClosingCurrentTable}>
+                  {isClosingCurrentTable ? "Cerrando..." : "Forzar cierre"}
                 </button>
                 {!normalCloseEnabled && (
                   <span className="muted">Cerrar mesa requiere pago confirmado y entrega completa.</span>
@@ -242,11 +243,11 @@ export function OrderDetailPanel({
                 ))}
                 {actorSector === "ADMIN" && orderDetail.bill_split.status === "CLOSED" && (
                   <div className="order-actions">
-                    <button className="btn-primary" onClick={onCloseTable} disabled={closingTable}>
-                      {closingTable ? "Cerrando..." : "Cerrar mesa y finalizar"}
+                    <button className="btn-primary" onClick={onCloseTable} disabled={isClosingCurrentTable}>
+                      {isClosingCurrentTable ? "Cerrando..." : "Cerrar mesa y finalizar"}
                     </button>
-                    <button className="btn-secondary" onClick={onForceCloseTable} disabled={closingTable}>
-                      {closingTable ? "Cerrando..." : "Forzar cierre"}
+                    <button className="btn-secondary" onClick={onForceCloseTable} disabled={isClosingCurrentTable}>
+                      {isClosingCurrentTable ? "Cerrando..." : "Forzar cierre"}
                     </button>
                   </div>
                 )}
