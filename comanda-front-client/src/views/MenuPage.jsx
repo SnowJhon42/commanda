@@ -217,9 +217,19 @@ export function MenuPage({
             <div className="menu-lines">
               {filteredProducts.map((product) => {
                 const inCartQty = productQtyInCart[product.id] || 0;
+                const hasImage = Boolean(product.image_url);
                 return (
-                  <article className="menu-product-row" key={product.id}>
-                    <div className="menu-product-card-shell">
+                  <article
+                    className={hasImage ? "menu-product-row" : "menu-product-row menu-product-row-no-image"}
+                    key={product.id}
+                  >
+                    <div
+                      className={
+                        hasImage
+                          ? "menu-product-card-shell"
+                          : "menu-product-card-shell menu-product-card-shell-no-image"
+                      }
+                    >
                       <div className="menu-product-copy">
                         <div className="menu-product-head">
                           <button
@@ -229,9 +239,11 @@ export function MenuPage({
                           >
                             {product.name}
                           </button>
-                          <div className="menu-product-head-right">
-                            <p className="menu-line-price">{toMoney(product.base_price)}</p>
-                          </div>
+                          {hasImage ? (
+                            <div className="menu-product-head-right">
+                              <p className="menu-line-price">{toMoney(product.base_price)}</p>
+                            </div>
+                          ) : null}
                         </div>
                         <p className="menu-product-description">
                           {product.description || "Producto disponible para agregar al pedido."}
@@ -240,42 +252,64 @@ export function MenuPage({
                           <p className="menu-product-inline-note">Comentario guardado</p>
                         ) : null}
                       </div>
-                      <div className="menu-product-media">
-                        <button
-                          type="button"
-                          className="menu-product-media-button"
-                          onClick={() => setPreviewProduct(product)}
-                          aria-label={`Ver ${product.name}`}
-                        >
-                          {product.image_url ? (
+                      {hasImage ? (
+                        <div className="menu-product-media">
+                          <button
+                            type="button"
+                            className="menu-product-media-button"
+                            onClick={() => setPreviewProduct(product)}
+                            aria-label={`Ver ${product.name}`}
+                          >
                             <img
                               className="menu-product-image"
                               src={product.image_url}
                               alt={product.name}
                               loading="lazy"
                             />
-                          ) : (
-                            <div className="menu-product-image-fallback">Sin imagen</div>
-                          )}
-                        </button>
-                        {inCartQty > 0 ? <span className="menu-product-cart-count">{inCartQty}</span> : null}
-                        <button
-                          type="button"
-                          className="menu-product-overlay-btn menu-product-overlay-btn-comment"
-                          onClick={() => openCommentModal(product)}
-                          aria-label={`Agregar comentario a ${product.name}`}
-                        >
-                          ✎
-                        </button>
-                        <button
-                          type="button"
-                          className="menu-product-overlay-btn menu-product-overlay-btn-add"
-                          onClick={() => handlePrimaryAdd(product)}
-                          aria-label={`Agregar ${product.name}`}
-                        >
-                          +
-                        </button>
-                      </div>
+                          </button>
+                          {inCartQty > 0 ? <span className="menu-product-cart-count">{inCartQty}</span> : null}
+                          <button
+                            type="button"
+                            className="menu-product-overlay-btn menu-product-overlay-btn-comment"
+                            onClick={() => openCommentModal(product)}
+                            aria-label={`Agregar comentario a ${product.name}`}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            className="menu-product-overlay-btn menu-product-overlay-btn-add"
+                            onClick={() => handlePrimaryAdd(product)}
+                            aria-label={`Agregar ${product.name}`}
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="menu-product-inline-price-wrap">
+                            <p className="menu-product-inline-price">{toMoney(product.base_price)}</p>
+                          </div>
+                          <div className="menu-product-inline-actions">
+                            <button
+                              type="button"
+                              className="menu-product-inline-icon-btn"
+                              onClick={() => openCommentModal(product)}
+                              aria-label={`Agregar comentario a ${product.name}`}
+                            >
+                              ✎
+                            </button>
+                            <button
+                              type="button"
+                              className="menu-product-inline-icon-btn menu-product-inline-icon-btn-primary"
+                              onClick={() => handlePrimaryAdd(product)}
+                              aria-label={`Agregar ${product.name}`}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                     {configModalProduct?.id === product.id && (
                       <div className="menu-inline-config-hint">
