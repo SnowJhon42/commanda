@@ -13,11 +13,45 @@ export function SessionClosedFeedbackPage({
 
   const whatsappUrl = useMemo(() => {
     const menuUrl = clientUrl || (typeof window !== "undefined" ? window.location.origin : "");
-    const text = encodeURIComponent(
-      `Estuve en COMANDA (mesa ${tableCode || "-"}) y esta muy bueno! Venite que esta muy bueno.\n\nPodes ver el menu aca:\n${menuUrl}`
-    );
-    return `https://wa.me/?text=${text}`;
+    const message = `Estuve en COMANDA y la pasé muy bien. Mirá la carta acá:\n${menuUrl}`;
+    const text = encodeURIComponent(message);
+    return {
+      message,
+      mobileDeepLink: `whatsapp://send?text=${text}`,
+      mobileWebLink: `https://api.whatsapp.com/send?text=${text}`,
+      desktopWebLink: `https://web.whatsapp.com/send?text=${text}`,
+    };
   }, [tableCode, clientUrl]);
+
+  const handleShareWhatsapp = async () => {
+    if (typeof window === "undefined") return;
+
+    const ua = window.navigator.userAgent || "";
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(ua);
+    const canNativeShare = typeof window.navigator.share === "function";
+
+    if (canNativeShare) {
+      try {
+        await window.navigator.share({
+          text: whatsappUrl.message,
+          url: clientUrl || window.location.origin,
+        });
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+      }
+    }
+
+    if (isMobile) {
+      window.location.href = whatsappUrl.mobileDeepLink;
+      window.setTimeout(() => {
+        window.location.href = whatsappUrl.mobileWebLink;
+      }, 900);
+      return;
+    }
+
+    window.open(whatsappUrl.desktopWebLink, "_blank", "noopener,noreferrer");
+  };
 
   const submit = (e) => {
     e.preventDefault();
@@ -71,10 +105,7 @@ export function SessionClosedFeedbackPage({
         <button
           type="button"
           className="btn-secondary"
-          onClick={() => {
-            if (typeof window === "undefined") return;
-            window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-          }}
+          onClick={handleShareWhatsapp}
         >
           Compartir por WhatsApp
         </button>
