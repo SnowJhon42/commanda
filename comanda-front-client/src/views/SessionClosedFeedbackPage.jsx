@@ -26,15 +26,14 @@ export function SessionClosedFeedbackPage({
   const handleShareWhatsapp = async () => {
     if (typeof window === "undefined") return;
 
-    const ua = window.navigator.userAgent || "";
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(ua);
     const canNativeShare = typeof window.navigator.share === "function";
+    const shareUrl = clientUrl || window.location.origin;
 
     if (canNativeShare) {
       try {
         await window.navigator.share({
           text: whatsappUrl.message,
-          url: clientUrl || window.location.origin,
+          url: shareUrl,
         });
         return;
       } catch (error) {
@@ -42,14 +41,12 @@ export function SessionClosedFeedbackPage({
       }
     }
 
+    const ua = window.navigator.userAgent || "";
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(ua);
     if (isMobile) {
-      window.location.href = whatsappUrl.mobileDeepLink;
-      window.setTimeout(() => {
-        window.location.href = whatsappUrl.mobileWebLink;
-      }, 900);
+      window.location.href = whatsappUrl.mobileWebLink;
       return;
     }
-
     window.open(whatsappUrl.desktopWebLink, "_blank", "noopener,noreferrer");
   };
 
@@ -107,7 +104,7 @@ export function SessionClosedFeedbackPage({
           className="btn-secondary"
           onClick={handleShareWhatsapp}
         >
-          Compartir por WhatsApp
+          Compartir
         </button>
         <button type="button" className="btn-secondary" onClick={onRestart}>
           Cerrar
