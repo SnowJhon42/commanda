@@ -9,6 +9,20 @@ def _table_columns(conn: Connection, table_name: str) -> set[str]:
     return {column["name"] for column in inspector.get_columns(table_name)}
 
 
+def apply_runtime_schema_bootstrap(conn: Connection) -> None:
+    inspector = inspect(conn)
+    existing_tables = set(inspector.get_table_names())
+    dialect = conn.dialect.name
+
+    if "products" in existing_tables:
+        product_columns = _table_columns(conn, "products")
+        if "archived" not in product_columns:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE products ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE"))
+            else:
+                conn.execute(text("ALTER TABLE products ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"))
+
+
 def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
     conn.execute(
         text(

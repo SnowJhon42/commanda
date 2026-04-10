@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import admin, auth, billing, events, menu, orders, staff, table_sessions
 from app.core.config import settings
 from app.db.models import entities as _entities  # noqa: F401
-from app.db.runtime_schema import validate_runtime_schema
+from app.db.runtime_schema import apply_runtime_schema_bootstrap, validate_runtime_schema
 from app.db.session import engine
 
 app = FastAPI(title=settings.app_name)
@@ -22,6 +22,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     with engine.begin() as conn:
+        apply_runtime_schema_bootstrap(conn)
         issues = validate_runtime_schema(conn)
     if issues:
         joined = "; ".join(issues)
