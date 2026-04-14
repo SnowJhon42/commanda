@@ -72,6 +72,7 @@ class Store(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     show_live_total_to_client: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     print_mode: Mapped[str] = mapped_column(String(20), default="MANUAL", nullable=False)
+    whatsapp_share_template: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 

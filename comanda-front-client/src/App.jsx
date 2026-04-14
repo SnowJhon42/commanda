@@ -1070,6 +1070,8 @@ export function App() {
               ? `${window.location.origin}/?mesa=${encodeURIComponent(closedSession.tableCode || "")}`
               : ""
           }
+          restaurantName={menu?.store_name || ""}
+          whatsappShareTemplate={menu?.whatsapp_share_template || ""}
           saving={feedbackSaving}
           error={feedbackError}
           onSubmit={submitFeedbackAndReset}

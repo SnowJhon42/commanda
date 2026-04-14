@@ -137,6 +137,16 @@ class UpdateStorePrintSettingsRequest(BaseModel):
     print_mode: str = Field(..., pattern="^(MANUAL|AUTOMATIC)$")
 
 
+class StoreMessagingSettingsResponse(BaseModel):
+    store_id: int
+    restaurant_name: str
+    whatsapp_share_template: str | None = None
+
+
+class UpdateStoreMessagingSettingsRequest(BaseModel):
+    whatsapp_share_template: str = Field(..., min_length=1, max_length=2000)
+
+
 class CloseTableSessionResponse(BaseModel):
     table_session_id: int
     table_code: str

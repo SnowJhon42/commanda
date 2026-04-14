@@ -55,7 +55,9 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
 
     return MenuResponse(
         store_id=store_id,
+        store_name=store.name,
         show_live_total_to_client=bool(store.show_live_total_to_client),
+        whatsapp_share_template=store.whatsapp_share_template,
         categories=[CategoryOut(id=c.id, name=c.name, image_url=c.image_url, sort_order=c.sort_order) for c in categories],
         products=[
             ProductOut(

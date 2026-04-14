@@ -44,10 +44,12 @@ from app.schemas.orders import (
     StaffBoardItemOut,
     StaffBoardItemsResponse,
     StorePrintSettingsResponse,
+    StoreMessagingSettingsResponse,
     StoreClientVisibilityResponse,
     StaffTableSessionOut,
     StaffTableSessionsResponse,
     UpdateStorePrintSettingsRequest,
+    UpdateStoreMessagingSettingsRequest,
     UpdateStoreClientVisibilityRequest,
 )
 from app.services.billing import get_latest_bill_split, to_bill_split_out
@@ -62,6 +64,7 @@ ACTIVE_TABLE_SESSION_STATUSES = (
     TableSessionStatus.CON_PEDIDO.value,
 )
 PRINT_MODES = {"MANUAL", "AUTOMATIC"}
+DEFAULT_WHATSAPP_SHARE_TEMPLATE = "Estuve en {restaurant_name} y la pasé muy bien. Mirá la carta acá:\n{menu_url}"
 
 
 def _order_total_amount(order: Order) -> float:
@@ -331,6 +334,61 @@ def patch_store_print_mode(
         },
     )
     return StorePrintSettingsResponse(store_id=store.id, print_mode=store.print_mode)
+
+
+@router.get("/store-settings/messaging", response_model=StoreMessagingSettingsResponse)
+def get_store_messaging_settings(
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StoreMessagingSettingsResponse:
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    return StoreMessagingSettingsResponse(
+        store_id=store.id,
+        restaurant_name=store.name,
+        whatsapp_share_template=store.whatsapp_share_template or DEFAULT_WHATSAPP_SHARE_TEMPLATE,
+    )
+
+
+@router.patch("/store-settings/messaging", response_model=StoreMessagingSettingsResponse)
+def patch_store_messaging_settings(
+    payload: UpdateStoreMessagingSettingsRequest,
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StoreMessagingSettingsResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    template = payload.whatsapp_share_template.strip()
+    if not template:
+        raise HTTPException(status_code=422, detail="Template is required")
+
+    store.whatsapp_share_template = template
+    db.add(store)
+    db.commit()
+    db.refresh(store)
+    event_bus.publish(
+        "store.settings.updated",
+        {
+            "store_id": store.id,
+            "whatsapp_share_template": store.whatsapp_share_template,
+        },
+    )
+    return StoreMessagingSettingsResponse(
+        store_id=store.id,
+        restaurant_name=store.name,
+        whatsapp_share_template=store.whatsapp_share_template or DEFAULT_WHATSAPP_SHARE_TEMPLATE,
+    )
 
 
 @router.get("/table-sessions", response_model=StaffTableSessionsResponse)

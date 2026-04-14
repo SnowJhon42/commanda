@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 export function SessionClosedFeedbackPage({
   tableCode,
   clientUrl = "",
+  restaurantName = "",
+  whatsappShareTemplate = "",
   saving,
   error,
   onSubmit,
@@ -12,28 +14,40 @@ export function SessionClosedFeedbackPage({
   const [comment, setComment] = useState("");
 
   const whatsappUrl = useMemo(() => {
-    const menuUrl = clientUrl || (typeof window !== "undefined" ? window.location.origin : "");
-    const message = `Estuve en COMANDA y la pasé muy bien. Mirá la carta acá:\n${menuUrl}`;
-    const text = encodeURIComponent(message);
+    const message = String(whatsappShareTemplate || "").trim() || "Estuve en COMANDA y la pasé muy bien.";
+    let shareUrl = "";
+    try {
+      if (clientUrl) {
+        const parsed = new URL(clientUrl);
+        shareUrl = `${parsed.origin}${parsed.pathname}`;
+      } else if (typeof window !== "undefined") {
+        shareUrl = `${window.location.origin}/`;
+      }
+    } catch {
+      shareUrl = typeof window !== "undefined" ? `${window.location.origin}/` : "";
+    }
+    const shareText = shareUrl ? `${message}\n${shareUrl}` : message;
+    const text = encodeURIComponent(shareText);
     return {
       message,
+      shareUrl,
+      shareText,
       mobileDeepLink: `whatsapp://send?text=${text}`,
       mobileWebLink: `https://api.whatsapp.com/send?text=${text}`,
       desktopWebLink: `https://web.whatsapp.com/send?text=${text}`,
     };
-  }, [tableCode, clientUrl]);
+  }, [tableCode, clientUrl, restaurantName, whatsappShareTemplate]);
 
   const handleShareWhatsapp = async () => {
     if (typeof window === "undefined") return;
 
     const canNativeShare = typeof window.navigator.share === "function";
-    const shareUrl = clientUrl || window.location.origin;
 
     if (canNativeShare) {
       try {
         await window.navigator.share({
           text: whatsappUrl.message,
-          url: shareUrl,
+          url: whatsappUrl.shareUrl || undefined,
         });
         return;
       } catch (error) {

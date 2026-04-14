@@ -208,6 +208,37 @@ export async function patchStorePrintMode({ token, storeId, printMode }) {
   }
 }
 
+export async function fetchStoreMessagingSettings({ token, storeId }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/messaging?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar configuración de mensajes.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar configuración de mensajes.");
+  }
+}
+
+export async function patchStoreMessagingSettings({ token, storeId, whatsappShareTemplate }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/messaging?${qs.toString()}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ whatsapp_share_template: whatsappShareTemplate }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo guardar el mensaje.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo guardar el mensaje.");
+  }
+}
+
 export async function patchItemStatus({ token, itemId, toStatus }) {
   try {
     const res = await fetch(`${API_URL}/staff/items/${itemId}/status`, {

@@ -32,13 +32,14 @@ import { WaiterBoardPage } from "./pages/WaiterBoardPage";
 import { OrderDetailPanel } from "./pages/OrderDetailPanel";
 import { FeedbackSummaryPage } from "./pages/FeedbackSummaryPage";
 import { MenuEditorPage } from "./pages/MenuEditorPage";
+import { StoreMessagingPage } from "./pages/StoreMessagingPage";
 import { TableSessionsPanel } from "./pages/TableSessionsPanel";
 import { elapsedMinutes } from "./utils/boardMeta";
 import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
-const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU"];
+const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU", "MESSAGING"];
 const ARG_TZ = "America/Argentina/Buenos_Aires";
 
 function formatArgentinaClock(value) {
@@ -815,6 +816,9 @@ export function App() {
           <MenuEditorPage token={session?.access_token} storeId={session?.staff?.store_id} />
         );
       }
+      if (adminView === "MESSAGING") {
+        return <StoreMessagingPage token={session?.access_token} storeId={session?.staff?.store_id} />;
+      }
       return (
         <AdminBoardPage
           rows={visibleRows}
@@ -878,7 +882,7 @@ export function App() {
           }
           return;
         }
-        if (adminView === "MENU") {
+        if (adminView === "MENU" || adminView === "MESSAGING") {
           await loadTableSessions();
           if (selectedOrderId) {
             await loadOrderDetail();
@@ -902,7 +906,7 @@ export function App() {
   }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode]);
 
   useEffect(() => {
-    if (!session || (session.staff.sector === "ADMIN" && adminView === "MENU")) return;
+    if (!session || (session.staff.sector === "ADMIN" && (adminView === "MENU" || adminView === "MESSAGING"))) return;
 
     const stream = openStaffEvents({
       storeId: session.staff.store_id,
@@ -1082,6 +1086,8 @@ export function App() {
                     ? "FEEDBACK CLIENTES"
                     : mode === "MENU"
                     ? "EDITOR DE MENÚ"
+                    : mode === "MESSAGING"
+                    ? "MENSAJES"
                     : mode}
                 </option>
               ))}
@@ -1164,7 +1170,7 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU")) && (
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "MESSAGING")) && (
           <TableSessionsPanel
             rows={tableSessionsRows}
             loading={tableSessionsLoading}
@@ -1179,7 +1185,7 @@ export function App() {
         board
       )}
 
-        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU")) && (
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "MESSAGING")) && (
           <OrderDetailPanel
             orderDetail={selectedOrderDetail}
             selectedOrderId={selectedOrderId}

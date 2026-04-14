@@ -22,6 +22,11 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
             else:
                 conn.execute(text("ALTER TABLE products ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"))
 
+    if "stores" in existing_tables:
+        store_columns = _table_columns(conn, "stores")
+        if "whatsapp_share_template" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN whatsapp_share_template TEXT NULL"))
+
 
 def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
     conn.execute(
@@ -241,6 +246,8 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE stores ADD COLUMN show_live_total_to_client INTEGER NOT NULL DEFAULT 1"))
     if "print_mode" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN print_mode TEXT NOT NULL DEFAULT 'MANUAL'"))
+    if "whatsapp_share_template" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN whatsapp_share_template TEXT NULL"))
 
     table_session_column_names = _table_columns(conn, "table_sessions")
     if "guest_count" not in table_session_column_names:
@@ -301,7 +308,7 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
             issues.append(f"order_items missing column: {column}")
 
     if "stores" in existing_tables:
-        missing = {"show_live_total_to_client", "print_mode"} - _table_columns(conn, "stores")
+        missing = {"show_live_total_to_client", "print_mode", "whatsapp_share_template"} - _table_columns(conn, "stores")
         for column in sorted(missing):
             issues.append(f"stores missing column: {column}")
 

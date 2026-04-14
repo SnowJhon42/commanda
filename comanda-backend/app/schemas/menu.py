@@ -54,7 +54,9 @@ class ProductOut(BaseModel):
 
 class MenuResponse(BaseModel):
     store_id: int
+    store_name: str
     show_live_total_to_client: bool = True
+    whatsapp_share_template: str | None = None
     categories: list[CategoryOut]
     products: list[ProductOut]
 
