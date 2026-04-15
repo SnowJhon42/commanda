@@ -239,6 +239,66 @@ export async function patchStoreMessagingSettings({ token, storeId, whatsappShar
   }
 }
 
+export async function fetchActiveShift({ token, storeId }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/shifts/active?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar el turno activo.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar el turno activo.");
+  }
+}
+
+export async function openShift({ token, storeId, label, operatorName }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/shifts/open?${qs.toString()}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ label, operator_name: operatorName }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo abrir el turno.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo abrir el turno.");
+  }
+}
+
+export async function closeShift({ token, storeId }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/shifts/close?${qs.toString()}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cerrar el turno.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cerrar el turno.");
+  }
+}
+
+export async function fetchShiftSummaries({ token, storeId, limit = 30 }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId), limit: String(limit) });
+    const res = await fetch(`${API_URL}/staff/shifts/summaries?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron cargar los resúmenes.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron cargar los resúmenes.");
+  }
+}
+
 export async function patchItemStatus({ token, itemId, toStatus }) {
   try {
     const res = await fetch(`${API_URL}/staff/items/${itemId}/status`, {

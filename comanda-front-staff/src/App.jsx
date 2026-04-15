@@ -5,7 +5,9 @@ import {
   fetchAdminOrders,
   fetchFeedbackSummary,
   fetchStorePrintMode,
+  fetchActiveShift,
   fetchStaffBoardItems,
+  fetchShiftSummaries,
   fetchTableSessions,
   fetchTableSessionConsumption,
   fetchStaffOrderItems,
@@ -15,6 +17,7 @@ import {
   openStaffEvents,
   closeTableSession,
   forceCloseTableSession,
+  closeShift,
   confirmSplitPart,
   forceConfirmOrderPayment,
   createEqualSplit,
@@ -23,6 +26,7 @@ import {
   resolveCashRequest,
   patchItemStatus,
   patchTableSessionStatus,
+  openShift,
 } from "./api/staffApi";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminBoardPage } from "./pages/AdminBoardPage";
@@ -33,13 +37,15 @@ import { OrderDetailPanel } from "./pages/OrderDetailPanel";
 import { FeedbackSummaryPage } from "./pages/FeedbackSummaryPage";
 import { MenuEditorPage } from "./pages/MenuEditorPage";
 import { StoreMessagingPage } from "./pages/StoreMessagingPage";
+import { ShiftClosurePage } from "./pages/ShiftClosurePage";
+import { ShiftSummariesPage } from "./pages/ShiftSummariesPage";
 import { TableSessionsPanel } from "./pages/TableSessionsPanel";
 import { elapsedMinutes } from "./utils/boardMeta";
 import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
-const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU", "MESSAGING"];
+const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU", "MESSAGING", "CLOSURE", "SUMMARIES"];
 const ARG_TZ = "America/Argentina/Buenos_Aires";
 
 function formatArgentinaClock(value) {
@@ -163,6 +169,7 @@ function applyItemEventPayloadToDetail(detail, payload) {
 export function App() {
   const [clockNow, setClockNow] = useState(() => new Date());
   const [session, setSession] = useState(null);
+  const [recentClosedShift, setRecentClosedShift] = useState(null);
   const [boardRows, setBoardRows] = useState([]);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -191,6 +198,17 @@ export function App() {
   const [liveConnected, setLiveConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [alarmText, setAlarmText] = useState("");
+  const [activeShift, setActiveShift] = useState(null);
+  const [shiftSummary, setShiftSummary] = useState({
+    closedCovers: 0,
+    closedTables: 0,
+    totalRevenue: 0,
+    avgDurationMinutes: 0,
+    avgRating: 0,
+    feedbackCount: 0,
+    closedTableDetails: [],
+  });
+  const [shiftSummaries, setShiftSummaries] = useState([]);
   const lastDoneAlertRef = useRef("");
   const lastDelayAlertRef = useRef("");
   const lastCashAlertRef = useRef("");
@@ -237,6 +255,11 @@ export function App() {
   }, [soundEnabled]);
 
   const staffSector = session?.staff?.sector;
+
+  const activeCovers = useMemo(
+    () => (tableSessionsRows || []).reduce((sum, row) => sum + Number(row.guest_count || 0), 0),
+    [tableSessionsRows]
+  );
 
   const loadBoard = useCallback(async () => {
     if (!session) return;
@@ -334,6 +357,49 @@ export function App() {
       setError(err.message || "No se pudieron cargar mesas ocupadas.");
     } finally {
       setTableSessionsLoading(false);
+    }
+  }, [session]);
+
+  const loadShiftState = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    try {
+      const data = await fetchActiveShift({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+      });
+      setActiveShift(data.active_shift || null);
+      setShiftSummary({
+        closedCovers: Number(data.summary?.closed_covers || 0),
+        closedTables: Number(data.summary?.closed_tables || 0),
+        totalRevenue: Number(data.summary?.total_revenue || 0),
+        avgDurationMinutes: Number(data.summary?.avg_duration_minutes || 0),
+        avgRating: Number(data.summary?.avg_rating || 0),
+        feedbackCount: Number(data.summary?.feedback_count || 0),
+        closedTableDetails: Array.isArray(data.summary?.closed_table_details)
+          ? data.summary.closed_table_details.map((entry) => ({
+              tableCode: entry.table_code,
+              guestCount: Number(entry.guest_count || 0),
+              totalAmount: Number(entry.total_amount || 0),
+              durationMinutes: Number(entry.duration_minutes || 0),
+              closedAt: entry.closed_at,
+            }))
+          : [],
+      });
+    } catch (err) {
+      setError(err.message || "No se pudo cargar el turno activo.");
+    }
+  }, [session]);
+
+  const loadShiftSummaries = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    try {
+      const data = await fetchShiftSummaries({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+      });
+      setShiftSummaries(data.items || []);
+    } catch (err) {
+      setError(err.message || "No se pudieron cargar los resúmenes.");
     }
   }, [session]);
 
@@ -475,6 +541,7 @@ export function App() {
         tableCode,
       });
       const refreshTasks = [loadBoard(), loadTableSessions()];
+      refreshTasks.push(loadShiftState());
       if (selectedOrderId) {
         refreshTasks.push(loadOrderDetail());
       }
@@ -484,7 +551,7 @@ export function App() {
     } finally {
       setClosingTableCode("");
     }
-  }, [session, selectedOrderDetail, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]);
+  }, [session, selectedOrderDetail, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions, loadShiftState]);
 
   const closeTableByCode = useCallback(
     async (tableCode) => {
@@ -497,6 +564,7 @@ export function App() {
           tableCode,
         });
         const refreshTasks = [loadBoard(), loadTableSessions()];
+        refreshTasks.push(loadShiftState());
         if (selectedOrderId) {
           refreshTasks.push(loadOrderDetail());
         }
@@ -507,7 +575,7 @@ export function App() {
         setClosingTableCode("");
       }
     },
-    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
+    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions, loadShiftState]
   );
 
   const forceCloseTableByCode = useCallback(
@@ -521,6 +589,7 @@ export function App() {
           tableCode,
         });
         const refreshTasks = [loadBoard(), loadTableSessions()];
+        refreshTasks.push(loadShiftState());
         if (selectedOrderId) {
           refreshTasks.push(loadOrderDetail());
         }
@@ -531,7 +600,7 @@ export function App() {
         setClosingTableCode("");
       }
     },
-    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
+    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions, loadShiftState]
   );
 
   const confirmReportedPayments = useCallback(
@@ -717,15 +786,107 @@ export function App() {
           tableSessionId,
           toStatus,
         });
-        await loadTableSessions();
-        await loadBoard();
+        await Promise.all([loadTableSessions(), loadBoard(), loadShiftState()]);
       } catch (err) {
         setError(err.message || "No se pudo actualizar la mesa.");
       } finally {
         setTableSessionBusyId(null);
       }
     },
-    [session, loadTableSessions, loadBoard]
+    [session, loadTableSessions, loadBoard, loadShiftState]
+  );
+
+  const handleCloseShiftPreview = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    try {
+      const data = await closeShift({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+      });
+      const closedShift = data.closed_shift;
+      const dateLabel = new Intl.DateTimeFormat("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: ARG_TZ,
+      }).format(new Date(closedShift.closed_at || new Date()));
+      setRecentClosedShift({
+        label: closedShift.label || "Turno actual",
+        user: closedShift.operator_name || session?.staff?.username || "admin",
+        dateLabel,
+      });
+      setActiveShift(null);
+      setShiftSummary({
+        closedCovers: 0,
+        closedTables: 0,
+        totalRevenue: 0,
+        avgDurationMinutes: 0,
+        avgRating: 0,
+        feedbackCount: 0,
+        closedTableDetails: [],
+      });
+      setSession(null);
+    } catch (err) {
+      setError(err.message || "No se pudo cerrar el turno.");
+    }
+  }, [session]);
+
+  const handleLoginWithShift = useCallback(
+    async (nextSession, shiftMeta) => {
+      if (nextSession?.staff?.sector === "ADMIN") {
+        try {
+          const activeData = await fetchActiveShift({
+            token: nextSession.access_token,
+            storeId: nextSession.staff.store_id,
+          });
+          if (activeData?.active_shift) {
+            setActiveShift(activeData.active_shift);
+            setShiftSummary({
+              closedCovers: Number(activeData.summary?.closed_covers || 0),
+              closedTables: Number(activeData.summary?.closed_tables || 0),
+              totalRevenue: Number(activeData.summary?.total_revenue || 0),
+              avgDurationMinutes: Number(activeData.summary?.avg_duration_minutes || 0),
+              avgRating: Number(activeData.summary?.avg_rating || 0),
+              feedbackCount: Number(activeData.summary?.feedback_count || 0),
+              closedTableDetails: Array.isArray(activeData.summary?.closed_table_details)
+                ? activeData.summary.closed_table_details.map((entry) => ({
+                    tableCode: entry.table_code,
+                    guestCount: Number(entry.guest_count || 0),
+                    totalAmount: Number(entry.total_amount || 0),
+                    durationMinutes: Number(entry.duration_minutes || 0),
+                    closedAt: entry.closed_at,
+                  }))
+                : [],
+            });
+          } else {
+            const opened = await openShift({
+              token: nextSession.access_token,
+              storeId: nextSession.staff.store_id,
+              label: shiftMeta?.label || "Turno actual",
+              operatorName: shiftMeta?.operator || nextSession.staff.username || "admin",
+            });
+            setActiveShift(opened.active_shift || null);
+            setShiftSummary({
+              closedCovers: Number(opened.summary?.closed_covers || 0),
+              closedTables: Number(opened.summary?.closed_tables || 0),
+              totalRevenue: Number(opened.summary?.total_revenue || 0),
+              avgDurationMinutes: Number(opened.summary?.avg_duration_minutes || 0),
+              avgRating: Number(opened.summary?.avg_rating || 0),
+              feedbackCount: Number(opened.summary?.feedback_count || 0),
+              closedTableDetails: [],
+            });
+          }
+        } catch (err) {
+          setError(err.message || "No se pudo iniciar el turno.");
+          throw err;
+        }
+      }
+      setRecentClosedShift(null);
+      setSession(nextSession);
+    },
+    []
   );
 
   const board = useMemo(() => {
@@ -819,6 +980,20 @@ export function App() {
       if (adminView === "MESSAGING") {
         return <StoreMessagingPage token={session?.access_token} storeId={session?.staff?.store_id} />;
       }
+      if (adminView === "CLOSURE") {
+        return (
+          <ShiftClosurePage
+            session={session}
+            activeShift={activeShift}
+            shiftSummary={shiftSummary}
+            onConfirmCloseShift={handleCloseShiftPreview}
+            onBackToBoard={() => setAdminView("BOARD")}
+          />
+        );
+      }
+      if (adminView === "SUMMARIES") {
+        return <ShiftSummariesPage items={shiftSummaries} />;
+      }
       return (
         <AdminBoardPage
           rows={visibleRows}
@@ -863,6 +1038,10 @@ export function App() {
     resolveWaiterCall,
     confirmReportedPayments,
     validatingPaymentKey,
+    activeShift,
+    shiftSummary,
+    shiftSummaries,
+    handleCloseShiftPreview,
   ]);
 
   useEffect(() => {
@@ -877,13 +1056,18 @@ export function App() {
         if (adminView === "FEEDBACK") {
           await loadFeedback();
           await loadTableSessions();
+          await loadShiftState();
           if (selectedOrderId) {
             await loadOrderDetail();
           }
           return;
         }
-        if (adminView === "MENU" || adminView === "MESSAGING") {
+        if (adminView === "MENU" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES") {
           await loadTableSessions();
+          await loadShiftState();
+          if (adminView === "SUMMARIES") {
+            await loadShiftSummaries();
+          }
           if (selectedOrderId) {
             await loadOrderDetail();
           }
@@ -892,6 +1076,9 @@ export function App() {
       }
       await loadBoard();
       await loadTableSessions();
+      if (session.staff.sector === "ADMIN") {
+        await loadShiftState();
+      }
       if (selectedOrderId) {
         await loadOrderDetail();
       }
@@ -900,13 +1087,15 @@ export function App() {
     if (session.staff.sector === "ADMIN") {
       loadStoreClientVisibility();
       loadStorePrintMode();
+      loadShiftState();
+      loadShiftSummaries();
     }
     const timer = setInterval(poll, 10000);
     return () => clearInterval(timer);
-  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode]);
+  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode, loadShiftState, loadShiftSummaries]);
 
   useEffect(() => {
-    if (!session || (session.staff.sector === "ADMIN" && (adminView === "MENU" || adminView === "MESSAGING"))) return;
+    if (!session || (session.staff.sector === "ADMIN" && (adminView === "MENU" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES"))) return;
 
     const stream = openStaffEvents({
       storeId: session.staff.store_id,
@@ -924,6 +1113,12 @@ export function App() {
           await loadBoard();
         }
         await loadTableSessions();
+        if (session.staff.sector === "ADMIN") {
+          await loadShiftState();
+          if (adminView === "SUMMARIES") {
+            await loadShiftSummaries();
+          }
+        }
         if (selectedOrderId) {
           await loadOrderDetail();
         }
@@ -1000,7 +1195,7 @@ export function App() {
       stream.close();
       setLiveConnected(false);
     };
-  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, loadTableSessions, playAlarm]);
+  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, loadTableSessions, loadShiftState, loadShiftSummaries, playAlarm]);
 
   useEffect(() => {
     if (!session || session.staff.sector === "ADMIN") return;
@@ -1042,7 +1237,7 @@ export function App() {
   }, [session, adminView, printMode, boardRows, autoPrintOrder]);
 
   if (!session) {
-    return <LoginPage onLogin={setSession} />;
+    return <LoginPage onLogin={handleLoginWithShift} closureReceipt={recentClosedShift} activeShift={activeShift} />;
   }
 
   return (
@@ -1054,6 +1249,11 @@ export function App() {
           <p className="muted">
             Usuario: <strong>{session.staff.username}</strong> | Sector: <strong>{session.staff.sector}</strong>
           </p>
+          {staffSector === "ADMIN" && (
+            <p className="muted">
+              Turno: <strong>{activeShift?.label || "-"}</strong> | Nombre: <strong>{activeShift?.operator_name || session.staff.username}</strong>
+            </p>
+          )}
           <p className={liveConnected ? "live-pill live-pill-on" : "live-pill"}>
             {liveConnected ? "Tiempo real conectado" : "Tiempo real reconectando"}
           </p>
@@ -1088,6 +1288,10 @@ export function App() {
                     ? "EDITOR DE MENÚ"
                     : mode === "MESSAGING"
                     ? "MENSAJES"
+                    : mode === "CLOSURE"
+                    ? "CIERRE"
+                    : mode === "SUMMARIES"
+                    ? "RESUMENES"
                     : mode}
                 </option>
               ))}
@@ -1157,6 +1361,19 @@ export function App() {
         </section>
       )}
 
+      {staffSector === "ADMIN" && adminView === "BOARD" && (
+        <section className="shift-quick-strip">
+          <article className="shift-quick-card">
+            <span>Cubiertos activos</span>
+            <strong>{activeCovers}</strong>
+          </article>
+          <article className="shift-quick-card">
+            <span>Cubiertos cerrados</span>
+            <strong>{shiftSummary.closedCovers}</strong>
+          </article>
+        </section>
+      )}
+
       {staffSector !== "ADMIN" && (
         <section className="panel toolbar">
           <label className="field inline-field">
@@ -1170,7 +1387,7 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "MESSAGING")) && (
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <TableSessionsPanel
             rows={tableSessionsRows}
             loading={tableSessionsLoading}
@@ -1185,7 +1402,7 @@ export function App() {
         board
       )}
 
-        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "MESSAGING")) && (
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <OrderDetailPanel
             orderDetail={selectedOrderDetail}
             selectedOrderId={selectedOrderId}

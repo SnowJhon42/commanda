@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,6 +17,7 @@ from app.db.models import (
     OrderItem,
     OrderStatus,
     Sector,
+    ServiceShift,
     StaffAccount,
     Store,
     Table,
@@ -37,6 +39,7 @@ from app.schemas.orders import (
     ChangeItemStatusRequest,
     ChangeItemStatusResponse,
     CloseTableSessionResponse,
+    CloseShiftResponse,
     ForceCloseTableSessionResponse,
     ItemStatusEventOut,
     MarkOrderPrintRequest,
@@ -45,6 +48,13 @@ from app.schemas.orders import (
     StaffBoardItemsResponse,
     StorePrintSettingsResponse,
     StoreMessagingSettingsResponse,
+    ActiveShiftResponse,
+    OpenShiftRequest,
+    ShiftClosedTableOut,
+    ShiftHistoryItemOut,
+    ShiftHistoryResponse,
+    ShiftSummaryOut,
+    StaffShiftOut,
     StoreClientVisibilityResponse,
     StaffTableSessionOut,
     StaffTableSessionsResponse,
@@ -69,6 +79,127 @@ DEFAULT_WHATSAPP_SHARE_TEMPLATE = "Estuve en {restaurant_name} y la pasé muy bi
 
 def _order_total_amount(order: Order) -> float:
     return float(sum(float(item.unit_price) * item.qty for item in order.items))
+
+
+def _serialize_shift(shift: ServiceShift) -> StaffShiftOut:
+    return StaffShiftOut(
+        id=shift.id,
+        store_id=shift.store_id,
+        label=shift.label,
+        operator_name=shift.operator_name,
+        status=shift.status,
+        opened_by_staff_id=shift.opened_by_staff_id,
+        closed_by_staff_id=shift.closed_by_staff_id,
+        opened_at=shift.opened_at,
+        closed_at=shift.closed_at,
+    )
+
+
+def _empty_shift_summary() -> ShiftSummaryOut:
+    return ShiftSummaryOut(
+        closed_covers=0,
+        closed_tables=0,
+        total_revenue=0,
+        avg_duration_minutes=0,
+        avg_rating=0,
+        feedback_count=0,
+        closed_table_details=[],
+        top_products=[],
+        top_beverages=[],
+    )
+
+
+def _latest_active_shift(db: Session, store_id: int) -> ServiceShift | None:
+    return db.scalar(
+        select(ServiceShift)
+        .where(
+            ServiceShift.store_id == store_id,
+            ServiceShift.status == "OPEN",
+            ServiceShift.closed_at.is_(None),
+        )
+        .order_by(ServiceShift.opened_at.desc(), ServiceShift.id.desc())
+        .limit(1)
+    )
+
+
+def _build_shift_summary(db: Session, *, shift: ServiceShift) -> ShiftSummaryOut:
+    closed_sessions = db.scalars(
+        select(TableSession)
+        .where(TableSession.closed_shift_id == shift.id)
+        .options(joinedload(TableSession.table))
+        .order_by(TableSession.closed_at.desc(), TableSession.id.desc())
+    ).all()
+
+    if not closed_sessions:
+        return _empty_shift_summary()
+
+    session_ids = [session.id for session in closed_sessions]
+    orders = db.scalars(
+        select(Order)
+        .where(Order.table_session_id.in_(session_ids))
+        .options(joinedload(Order.items))
+    ).unique().all()
+    orders_by_session: dict[int, list[Order]] = {}
+    for order in orders:
+        if order.table_session_id is None:
+            continue
+        orders_by_session.setdefault(order.table_session_id, []).append(order)
+
+    feedback_rows = db.scalars(
+        select(TableSessionFeedback).where(TableSessionFeedback.table_session_id.in_(session_ids))
+    ).all()
+    feedback_by_session: dict[int, list[TableSessionFeedback]] = {}
+    for feedback in feedback_rows:
+        feedback_by_session.setdefault(feedback.table_session_id, []).append(feedback)
+
+    details: list[ShiftClosedTableOut] = []
+    total_revenue = 0.0
+    total_duration = 0
+    total_covers = 0
+    all_ratings: list[int] = []
+
+    for table_session in closed_sessions:
+        session_orders = orders_by_session.get(table_session.id, [])
+        table_total = sum(_order_total_amount(order) for order in session_orders)
+        duration_minutes = _minutes_since(table_session.created_at, _as_utc(table_session.closed_at) or datetime.now(tz=timezone.utc))
+        total_revenue += table_total
+        total_duration += duration_minutes
+        total_covers += int(table_session.guest_count or 0)
+        all_ratings.extend(feedback.rating for feedback in feedback_by_session.get(table_session.id, []))
+        details.append(
+            ShiftClosedTableOut(
+                table_code=table_session.table.code if table_session.table else "-",
+                guest_count=int(table_session.guest_count or 0),
+                total_amount=float(table_total),
+                duration_minutes=duration_minutes,
+                closed_at=table_session.closed_at,
+            )
+        )
+
+    closed_tables = len(details)
+    avg_rating = (sum(all_ratings) / len(all_ratings)) if all_ratings else 0.0
+    avg_duration = round(total_duration / closed_tables) if closed_tables else 0
+    return ShiftSummaryOut(
+        closed_covers=total_covers,
+        closed_tables=closed_tables,
+        total_revenue=float(total_revenue),
+        avg_duration_minutes=int(avg_duration),
+        avg_rating=float(round(avg_rating, 2)),
+        feedback_count=len(all_ratings),
+        closed_table_details=details,
+        top_products=[],
+        top_beverages=[],
+    )
+
+
+def _parse_summary_json(raw_summary: str | None) -> ShiftSummaryOut:
+    if not raw_summary:
+        return _empty_shift_summary()
+    try:
+        payload = json.loads(raw_summary)
+        return ShiftSummaryOut.model_validate(payload)
+    except Exception:
+        return _empty_shift_summary()
 
 
 def _order_payment_confirmed(db: Session, order: Order) -> bool:
@@ -391,6 +522,106 @@ def patch_store_messaging_settings(
     )
 
 
+@router.get("/shifts/active", response_model=ActiveShiftResponse)
+def get_active_shift(
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ActiveShiftResponse:
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    shift = _latest_active_shift(db, store_id)
+    if not shift:
+        return ActiveShiftResponse(active_shift=None, summary=_empty_shift_summary())
+    return ActiveShiftResponse(active_shift=_serialize_shift(shift), summary=_build_shift_summary(db, shift=shift))
+
+
+@router.post("/shifts/open", response_model=ActiveShiftResponse)
+def open_shift(
+    payload: OpenShiftRequest,
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ActiveShiftResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    existing = _latest_active_shift(db, store_id)
+    if existing:
+        return ActiveShiftResponse(active_shift=_serialize_shift(existing), summary=_build_shift_summary(db, shift=existing))
+
+    shift = ServiceShift(
+        store_id=store_id,
+        label=payload.label.strip(),
+        operator_name=payload.operator_name.strip(),
+        status="OPEN",
+        opened_by_staff_id=current_staff.id,
+    )
+    db.add(shift)
+    db.commit()
+    db.refresh(shift)
+    return ActiveShiftResponse(active_shift=_serialize_shift(shift), summary=_empty_shift_summary())
+
+
+@router.post("/shifts/close", response_model=CloseShiftResponse)
+def close_shift(
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> CloseShiftResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    shift = _latest_active_shift(db, store_id)
+    if not shift:
+        raise HTTPException(status_code=404, detail="No hay turno abierto")
+
+    summary = _build_shift_summary(db, shift=shift)
+    shift.status = "CLOSED"
+    shift.closed_at = datetime.utcnow()
+    shift.closed_by_staff_id = current_staff.id
+    shift.summary_json = summary.model_dump_json()
+    db.add(shift)
+    db.commit()
+    db.refresh(shift)
+    return CloseShiftResponse(closed_shift=_serialize_shift(shift), summary=summary)
+
+
+@router.get("/shifts/summaries", response_model=ShiftHistoryResponse)
+def list_shift_summaries(
+    store_id: int,
+    limit: int = 30,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ShiftHistoryResponse:
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    safe_limit = min(max(limit, 1), 100)
+    shifts = db.scalars(
+        select(ServiceShift)
+        .where(
+            ServiceShift.store_id == store_id,
+            ServiceShift.status == "CLOSED",
+            ServiceShift.closed_at.is_not(None),
+        )
+        .order_by(ServiceShift.closed_at.desc(), ServiceShift.id.desc())
+        .limit(safe_limit)
+    ).all()
+    return ShiftHistoryResponse(
+        items=[
+            ShiftHistoryItemOut(
+                shift=_serialize_shift(shift),
+                summary=_parse_summary_json(shift.summary_json),
+            )
+            for shift in shifts
+        ]
+    )
+
+
 @router.get("/table-sessions", response_model=StaffTableSessionsResponse)
 def list_staff_table_sessions(
     store_id: int,
@@ -512,8 +743,11 @@ def patch_table_session_status(
     if target_status in {TableSessionStatus.CLOSED.value, TableSessionStatus.SE_RETIRARON.value}:
         _finalize_table_session_orders(db, table_session=table_session, staff_id=current_staff.id)
         table_session.closed_at = datetime.utcnow()
+        active_shift = _latest_active_shift(db, table_session.store_id)
+        table_session.closed_shift_id = active_shift.id if active_shift else None
     else:
         table_session.closed_at = None
+        table_session.closed_shift_id = None
 
     table_session.status = target_status
     db.add(table_session)
@@ -863,6 +1097,8 @@ def close_table_session(
 
     table_session.status = TableSessionStatus.CLOSED.value
     table_session.closed_at = datetime.utcnow()
+    active_shift = _latest_active_shift(db, current_staff.store_id)
+    table_session.closed_shift_id = active_shift.id if active_shift else None
     db.add(table_session)
     db.commit()
     db.refresh(table_session)
@@ -926,6 +1162,8 @@ def force_close_table_session(
         _finalize_table_session_orders(db, table_session=table_session, staff_id=current_staff.id)
         table_session.status = TableSessionStatus.CLOSED.value
         table_session.closed_at = datetime.utcnow()
+        active_shift = _latest_active_shift(db, current_staff.store_id)
+        table_session.closed_shift_id = active_shift.id if active_shift else None
         db.add(table_session)
 
     db.commit()

@@ -98,6 +98,7 @@ class TableSession(Base):
     table_id: Mapped[int] = mapped_column(ForeignKey("tables.id"), nullable=False)
     guest_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default=TableSessionStatus.MESA_OCUPADA.value, nullable=False)
+    closed_shift_id: Mapped[int | None] = mapped_column(ForeignKey("service_shifts.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
@@ -201,6 +202,22 @@ class StaffAccount(Base):
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     pin_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ServiceShift(Base):
+    __tablename__ = "service_shifts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    operator_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="OPEN", nullable=False)
+    opened_by_staff_id: Mapped[int] = mapped_column(ForeignKey("staff_accounts.id"), nullable=False)
+    closed_by_staff_id: Mapped[int | None] = mapped_column(ForeignKey("staff_accounts.id"))
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    summary_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 

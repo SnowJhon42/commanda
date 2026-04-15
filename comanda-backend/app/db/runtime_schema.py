@@ -14,6 +14,49 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
     existing_tables = set(inspector.get_table_names())
     dialect = conn.dialect.name
 
+    if "service_shifts" not in existing_tables:
+        if dialect == "postgresql":
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS service_shifts (
+                      id BIGSERIAL PRIMARY KEY,
+                      store_id INTEGER NOT NULL,
+                      label VARCHAR(120) NOT NULL,
+                      operator_name VARCHAR(120) NOT NULL,
+                      status VARCHAR(20) NOT NULL DEFAULT 'OPEN',
+                      opened_by_staff_id INTEGER NOT NULL,
+                      closed_by_staff_id INTEGER NULL,
+                      opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      closed_at TIMESTAMP NULL,
+                      summary_json TEXT NULL,
+                      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS service_shifts (
+                      id INTEGER PRIMARY KEY,
+                      store_id INTEGER NOT NULL,
+                      label TEXT NOT NULL,
+                      operator_name TEXT NOT NULL,
+                      status TEXT NOT NULL DEFAULT 'OPEN',
+                      opened_by_staff_id INTEGER NOT NULL,
+                      closed_by_staff_id INTEGER NULL,
+                      opened_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      closed_at DATETIME NULL,
+                      summary_json TEXT NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+        existing_tables.add("service_shifts")
+
     if "products" in existing_tables:
         product_columns = _table_columns(conn, "products")
         if "archived" not in product_columns:
@@ -26,6 +69,11 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
         store_columns = _table_columns(conn, "stores")
         if "whatsapp_share_template" not in store_columns:
             conn.execute(text("ALTER TABLE stores ADD COLUMN whatsapp_share_template TEXT NULL"))
+
+    if "table_sessions" in existing_tables:
+        table_session_columns = _table_columns(conn, "table_sessions")
+        if "closed_shift_id" not in table_session_columns:
+            conn.execute(text("ALTER TABLE table_sessions ADD COLUMN closed_shift_id INTEGER NULL"))
 
 
 def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
@@ -252,6 +300,8 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
     table_session_column_names = _table_columns(conn, "table_sessions")
     if "guest_count" not in table_session_column_names:
         conn.execute(text("ALTER TABLE table_sessions ADD COLUMN guest_count INTEGER NOT NULL DEFAULT 1"))
+    if "closed_shift_id" not in table_session_column_names:
+        conn.execute(text("ALTER TABLE table_sessions ADD COLUMN closed_shift_id INTEGER NULL"))
 
     cash_request_column_names = _table_columns(conn, "table_session_cash_requests")
     if "request_kind" not in cash_request_column_names:
@@ -274,6 +324,7 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
     required_tables = {
         "tenants",
         "stores",
+        "service_shifts",
         "tables",
         "staff_accounts",
         "menu_categories",
@@ -311,6 +362,11 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
         missing = {"show_live_total_to_client", "print_mode", "whatsapp_share_template"} - _table_columns(conn, "stores")
         for column in sorted(missing):
             issues.append(f"stores missing column: {column}")
+
+    if "table_sessions" in existing_tables:
+        missing = {"closed_shift_id"} - _table_columns(conn, "table_sessions")
+        for column in sorted(missing):
+            issues.append(f"table_sessions missing column: {column}")
 
     if "products" in existing_tables:
         missing = {"image_url", "archived"} - _table_columns(conn, "products")

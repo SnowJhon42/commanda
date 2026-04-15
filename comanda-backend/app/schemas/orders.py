@@ -147,6 +147,62 @@ class UpdateStoreMessagingSettingsRequest(BaseModel):
     whatsapp_share_template: str = Field(..., min_length=1, max_length=2000)
 
 
+class OpenShiftRequest(BaseModel):
+    label: str = Field(..., min_length=1, max_length=120)
+    operator_name: str = Field(..., min_length=1, max_length=120)
+
+
+class ShiftClosedTableOut(BaseModel):
+    table_code: str
+    guest_count: int
+    total_amount: float
+    duration_minutes: int
+    closed_at: datetime | None = None
+
+
+class ShiftSummaryOut(BaseModel):
+    closed_covers: int = 0
+    closed_tables: int = 0
+    total_revenue: float = 0
+    avg_duration_minutes: int = 0
+    avg_rating: float = 0
+    feedback_count: int = 0
+    closed_table_details: list[ShiftClosedTableOut] = []
+    top_products: list[dict] = []
+    top_beverages: list[dict] = []
+
+
+class StaffShiftOut(BaseModel):
+    id: int
+    store_id: int
+    label: str
+    operator_name: str
+    status: str
+    opened_by_staff_id: int
+    closed_by_staff_id: int | None = None
+    opened_at: datetime
+    closed_at: datetime | None = None
+
+
+class ActiveShiftResponse(BaseModel):
+    active_shift: StaffShiftOut | None = None
+    summary: ShiftSummaryOut = ShiftSummaryOut()
+
+
+class CloseShiftResponse(BaseModel):
+    closed_shift: StaffShiftOut
+    summary: ShiftSummaryOut
+
+
+class ShiftHistoryItemOut(BaseModel):
+    shift: StaffShiftOut
+    summary: ShiftSummaryOut
+
+
+class ShiftHistoryResponse(BaseModel):
+    items: list[ShiftHistoryItemOut]
+
+
 class CloseTableSessionResponse(BaseModel):
     table_session_id: int
     table_code: str
