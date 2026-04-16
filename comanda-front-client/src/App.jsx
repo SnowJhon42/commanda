@@ -42,6 +42,14 @@ const PAYMENT_METHODS = {
   TRANSFER: "TRANSFER",
 };
 
+const ACCENT_HEX = {
+  ROJO: "#b3261e",
+  VERDE: "#1f7a4d",
+  DORADO: "#b8872d",
+  AZUL: "#2563eb",
+  NEGRO: "#1f2937",
+};
+
 function normalizeTableCode(input) {
   if (typeof input !== "string") return null;
   const compact = input.trim().toUpperCase().replace(/\s+/g, "");
@@ -50,6 +58,27 @@ function normalizeTableCode(input) {
   const value = Number(match[1]);
   if (!Number.isInteger(value) || value < 1) return null;
   return `M${value}`;
+}
+
+function parseStoreId(input) {
+  const value = Number(input);
+  if (!Number.isInteger(value) || value <= 0) return null;
+  return value;
+}
+
+function getInitialStoreId() {
+  if (typeof window === "undefined") return DEFAULT_STORE_ID;
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const storeFromUrl = parseStoreId(urlParams.get("store_id") || urlParams.get("store"));
+    if (storeFromUrl) return storeFromUrl;
+
+    const raw = window.localStorage.getItem(SESSION_STATE_KEY);
+    const saved = raw ? JSON.parse(raw) : {};
+    return parseStoreId(saved.storeId) || DEFAULT_STORE_ID;
+  } catch {
+    return DEFAULT_STORE_ID;
+  }
 }
 
 function validateGuestCount(input) {
@@ -107,7 +136,7 @@ function toMoney(value) {
 }
 
 export function App() {
-  const [storeId] = useState(DEFAULT_STORE_ID);
+  const [storeId, setStoreId] = useState(getInitialStoreId);
   const [clientId] = useState(getStableClientId);
   const [tableCode, setTableCode] = useState("");
   const [guestCount, setGuestCount] = useState(2);
@@ -163,9 +192,13 @@ export function App() {
     if (typeof window === "undefined") return;
     try {
       const urlParams = new URLSearchParams(window.location.search);
+      const storeFromUrl = parseStoreId(urlParams.get("store_id") || urlParams.get("store"));
       const tableFromUrl = normalizeTableCode(urlParams.get("mesa") || "");
       const raw = window.localStorage.getItem(SESSION_STATE_KEY);
       const saved = raw ? JSON.parse(raw) : {};
+      const savedStoreId = parseStoreId(saved.storeId);
+
+      setStoreId(storeFromUrl || savedStoreId || DEFAULT_STORE_ID);
 
       const normalizedTable = tableFromUrl || normalizeTableCode(saved.tableCode);
       if (normalizedTable) {
@@ -195,6 +228,7 @@ export function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const payload = {
+      storeId,
       tableCode,
       guestCount,
       tableSessionId,
@@ -208,7 +242,7 @@ export function App() {
       window.localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(payload));
     } catch {
     }
-  }, [tableCode, guestCount, tableSessionId, tableSessionToken, sessionJoinedAt, activeOrderId, connectedClients, closedSession]);
+  }, [storeId, tableCode, guestCount, tableSessionId, tableSessionToken, sessionJoinedAt, activeOrderId, connectedClients, closedSession]);
 
   const loadMenu = async () => {
     setMenuLoading(true);
@@ -231,7 +265,7 @@ export function App() {
     () => cartItems.reduce((acc, item) => acc + item.unit_price * item.qty, 0),
     [cartItems]
   );
-  const showLiveTotalToClient = true;
+  const showLiveTotalToClient = menu?.show_live_total_to_client ?? true;
   const committedItems = useMemo(() => {
     const items = tableSessionConsumption?.items || [];
     return items.filter((item) => {
@@ -776,6 +810,11 @@ export function App() {
     mesaPaymentStateMessage === "Pago confirmado. Gracias por venir, te esperamos pronto.";
   const canShowPaymentOptions = (paymentRequestAccepted || Boolean(selectedPaymentMethod)) && !paymentConfirmedMessage;
   const canSplitBill = connectedClients > 1 && !paymentConfirmedMessage;
+  const restaurantName = menu?.store_name || "Tu restaurante";
+  const themePreset = menu?.theme_preset || "CLASSIC";
+  const accentColor = menu?.accent_color || "ROJO";
+  const clientThemeClass = `app-shell client-theme-${String(themePreset).toLowerCase()}`;
+  const clientThemeStyle = { "--client-accent": ACCENT_HEX[accentColor] || ACCENT_HEX.ROJO };
 
   const requestWaiterHelp = async () => {
     if (waiterBusy) return;
@@ -1027,10 +1066,17 @@ export function App() {
   };
 
   return (
-    <main className="app-shell">
+    <main className={clientThemeClass} style={clientThemeStyle}>
+      {menu?.show_watermark_logo && menu?.logo_url ? (
+        <img className="client-watermark-logo" src={menu.logo_url} alt="" aria-hidden="true" />
+      ) : null}
       <header className={showSessionHeader ? "hero hero-compact" : "hero"}>
-        <p className="kicker">Mesa digital</p>
-        <h1>Comanda Cliente</h1>
+        {menu?.cover_image_url ? <img className="hero-cover-image" src={menu.cover_image_url} alt="" /> : null}
+        <div className="hero-brand-row">
+          {menu?.logo_url ? <img className="hero-logo" src={menu.logo_url} alt="" /> : null}
+          <p className="kicker">Mesa digital</p>
+        </div>
+        <h1>{restaurantName}</h1>
         {showSessionHeader ? (
           <div className="hero-table-meta">
             <p className="hero-table-row">
