@@ -69,6 +69,19 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
         store_columns = _table_columns(conn, "stores")
         if "whatsapp_share_template" not in store_columns:
             conn.execute(text("ALTER TABLE stores ADD COLUMN whatsapp_share_template TEXT NULL"))
+        if "logo_url" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN logo_url TEXT NULL"))
+        if "cover_image_url" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN cover_image_url TEXT NULL"))
+        if "theme_preset" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN theme_preset TEXT NOT NULL DEFAULT 'CLASSIC'"))
+        if "accent_color" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN accent_color TEXT NOT NULL DEFAULT 'ROJO'"))
+        if "show_watermark_logo" not in store_columns:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE stores ADD COLUMN show_watermark_logo BOOLEAN NOT NULL DEFAULT FALSE"))
+            else:
+                conn.execute(text("ALTER TABLE stores ADD COLUMN show_watermark_logo INTEGER NOT NULL DEFAULT 0"))
 
     if "table_sessions" in existing_tables:
         table_session_columns = _table_columns(conn, "table_sessions")
@@ -296,6 +309,16 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE stores ADD COLUMN print_mode TEXT NOT NULL DEFAULT 'MANUAL'"))
     if "whatsapp_share_template" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN whatsapp_share_template TEXT NULL"))
+    if "logo_url" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN logo_url TEXT NULL"))
+    if "cover_image_url" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN cover_image_url TEXT NULL"))
+    if "theme_preset" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN theme_preset TEXT NOT NULL DEFAULT 'CLASSIC'"))
+    if "accent_color" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN accent_color TEXT NOT NULL DEFAULT 'ROJO'"))
+    if "show_watermark_logo" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN show_watermark_logo INTEGER NOT NULL DEFAULT 0"))
 
     table_session_column_names = _table_columns(conn, "table_sessions")
     if "guest_count" not in table_session_column_names:
@@ -359,7 +382,16 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
             issues.append(f"order_items missing column: {column}")
 
     if "stores" in existing_tables:
-        missing = {"show_live_total_to_client", "print_mode", "whatsapp_share_template"} - _table_columns(conn, "stores")
+        missing = {
+            "show_live_total_to_client",
+            "print_mode",
+            "whatsapp_share_template",
+            "logo_url",
+            "cover_image_url",
+            "theme_preset",
+            "accent_color",
+            "show_watermark_logo",
+        } - _table_columns(conn, "stores")
         for column in sorted(missing):
             issues.append(f"stores missing column: {column}")
 

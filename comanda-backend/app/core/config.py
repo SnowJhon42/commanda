@@ -24,6 +24,9 @@ class Settings:
     )
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    owner_admin_password: str | None = os.getenv(
+        "OWNER_ADMIN_PASSWORD", "1234" if os.getenv("ENVIRONMENT", "dev").lower() == "dev" else None
+    )
     cors_allow_origin_regex: str = os.getenv(
         "CORS_ALLOW_ORIGIN_REGEX",
         r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$",

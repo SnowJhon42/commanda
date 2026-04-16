@@ -147,6 +147,39 @@ class UpdateStoreMessagingSettingsRequest(BaseModel):
     whatsapp_share_template: str = Field(..., min_length=1, max_length=2000)
 
 
+class StoreProfileResponse(BaseModel):
+    store_id: int
+    restaurant_name: str
+    logo_url: str | None = None
+    cover_image_url: str | None = None
+    theme_preset: str = "CLASSIC"
+    accent_color: str = "ROJO"
+    show_watermark_logo: bool = False
+
+
+class UpdateStoreProfileRequest(BaseModel):
+    owner_password: str = Field(..., min_length=1, max_length=200)
+    restaurant_name: str = Field(..., min_length=1, max_length=255)
+    logo_url: str | None = Field(default=None, max_length=2048)
+    cover_image_url: str | None = Field(default=None, max_length=2048)
+    theme_preset: str = Field("CLASSIC", pattern="^(CLASSIC|MODERN|PREMIUM)$")
+    accent_color: str = Field("ROJO", pattern="^(ROJO|VERDE|DORADO|AZUL|NEGRO)$")
+    show_watermark_logo: bool = False
+
+
+class StoreThemeSuggestionRequest(BaseModel):
+    restaurant_name: str = Field(..., min_length=1, max_length=255)
+    logo_url: str | None = Field(default=None, max_length=2048)
+    cover_image_url: str | None = Field(default=None, max_length=2048)
+
+
+class StoreThemeSuggestionResponse(BaseModel):
+    theme_preset: str
+    accent_color: str
+    show_watermark_logo: bool
+    reason: str
+
+
 class OpenShiftRequest(BaseModel):
     label: str = Field(..., min_length=1, max_length=120)
     operator_name: str = Field(..., min_length=1, max_length=120)

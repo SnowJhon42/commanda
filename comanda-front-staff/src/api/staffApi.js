@@ -239,6 +239,54 @@ export async function patchStoreMessagingSettings({ token, storeId, whatsappShar
   }
 }
 
+export async function fetchStoreProfileSettings({ token, storeId }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/profile?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar el perfil del local.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar el perfil del local.");
+  }
+}
+
+export async function patchStoreProfileSettings({ token, storeId, payload }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/profile?${qs.toString()}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo guardar el perfil del local.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo guardar el perfil del local.");
+  }
+}
+
+export async function suggestStoreProfileTheme({ token, payload }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/store-settings/profile/theme-suggestion`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo sugerir el estilo con IA.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo sugerir el estilo con IA.");
+  }
+}
+
 export async function fetchActiveShift({ token, storeId }) {
   try {
     const qs = new URLSearchParams({ store_id: String(storeId) });

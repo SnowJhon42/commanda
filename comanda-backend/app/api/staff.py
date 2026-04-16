@@ -2,10 +2,12 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import ValidationError
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import ensure_sector_access, get_current_staff
+from app.core.config import settings
 from app.db.models import (
     BillPartPaymentStatus,
     BillSplit,
@@ -48,6 +50,9 @@ from app.schemas.orders import (
     StaffBoardItemsResponse,
     StorePrintSettingsResponse,
     StoreMessagingSettingsResponse,
+    StoreProfileResponse,
+    StoreThemeSuggestionRequest,
+    StoreThemeSuggestionResponse,
     ActiveShiftResponse,
     OpenShiftRequest,
     ShiftClosedTableOut,
@@ -61,11 +66,14 @@ from app.schemas.orders import (
     UpdateStorePrintSettingsRequest,
     UpdateStoreMessagingSettingsRequest,
     UpdateStoreClientVisibilityRequest,
+    UpdateStoreProfileRequest,
 )
+from app.schemas.menu import ImageUrlPatchIn
 from app.services.billing import get_latest_bill_split, to_bill_split_out
 from app.services.print_tracking import build_order_print_status, mark_order_print_target
 from app.services.item_status import change_item_status
 from app.services.realtime import event_bus
+from app.services.store_theme import suggest_store_theme
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 ACTIVE_TABLE_SESSION_STATUSES = (
@@ -75,6 +83,41 @@ ACTIVE_TABLE_SESSION_STATUSES = (
 )
 PRINT_MODES = {"MANUAL", "AUTOMATIC"}
 DEFAULT_WHATSAPP_SHARE_TEMPLATE = "Estuve en {restaurant_name} y la pasé muy bien. Mirá la carta acá:\n{menu_url}"
+THEME_PRESETS = {"CLASSIC", "MODERN", "PREMIUM"}
+ACCENT_COLORS = {"ROJO", "VERDE", "DORADO", "AZUL", "NEGRO"}
+
+
+def _store_profile_out(store: Store) -> StoreProfileResponse:
+    return StoreProfileResponse(
+        store_id=store.id,
+        restaurant_name=store.name,
+        logo_url=store.logo_url,
+        cover_image_url=store.cover_image_url,
+        theme_preset=store.theme_preset or "CLASSIC",
+        accent_color=store.accent_color or "ROJO",
+        show_watermark_logo=bool(store.show_watermark_logo),
+    )
+
+
+def _validate_owner_password(owner_password: str) -> None:
+    if not settings.owner_admin_password:
+        raise HTTPException(status_code=503, detail="Falta configurar OWNER_ADMIN_PASSWORD.")
+    if owner_password != settings.owner_admin_password:
+        raise HTTPException(status_code=403, detail="Contraseña de dueño incorrecta.")
+
+
+def _optional_http_image_url(value: str | None, label: str) -> str | None:
+    if not value:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if candidate.startswith("blob:"):
+        raise HTTPException(status_code=422, detail=f"{label}: subí el archivo o pegá una URL https pública.")
+    try:
+        return ImageUrlPatchIn(image_url=candidate).image_url
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=f"{label}: la URL debe empezar con http:// o https://.") from exc
 
 
 def _order_total_amount(order: Order) -> float:
@@ -520,6 +563,89 @@ def patch_store_messaging_settings(
         restaurant_name=store.name,
         whatsapp_share_template=store.whatsapp_share_template or DEFAULT_WHATSAPP_SHARE_TEMPLATE,
     )
+
+
+@router.get("/store-settings/profile", response_model=StoreProfileResponse)
+def get_store_profile_settings(
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StoreProfileResponse:
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    return _store_profile_out(store)
+
+
+@router.patch("/store-settings/profile", response_model=StoreProfileResponse)
+def patch_store_profile_settings(
+    payload: UpdateStoreProfileRequest,
+    store_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StoreProfileResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if current_staff.store_id != store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    _validate_owner_password(payload.owner_password)
+
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    restaurant_name = payload.restaurant_name.strip()
+    if not restaurant_name:
+        raise HTTPException(status_code=422, detail="El nombre del restaurante es requerido.")
+
+    logo_url = _optional_http_image_url(payload.logo_url, "Logo")
+    cover_image_url = _optional_http_image_url(payload.cover_image_url, "Portada")
+    theme_preset = (payload.theme_preset or "CLASSIC").strip().upper()
+    accent_color = (payload.accent_color or "ROJO").strip().upper()
+    if theme_preset not in THEME_PRESETS:
+        raise HTTPException(status_code=422, detail="Estilo no soportado.")
+    if accent_color not in ACCENT_COLORS:
+        raise HTTPException(status_code=422, detail="Color no soportado.")
+
+    store.name = restaurant_name
+    store.logo_url = logo_url
+    store.cover_image_url = cover_image_url
+    store.theme_preset = theme_preset
+    store.accent_color = accent_color
+    store.show_watermark_logo = bool(payload.show_watermark_logo)
+    db.add(store)
+    db.commit()
+    db.refresh(store)
+    event_bus.publish(
+        "store.settings.updated",
+        {
+            "store_id": store.id,
+            "restaurant_name": store.name,
+            "logo_url": store.logo_url,
+            "cover_image_url": store.cover_image_url,
+            "theme_preset": store.theme_preset,
+            "accent_color": store.accent_color,
+            "show_watermark_logo": bool(store.show_watermark_logo),
+        },
+    )
+    return _store_profile_out(store)
+
+
+@router.post("/store-settings/profile/theme-suggestion", response_model=StoreThemeSuggestionResponse)
+def suggest_store_profile_theme(
+    payload: StoreThemeSuggestionRequest,
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> StoreThemeSuggestionResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    suggestion = suggest_store_theme(
+        restaurant_name=payload.restaurant_name.strip(),
+        logo_url=payload.logo_url,
+        cover_image_url=payload.cover_image_url,
+    )
+    return StoreThemeSuggestionResponse(**suggestion)
 
 
 @router.get("/shifts/active", response_model=ActiveShiftResponse)

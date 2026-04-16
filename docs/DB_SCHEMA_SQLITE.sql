@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS stores (
   tenant_id INTEGER NOT NULL,
   name TEXT NOT NULL,
   show_live_total_to_client INTEGER NOT NULL DEFAULT 1 CHECK (show_live_total_to_client IN (0, 1)),
+  logo_url TEXT,
+  cover_image_url TEXT,
+  theme_preset TEXT NOT NULL DEFAULT 'CLASSIC' CHECK (theme_preset IN ('CLASSIC', 'MODERN', 'PREMIUM')),
+  accent_color TEXT NOT NULL DEFAULT 'ROJO' CHECK (accent_color IN ('ROJO', 'VERDE', 'DORADO', 'AZUL', 'NEGRO')),
+  show_watermark_logo INTEGER NOT NULL DEFAULT 0 CHECK (show_watermark_logo IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id)
 );

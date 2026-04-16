@@ -1072,8 +1072,8 @@ export function App() {
       ) : null}
       <header className={showSessionHeader ? "hero hero-compact" : "hero"}>
         {menu?.cover_image_url ? <img className="hero-cover-image" src={menu.cover_image_url} alt="" /> : null}
+        {menu?.logo_url ? <img className="hero-logo-watermark" src={menu.logo_url} alt="" aria-hidden="true" /> : null}
         <div className="hero-brand-row">
-          {menu?.logo_url ? <img className="hero-logo" src={menu.logo_url} alt="" /> : null}
           <p className="kicker">Mesa digital</p>
         </div>
         <h1>{restaurantName}</h1>

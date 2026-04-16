@@ -36,6 +36,7 @@ import { WaiterBoardPage } from "./pages/WaiterBoardPage";
 import { OrderDetailPanel } from "./pages/OrderDetailPanel";
 import { FeedbackSummaryPage } from "./pages/FeedbackSummaryPage";
 import { MenuEditorPage } from "./pages/MenuEditorPage";
+import { StoreProfilePage } from "./pages/StoreProfilePage";
 import { StoreMessagingPage } from "./pages/StoreMessagingPage";
 import { ShiftClosurePage } from "./pages/ShiftClosurePage";
 import { ShiftSummariesPage } from "./pages/ShiftSummariesPage";
@@ -45,7 +46,7 @@ import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
-const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU", "MESSAGING", "CLOSURE", "SUMMARIES"];
+const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "PROFILE", "MENU", "MESSAGING", "CLOSURE", "SUMMARIES"];
 const ARG_TZ = "America/Argentina/Buenos_Aires";
 
 function formatArgentinaClock(value) {
@@ -973,9 +974,10 @@ export function App() {
 
     if (staffSector === "ADMIN") {
       if (adminView === "MENU") {
-        return (
-          <MenuEditorPage token={session?.access_token} storeId={session?.staff?.store_id} />
-        );
+        return <MenuEditorPage token={session?.access_token} storeId={session?.staff?.store_id} />;
+      }
+      if (adminView === "PROFILE") {
+        return <StoreProfilePage token={session?.access_token} storeId={session?.staff?.store_id} />;
       }
       if (adminView === "MESSAGING") {
         return <StoreMessagingPage token={session?.access_token} storeId={session?.staff?.store_id} />;
@@ -1062,7 +1064,13 @@ export function App() {
           }
           return;
         }
-        if (adminView === "MENU" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES") {
+        if (
+          adminView === "MENU" ||
+          adminView === "PROFILE" ||
+          adminView === "MESSAGING" ||
+          adminView === "CLOSURE" ||
+          adminView === "SUMMARIES"
+        ) {
           await loadTableSessions();
           await loadShiftState();
           if (adminView === "SUMMARIES") {
@@ -1095,7 +1103,15 @@ export function App() {
   }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode, loadShiftState, loadShiftSummaries]);
 
   useEffect(() => {
-    if (!session || (session.staff.sector === "ADMIN" && (adminView === "MENU" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES"))) return;
+    if (
+      !session ||
+      (session.staff.sector === "ADMIN" &&
+        (adminView === "MENU" ||
+          adminView === "PROFILE" ||
+          adminView === "MESSAGING" ||
+          adminView === "CLOSURE" ||
+          adminView === "SUMMARIES"))
+    ) return;
 
     const stream = openStaffEvents({
       storeId: session.staff.store_id,
@@ -1286,6 +1302,8 @@ export function App() {
                     ? "FEEDBACK CLIENTES"
                     : mode === "MENU"
                     ? "EDITOR DE MENÚ"
+                    : mode === "PROFILE"
+                    ? "MI LOCAL"
                     : mode === "MESSAGING"
                     ? "MENSAJES"
                     : mode === "CLOSURE"
@@ -1387,7 +1405,7 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <TableSessionsPanel
             rows={tableSessionsRows}
             loading={tableSessionsLoading}
@@ -1402,7 +1420,7 @@ export function App() {
         board
       )}
 
-        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <OrderDetailPanel
             orderDetail={selectedOrderDetail}
             selectedOrderId={selectedOrderId}

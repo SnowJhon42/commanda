@@ -58,6 +58,11 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
         store_name=store.name,
         show_live_total_to_client=bool(store.show_live_total_to_client),
         whatsapp_share_template=store.whatsapp_share_template,
+        logo_url=store.logo_url,
+        cover_image_url=store.cover_image_url,
+        theme_preset=store.theme_preset or "CLASSIC",
+        accent_color=store.accent_color or "ROJO",
+        show_watermark_logo=bool(store.show_watermark_logo),
         categories=[CategoryOut(id=c.id, name=c.name, image_url=c.image_url, sort_order=c.sort_order) for c in categories],
         products=[
             ProductOut(

@@ -57,6 +57,11 @@ class MenuResponse(BaseModel):
     store_name: str
     show_live_total_to_client: bool = True
     whatsapp_share_template: str | None = None
+    logo_url: str | None = None
+    cover_image_url: str | None = None
+    theme_preset: str = "CLASSIC"
+    accent_color: str = "ROJO"
+    show_watermark_logo: bool = False
     categories: list[CategoryOut]
     products: list[ProductOut]
 

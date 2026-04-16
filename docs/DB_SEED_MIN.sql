@@ -6,7 +6,8 @@ BEGIN TRANSACTION;
 INSERT INTO tenants (id, name) VALUES (1, 'Comanda Demo')
 ON CONFLICT(id) DO NOTHING;
 
-INSERT INTO stores (id, tenant_id, name) VALUES (1, 1, 'Local Centro')
+INSERT INTO stores (id, tenant_id, name, theme_preset, accent_color, show_watermark_logo)
+VALUES (1, 1, 'Local Centro', 'CLASSIC', 'ROJO', 0)
 ON CONFLICT(id) DO NOTHING;
 
 -- Tables M1..M20
