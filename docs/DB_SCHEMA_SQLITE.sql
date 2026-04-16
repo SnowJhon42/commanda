@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS stores (
   tenant_id INTEGER NOT NULL,
   name TEXT NOT NULL,
   show_live_total_to_client INTEGER NOT NULL DEFAULT 1 CHECK (show_live_total_to_client IN (0, 1)),
+  owner_password_hash TEXT,
   logo_url TEXT,
   cover_image_url TEXT,
   theme_preset TEXT NOT NULL DEFAULT 'CLASSIC' CHECK (theme_preset IN ('CLASSIC', 'MODERN', 'PREMIUM')),

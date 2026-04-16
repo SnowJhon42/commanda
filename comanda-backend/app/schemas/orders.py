@@ -150,6 +150,7 @@ class UpdateStoreMessagingSettingsRequest(BaseModel):
 class StoreProfileResponse(BaseModel):
     store_id: int
     restaurant_name: str
+    owner_password_configured: bool = False
     logo_url: str | None = None
     cover_image_url: str | None = None
     theme_preset: str = "CLASSIC"
@@ -159,6 +160,7 @@ class StoreProfileResponse(BaseModel):
 
 class UpdateStoreProfileRequest(BaseModel):
     owner_password: str = Field(..., min_length=1, max_length=200)
+    new_owner_password: str | None = Field(default=None, min_length=4, max_length=200)
     restaurant_name: str = Field(..., min_length=1, max_length=255)
     logo_url: str | None = Field(default=None, max_length=2048)
     cover_image_url: str | None = Field(default=None, max_length=2048)

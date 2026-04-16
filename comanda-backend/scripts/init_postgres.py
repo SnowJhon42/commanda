@@ -29,11 +29,21 @@ def seed_minimum_data(engine) -> None:
         conn.execute(
             text(
                 """
-                INSERT INTO stores (id, tenant_id, name, show_live_total_to_client, print_mode, created_at)
-                VALUES (1, 1, 'Local Centro', TRUE, 'MANUAL', CURRENT_TIMESTAMP)
-                ON CONFLICT (id) DO NOTHING
-                """
+                    INSERT INTO stores (id, tenant_id, name, show_live_total_to_client, print_mode, created_at)
+                    VALUES (1, 1, 'Local Centro', TRUE, 'MANUAL', CURRENT_TIMESTAMP)
+                    ON CONFLICT (id) DO NOTHING
+                    """
+                )
             )
+        conn.execute(
+            text(
+                """
+                UPDATE stores
+                SET owner_password_hash = :owner_password_hash
+                WHERE id = 1 AND owner_password_hash IS NULL
+                """
+            ),
+            {"owner_password_hash": hashed_pin},
         )
         for code in [f"M{i}" for i in range(1, 21)]:
             conn.execute(

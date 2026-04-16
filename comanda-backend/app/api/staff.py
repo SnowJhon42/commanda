@@ -7,7 +7,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import ensure_sector_access, get_current_staff
-from app.core.config import settings
+from app.core.security import hash_pin, verify_pin
 from app.db.models import (
     BillPartPaymentStatus,
     BillSplit,
@@ -91,6 +91,7 @@ def _store_profile_out(store: Store) -> StoreProfileResponse:
     return StoreProfileResponse(
         store_id=store.id,
         restaurant_name=store.name,
+        owner_password_configured=bool(store.owner_password_hash),
         logo_url=store.logo_url,
         cover_image_url=store.cover_image_url,
         theme_preset=store.theme_preset or "CLASSIC",
@@ -99,10 +100,9 @@ def _store_profile_out(store: Store) -> StoreProfileResponse:
     )
 
 
-def _validate_owner_password(owner_password: str) -> None:
-    if not settings.owner_admin_password:
-        raise HTTPException(status_code=503, detail="Falta configurar OWNER_ADMIN_PASSWORD.")
-    if owner_password != settings.owner_admin_password:
+def _validate_owner_password(store: Store, owner_password: str) -> None:
+    owner_hash = (store.owner_password_hash or "").strip()
+    if not owner_hash or not verify_pin(owner_password, owner_hash):
         raise HTTPException(status_code=403, detail="Contraseña de dueño incorrecta.")
 
 
@@ -590,11 +590,10 @@ def patch_store_profile_settings(
         raise HTTPException(status_code=403, detail="Admin only")
     if current_staff.store_id != store_id:
         raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
-    _validate_owner_password(payload.owner_password)
-
     store = db.scalar(select(Store).where(Store.id == store_id))
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
+    _validate_owner_password(store, payload.owner_password)
 
     restaurant_name = payload.restaurant_name.strip()
     if not restaurant_name:
@@ -615,6 +614,8 @@ def patch_store_profile_settings(
     store.theme_preset = theme_preset
     store.accent_color = accent_color
     store.show_watermark_logo = bool(payload.show_watermark_logo)
+    if payload.new_owner_password is not None and payload.new_owner_password.strip():
+        store.owner_password_hash = hash_pin(payload.new_owner_password.strip())
     db.add(store)
     db.commit()
     db.refresh(store)

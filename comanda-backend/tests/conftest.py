@@ -25,7 +25,7 @@ def seed_minimum_store_data(db: Session):
     db.add(tenant)
     db.flush()
 
-    store = Store(tenant_id=tenant.id, name="Test Store")
+    store = Store(tenant_id=tenant.id, name="Test Store", owner_password_hash=hash_pin("1234"))
     db.add(store)
     db.flush()
 

@@ -43,6 +43,14 @@ if __name__ == "__main__":
             """,
             (hashed_pin,),
         )
+        conn.execute(
+            """
+            UPDATE stores
+            SET owner_password_hash = ?
+            WHERE owner_password_hash IS NULL
+            """,
+            (hashed_pin,),
+        )
 
     engine = create_engine(f"sqlite:///{db_file.as_posix()}")
     with engine.begin() as conn:

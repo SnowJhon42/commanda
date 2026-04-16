@@ -24,6 +24,7 @@ const COLOR_OPTIONS = [
 
 const EMPTY_PROFILE = {
   restaurant_name: "",
+  owner_password_configured: false,
   logo_url: "",
   cover_image_url: "",
   theme_preset: "CLASSIC",
@@ -34,6 +35,7 @@ const EMPTY_PROFILE = {
 function normalizeProfile(data) {
   return {
     restaurant_name: data?.restaurant_name || "",
+    owner_password_configured: Boolean(data?.owner_password_configured),
     logo_url: data?.logo_url || "",
     cover_image_url: data?.cover_image_url || "",
     theme_preset: data?.theme_preset || "CLASSIC",
@@ -49,6 +51,7 @@ function hasInvalidBlobUrl(value) {
 export function StoreProfilePage({ token, storeId }) {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [ownerPassword, setOwnerPassword] = useState("");
+  const [newOwnerPassword, setNewOwnerPassword] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -145,6 +148,10 @@ export function StoreProfilePage({ token, storeId }) {
       setError("El nombre del restaurante es obligatorio.");
       return;
     }
+    if (newOwnerPassword.trim() && newOwnerPassword.trim().length < 4) {
+      setError("La nueva contraseña debe tener al menos 4 caracteres.");
+      return;
+    }
     if (hasInvalidBlobUrl(profile.logo_url) || hasInvalidBlobUrl(profile.cover_image_url)) {
       setError("No pegues URLs blob. Subí el archivo desde el botón o pegá una URL https pública.");
       return;
@@ -158,6 +165,7 @@ export function StoreProfilePage({ token, storeId }) {
         storeId,
         payload: {
           owner_password: ownerPassword,
+          new_owner_password: newOwnerPassword.trim() || null,
           restaurant_name: profile.restaurant_name.trim(),
           logo_url: profile.logo_url.trim() || null,
           cover_image_url: profile.cover_image_url.trim() || null,
@@ -167,6 +175,7 @@ export function StoreProfilePage({ token, storeId }) {
         },
       });
       setProfile(normalizeProfile(data));
+      setNewOwnerPassword("");
       setMessage("Perfil del local guardado. El cliente lo verá al recargar.");
     } catch (err) {
       setError(err.message || "No se pudo guardar el perfil del local.");
@@ -202,15 +211,29 @@ export function StoreProfilePage({ token, storeId }) {
               </button>
             </div>
             {unlocked && (
-              <label className="field">
-                Contraseña de dueño
-                <input
-                  type="password"
-                  value={ownerPassword}
-                  onChange={(event) => setOwnerPassword(event.target.value)}
-                  placeholder="Contraseña"
-                />
-              </label>
+              <>
+                <label className="field">
+                  Contraseña actual del dueño
+                  <input
+                    type="password"
+                    value={ownerPassword}
+                    onChange={(event) => setOwnerPassword(event.target.value)}
+                    placeholder="Contraseña actual"
+                  />
+                </label>
+                <label className="field">
+                  Nueva contraseña del dueño
+                  <input
+                    type="password"
+                    value={newOwnerPassword}
+                    onChange={(event) => setNewOwnerPassword(event.target.value)}
+                    placeholder="Dejar vacío para no cambiar"
+                  />
+                </label>
+                <p className="muted">
+                  Clave configurada: <strong>{profile.owner_password_configured ? "sí" : "no"}</strong>.
+                </p>
+              </>
             )}
           </div>
 

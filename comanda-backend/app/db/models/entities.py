@@ -73,6 +73,7 @@ class Store(Base):
     show_live_total_to_client: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     print_mode: Mapped[str] = mapped_column(String(20), default="MANUAL", nullable=False)
     whatsapp_share_template: Mapped[str | None] = mapped_column(Text)
+    owner_password_hash: Mapped[str | None] = mapped_column(String(255))
     logo_url: Mapped[str | None] = mapped_column(String(500))
     cover_image_url: Mapped[str | None] = mapped_column(String(500))
     theme_preset: Mapped[str] = mapped_column(String(20), default="CLASSIC", nullable=False)

@@ -10,6 +10,8 @@ def _table_columns(conn: Connection, table_name: str) -> set[str]:
 
 
 def apply_runtime_schema_bootstrap(conn: Connection) -> None:
+    from app.core.security import hash_pin
+
     inspector = inspect(conn)
     existing_tables = set(inspector.get_table_names())
     dialect = conn.dialect.name
@@ -69,6 +71,8 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
         store_columns = _table_columns(conn, "stores")
         if "whatsapp_share_template" not in store_columns:
             conn.execute(text("ALTER TABLE stores ADD COLUMN whatsapp_share_template TEXT NULL"))
+        if "owner_password_hash" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN owner_password_hash TEXT NULL"))
         if "logo_url" not in store_columns:
             conn.execute(text("ALTER TABLE stores ADD COLUMN logo_url TEXT NULL"))
         if "cover_image_url" not in store_columns:
@@ -82,6 +86,11 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
                 conn.execute(text("ALTER TABLE stores ADD COLUMN show_watermark_logo BOOLEAN NOT NULL DEFAULT FALSE"))
             else:
                 conn.execute(text("ALTER TABLE stores ADD COLUMN show_watermark_logo INTEGER NOT NULL DEFAULT 0"))
+        default_owner_hash = hash_pin("1234")
+        conn.execute(
+            text("UPDATE stores SET owner_password_hash = :owner_hash WHERE owner_password_hash IS NULL"),
+            {"owner_hash": default_owner_hash},
+        )
 
     if "table_sessions" in existing_tables:
         table_session_columns = _table_columns(conn, "table_sessions")
@@ -90,6 +99,8 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
 
 
 def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
+    from app.core.security import hash_pin
+
     conn.execute(
         text(
             """
@@ -309,6 +320,8 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE stores ADD COLUMN print_mode TEXT NOT NULL DEFAULT 'MANUAL'"))
     if "whatsapp_share_template" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN whatsapp_share_template TEXT NULL"))
+    if "owner_password_hash" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN owner_password_hash TEXT NULL"))
     if "logo_url" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN logo_url TEXT NULL"))
     if "cover_image_url" not in store_column_names:
@@ -319,6 +332,10 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE stores ADD COLUMN accent_color TEXT NOT NULL DEFAULT 'ROJO'"))
     if "show_watermark_logo" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN show_watermark_logo INTEGER NOT NULL DEFAULT 0"))
+    conn.execute(
+        text("UPDATE stores SET owner_password_hash = :owner_hash WHERE owner_password_hash IS NULL"),
+        {"owner_hash": hash_pin("1234")},
+    )
 
     table_session_column_names = _table_columns(conn, "table_sessions")
     if "guest_count" not in table_session_column_names:
@@ -386,6 +403,7 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
             "show_live_total_to_client",
             "print_mode",
             "whatsapp_share_template",
+            "owner_password_hash",
             "logo_url",
             "cover_image_url",
             "theme_preset",
