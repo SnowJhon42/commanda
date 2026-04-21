@@ -41,12 +41,13 @@ import { StoreMessagingPage } from "./pages/StoreMessagingPage";
 import { ShiftClosurePage } from "./pages/ShiftClosurePage";
 import { ShiftSummariesPage } from "./pages/ShiftSummariesPage";
 import { TableSessionsPanel } from "./pages/TableSessionsPanel";
+import { TableQrPage } from "./pages/TableQrPage";
 import { elapsedMinutes } from "./utils/boardMeta";
 import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
-const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "PROFILE", "MENU", "MESSAGING", "CLOSURE", "SUMMARIES"];
+const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "PROFILE", "MENU", "QR", "MESSAGING", "CLOSURE", "SUMMARIES"];
 const ARG_TZ = "America/Argentina/Buenos_Aires";
 
 function formatArgentinaClock(value) {
@@ -982,6 +983,9 @@ export function App() {
       if (adminView === "MESSAGING") {
         return <StoreMessagingPage token={session?.access_token} storeId={session?.staff?.store_id} />;
       }
+      if (adminView === "QR") {
+        return <TableQrPage storeId={session?.staff?.store_id} />;
+      }
       if (adminView === "CLOSURE") {
         return (
           <ShiftClosurePage
@@ -1066,6 +1070,7 @@ export function App() {
         }
         if (
           adminView === "MENU" ||
+          adminView === "QR" ||
           adminView === "PROFILE" ||
           adminView === "MESSAGING" ||
           adminView === "CLOSURE" ||
@@ -1107,6 +1112,7 @@ export function App() {
       !session ||
       (session.staff.sector === "ADMIN" &&
         (adminView === "MENU" ||
+          adminView === "QR" ||
           adminView === "PROFILE" ||
           adminView === "MESSAGING" ||
           adminView === "CLOSURE" ||
@@ -1302,6 +1308,8 @@ export function App() {
                     ? "FEEDBACK CLIENTES"
                     : mode === "MENU"
                     ? "EDITOR DE MENÚ"
+                    : mode === "QR"
+                    ? "QR MESAS"
                     : mode === "PROFILE"
                     ? "MI LOCAL"
                     : mode === "MESSAGING"
@@ -1405,7 +1413,7 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <TableSessionsPanel
             rows={tableSessionsRows}
             loading={tableSessionsLoading}
@@ -1420,7 +1428,7 @@ export function App() {
         board
       )}
 
-        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <OrderDetailPanel
             orderDetail={selectedOrderDetail}
             selectedOrderId={selectedOrderId}
