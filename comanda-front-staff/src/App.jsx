@@ -28,11 +28,12 @@ import { OrderDetailPanel } from "./pages/OrderDetailPanel";
 import { FeedbackSummaryPage } from "./pages/FeedbackSummaryPage";
 import { MenuEditorPage } from "./pages/MenuEditorPage";
 import { TableSessionsPanel } from "./pages/TableSessionsPanel";
+import { TableQrPage } from "./pages/TableQrPage";
 import { elapsedMinutes } from "./utils/boardMeta";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
-const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU"];
+const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "MENU", "QR"];
 
 function getNextStatusForAction({ currentStatus, sector, actorSector }) {
   if (actorSector === "ADMIN") {
@@ -629,6 +630,9 @@ export function App() {
           <MenuEditorPage token={session?.access_token} storeId={session?.staff?.store_id} />
         );
       }
+      if (adminView === "QR") {
+        return <TableQrPage storeId={session?.staff?.store_id} />;
+      }
       return (
         <AdminBoardPage
           rows={visibleRows}
@@ -683,7 +687,7 @@ export function App() {
           }
           return;
         }
-        if (adminView === "MENU") {
+        if (adminView === "MENU" || adminView === "QR") {
           await loadTableSessions();
           if (selectedOrderId) {
             await loadOrderDetail();
@@ -706,7 +710,7 @@ export function App() {
   }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility]);
 
   useEffect(() => {
-    if (!session || (session.staff.sector === "ADMIN" && adminView === "MENU")) return;
+    if (!session || (session.staff.sector === "ADMIN" && (adminView === "MENU" || adminView === "QR"))) return;
 
     const stream = openStaffEvents({
       storeId: session.staff.store_id,
@@ -862,6 +866,8 @@ export function App() {
                     ? "FEEDBACK CLIENTES"
                     : mode === "MENU"
                     ? "EDITOR DE MENÚ"
+                    : mode === "QR"
+                    ? "QR MESAS"
                     : mode}
                 </option>
               ))}
@@ -938,7 +944,7 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU")) && (
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "QR")) && (
           <TableSessionsPanel
             rows={tableSessionsRows}
             loading={tableSessionsLoading}
@@ -953,7 +959,7 @@ export function App() {
         board
       )}
 
-        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU")) && (
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "QR")) && (
           <OrderDetailPanel
             orderDetail={selectedOrderDetail}
             selectedOrderId={selectedOrderId}
