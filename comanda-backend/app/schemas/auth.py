@@ -11,6 +11,7 @@ class StaffInfo(BaseModel):
     id: int
     store_id: int
     sector: str
+    display_name: str
     username: str
 
 

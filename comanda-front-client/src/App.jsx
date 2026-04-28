@@ -24,10 +24,19 @@ import { SessionClosedFeedbackPage } from "./views/SessionClosedFeedbackPage";
 import { EntryGatePage } from "./views/EntryGatePage";
 import { AdjustGuestsModal } from "./views/AdjustGuestsModal";
 
-const DEFAULT_STORE_ID = 1;
-const SESSION_STATE_KEY = "comanda_client_session_state_v4";
+const DEFAULT_STORE_ID = Number(process.env.NEXT_PUBLIC_DEFAULT_STORE_ID) > 0
+  ? Number(process.env.NEXT_PUBLIC_DEFAULT_STORE_ID)
+  : 1;
+const FORCED_STORE_ID = Number(process.env.NEXT_PUBLIC_FORCE_STORE_ID) > 0
+  ? Number(process.env.NEXT_PUBLIC_FORCE_STORE_ID)
+  : null;
+const SESSION_STATE_KEY = "comanda_client_session_state_v5";
 const MIN_GUESTS = 1;
 const MAX_GUESTS = 20;
+const SERVICE_MODES = {
+  RESTAURANTE: "RESTAURANTE",
+  BAR: "BAR",
+};
 const CLIENT_TABS = {
   MENU: "MENU",
   NOTIFICATIONS: "NOTIFICATIONS",
@@ -41,6 +50,8 @@ const PAYMENT_METHODS = {
   MODO: "MODO",
   TRANSFER: "TRANSFER",
 };
+
+const PAYMENT_CONFIRMED_MESSAGE = "Cobro confirmado, el local ya tiene el pedido. Te vamos a ir avisando.";
 
 const ACCENT_HEX = {
   ROJO: "#b3261e",
@@ -66,19 +77,56 @@ function parseStoreId(input) {
   return value;
 }
 
+function normalizeServiceMode(input) {
+  const raw = String(input || "").trim().toUpperCase();
+  if (raw === "BAR") return SERVICE_MODES.BAR;
+  return SERVICE_MODES.RESTAURANTE;
+}
+
 function getInitialStoreId() {
   if (typeof window === "undefined") return DEFAULT_STORE_ID;
   try {
     const urlParams = new URLSearchParams(window.location.search);
     const storeFromUrl = parseStoreId(urlParams.get("store_id") || urlParams.get("store"));
     if (storeFromUrl) return storeFromUrl;
+    if (FORCED_STORE_ID) return FORCED_STORE_ID;
 
     const raw = window.localStorage.getItem(SESSION_STATE_KEY);
     const saved = raw ? JSON.parse(raw) : {};
-    return parseStoreId(saved.storeId) || DEFAULT_STORE_ID;
+    const hasActiveSession = Number(saved.tableSessionId) > 0 || Boolean(saved.tableSessionToken);
+    if (hasActiveSession) {
+      return parseStoreId(saved.storeId) || DEFAULT_STORE_ID;
+    }
+    return DEFAULT_STORE_ID;
   } catch {
     return DEFAULT_STORE_ID;
   }
+}
+
+function getInitialServiceMode() {
+  if (typeof window === "undefined") return SERVICE_MODES.RESTAURANTE;
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const rawServiceMode = urlParams.get("service_mode") || urlParams.get("mode");
+    if (rawServiceMode) return normalizeServiceMode(rawServiceMode);
+
+    const raw = window.localStorage.getItem(SESSION_STATE_KEY);
+    const saved = raw ? JSON.parse(raw) : {};
+    return normalizeServiceMode(saved.serviceMode);
+  } catch {
+    return SERVICE_MODES.RESTAURANTE;
+  }
+}
+
+function resolveCurrentServiceMode(fallbackMode) {
+  if (typeof window === "undefined") return normalizeServiceMode(fallbackMode);
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const rawServiceMode = urlParams.get("service_mode") || urlParams.get("mode");
+    if (rawServiceMode) return normalizeServiceMode(rawServiceMode);
+  } catch {
+  }
+  return normalizeServiceMode(fallbackMode);
 }
 
 function validateGuestCount(input) {
@@ -117,9 +165,9 @@ function getStableClientId() {
 function paymentStatusMessageFromSplit(split) {
   if (!split) return "";
   const parts = split.parts || [];
-  if (split.status === "CLOSED") return "Pago confirmado. Gracias por venir, te esperamos pronto.";
+  if (split.status === "CLOSED") return PAYMENT_CONFIRMED_MESSAGE;
   if (parts.length > 0 && parts.every((part) => part.payment_status === "CONFIRMED")) {
-    return "Pago confirmado. Gracias por venir, te esperamos pronto.";
+    return PAYMENT_CONFIRMED_MESSAGE;
   }
   if (parts.some((part) => part.payment_status === "REPORTED")) {
     return "Estamos verificando tu pago, aguarda hasta la confirmacion del staff.";
@@ -138,6 +186,7 @@ function toMoney(value) {
 export function App() {
   const [storeId, setStoreId] = useState(getInitialStoreId);
   const [clientId] = useState(getStableClientId);
+  const [serviceMode, setServiceMode] = useState(getInitialServiceMode);
   const [tableCode, setTableCode] = useState("");
   const [guestCount, setGuestCount] = useState(2);
   const [entryValidated, setEntryValidated] = useState(false);
@@ -168,6 +217,7 @@ export function App() {
   const [mesaPaymentStateMessage, setMesaPaymentStateMessage] = useState("");
   const [mesaBillSplit, setMesaBillSplit] = useState(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
+  const [paymentFlowOrderId, setPaymentFlowOrderId] = useState(null);
   const [tableSessionId, setTableSessionId] = useState(null);
   const [tableSessionToken, setTableSessionToken] = useState("");
   const [sessionJoinedAt, setSessionJoinedAt] = useState(null);
@@ -194,11 +244,32 @@ export function App() {
       const urlParams = new URLSearchParams(window.location.search);
       const storeFromUrl = parseStoreId(urlParams.get("store_id") || urlParams.get("store"));
       const tableFromUrl = normalizeTableCode(urlParams.get("mesa") || "");
+      const rawServiceMode = urlParams.get("service_mode") || urlParams.get("mode");
+      const serviceModeFromUrl = rawServiceMode ? normalizeServiceMode(rawServiceMode) : null;
       const raw = window.localStorage.getItem(SESSION_STATE_KEY);
       const saved = raw ? JSON.parse(raw) : {};
       const savedStoreId = parseStoreId(saved.storeId);
+      const hasActiveSession = Number(saved.tableSessionId) > 0 || Boolean(saved.tableSessionToken);
+      const effectiveStoreId = storeFromUrl || FORCED_STORE_ID || (hasActiveSession ? savedStoreId : null) || DEFAULT_STORE_ID;
 
-      setStoreId(storeFromUrl || savedStoreId || DEFAULT_STORE_ID);
+      setStoreId(effectiveStoreId);
+      setServiceMode(serviceModeFromUrl || normalizeServiceMode(saved.serviceMode));
+
+      if (FORCED_STORE_ID && !storeFromUrl && savedStoreId && savedStoreId !== FORCED_STORE_ID) {
+        const sanitized = {
+          storeId: FORCED_STORE_ID,
+          serviceMode: serviceModeFromUrl || SERVICE_MODES.RESTAURANTE,
+          tableCode: "",
+          guestCount: validateGuestCount(saved.guestCount).ok ? validateGuestCount(saved.guestCount).value : 2,
+          tableSessionId: null,
+          tableSessionToken: "",
+          sessionJoinedAt: null,
+          activeOrderId: null,
+          connectedClients: 1,
+          closedSession: null,
+        };
+        window.localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(sanitized));
+      }
 
       const normalizedTable = tableFromUrl || normalizeTableCode(saved.tableCode);
       if (normalizedTable) {
@@ -217,6 +288,7 @@ export function App() {
         setClosedSession({
           tableSessionId: Number(saved.closedSession.tableSessionId),
           tableCode: String(saved.closedSession.tableCode),
+          feedbackSubmitted: Boolean(saved.closedSession.feedbackSubmitted),
         });
       }
       // Gate obligatorio al abrir: siempre inicia en bienvenida.
@@ -229,6 +301,7 @@ export function App() {
     if (typeof window === "undefined") return;
     const payload = {
       storeId,
+      serviceMode,
       tableCode,
       guestCount,
       tableSessionId,
@@ -242,7 +315,7 @@ export function App() {
       window.localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(payload));
     } catch {
     }
-  }, [storeId, tableCode, guestCount, tableSessionId, tableSessionToken, sessionJoinedAt, activeOrderId, connectedClients, closedSession]);
+  }, [storeId, serviceMode, tableCode, guestCount, tableSessionId, tableSessionToken, sessionJoinedAt, activeOrderId, connectedClients, closedSession]);
 
   const loadMenu = async () => {
     setMenuLoading(true);
@@ -353,6 +426,7 @@ export function App() {
       setMesaBillSplit(null);
       setMesaPaymentStateMessage("");
       setSelectedPaymentMethod("");
+      setPaymentFlowOrderId(null);
       setLastCreatedOrder(null);
       setTableSessionConsumption(null);
     }
@@ -370,12 +444,22 @@ export function App() {
         const split = await fetchOrderSplit(activeOrderId, tableSessionToken);
         if (!mounted) return;
         setMesaBillSplit(split);
-        setMesaPaymentStateMessage(paymentStatusMessageFromSplit(split));
+        setMesaPaymentStateMessage(
+          activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
+          activeOrderDetail?.payment_status === "CONFIRMED"
+            ? PAYMENT_CONFIRMED_MESSAGE
+            : paymentStatusMessageFromSplit(split)
+        );
       } catch (error) {
         if (!mounted) return;
         if (error?.status === 404) {
           setMesaBillSplit(null);
-          setMesaPaymentStateMessage("");
+          setMesaPaymentStateMessage(
+            activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
+            activeOrderDetail?.payment_status === "CONFIRMED"
+              ? PAYMENT_CONFIRMED_MESSAGE
+              : ""
+          );
         }
       }
     };
@@ -385,7 +469,12 @@ export function App() {
       mounted = false;
       clearInterval(timer);
     };
-  }, [activeOrderId, tableSessionToken]);
+  }, [activeOrderId, tableSessionToken, activeOrderDetail?.service_mode, activeOrderDetail?.payment_status]);
+
+  useEffect(() => {
+    if (!(activeOrderDetail?.service_mode === SERVICE_MODES.BAR && activeOrderDetail?.payment_status === "CONFIRMED")) return;
+    setMesaPaymentStateMessage(PAYMENT_CONFIRMED_MESSAGE);
+  }, [activeOrderDetail?.service_mode, activeOrderDetail?.payment_status]);
 
   const productQtyInCart = useMemo(() => {
     const map = {};
@@ -603,6 +692,7 @@ export function App() {
 
     setSubmittingOrder(true);
     try {
+      const effectiveServiceMode = resolveCurrentServiceMode(serviceMode);
       let resolvedTableSessionId = tableSessionId;
       let resolvedTableSessionToken = tableSessionToken;
       if (!resolvedTableSessionId) {
@@ -610,6 +700,7 @@ export function App() {
           store_id: storeId,
           table_code: normalizedTable,
           guest_count: guestsValidation.value,
+          service_mode: effectiveServiceMode,
         });
         resolvedTableSessionId = opened.table_session_id;
         setTableSessionId(opened.table_session_id);
@@ -625,11 +716,12 @@ export function App() {
       }
 
       const created = await upsertOrderByTable({
-        tenant_id: 1,
+        tenant_id: menu?.tenant_id || storeId,
         store_id: storeId,
         table_session_id: resolvedTableSessionId,
         client_id: clientId,
         guest_count: guestsValidation.value,
+        service_mode: effectiveServiceMode,
         items: cartItems.map((item) => ({
           product_id: item.product_id,
           variant_id: item.variant_id,
@@ -639,8 +731,18 @@ export function App() {
         })),
       }, resolvedTableSessionToken);
 
+      setActiveOrderDetail(null);
       setLastCreatedOrder(created);
       setActiveOrderId(created.order_id);
+      setMesaBillSplit(null);
+      setMesaPaymentStateMessage("");
+      setSelectedPaymentMethod("");
+      setPaymentFlowOrderId(null);
+      setMesaActionMessage(
+        created.service_mode === SERVICE_MODES.BAR
+          ? "Pedido recibido. Va a entrar en preparacion cuando el pago quede confirmado."
+          : ""
+      );
       try {
         const consumption = await fetchTableSessionConsumption(resolvedTableSessionId, resolvedTableSessionToken);
         setTableSessionConsumption(consumption);
@@ -667,15 +769,18 @@ export function App() {
           setClosedSession({
             tableSessionId: state.table_session_id,
             tableCode: state.table_code,
+            feedbackSubmitted: false,
           });
           setFeedbackError("");
           setTableSessionId(null);
           setSessionJoinedAt(null);
           setConnectedClients(1);
           setActiveOrderId(null);
+          setActiveOrderDetail(null);
           setMesaBillSplit(null);
           setMesaPaymentStateMessage("");
           setSelectedPaymentMethod("");
+          setPaymentFlowOrderId(null);
           setHasTrackingAlert(false);
           setHasWaiterAlert(false);
           setWaiterAlertMessage("");
@@ -751,10 +856,12 @@ export function App() {
     const openSession = async () => {
       setEntrySubmitting(true);
       try {
+        const effectiveServiceMode = resolveCurrentServiceMode(serviceMode);
         const opened = await openTableSession({
           store_id: storeId,
           table_code: normalizedTable,
           guest_count: guestsValidation.value,
+          service_mode: effectiveServiceMode,
         });
         setTableSessionId(opened.table_session_id);
         const joined = await joinTableSession({
@@ -774,6 +881,7 @@ export function App() {
         setMesaBillSplit(null);
         setMesaPaymentStateMessage("");
         setSelectedPaymentMethod("");
+        setPaymentFlowOrderId(null);
         setCartItems([]);
         setClosedSession(null);
         setEntryValidated(true);
@@ -806,15 +914,29 @@ export function App() {
   const showSessionHeader = entryValidated && !closedSession;
   const paymentRequestAccepted =
     assistanceRequestKind === "CASH_PAYMENT" && assistanceRequestStatus === "RESOLVED";
+  const barOrderPaymentConfirmed =
+    activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
+    activeOrderDetail?.payment_status === "CONFIRMED";
   const paymentConfirmedMessage =
-    mesaPaymentStateMessage === "Pago confirmado. Gracias por venir, te esperamos pronto.";
-  const canShowPaymentOptions = (paymentRequestAccepted || Boolean(selectedPaymentMethod)) && !paymentConfirmedMessage;
+    mesaPaymentStateMessage === PAYMENT_CONFIRMED_MESSAGE || barOrderPaymentConfirmed;
+  const paymentFlowRequested =
+    paymentFlowOrderId === activeOrderId ||
+    (assistanceRequestKind === "CASH_PAYMENT" && serviceMode !== SERVICE_MODES.BAR) ||
+    Boolean(selectedPaymentMethod) ||
+    Boolean(mesaBillSplit) ||
+    Boolean(mesaPaymentStateMessage);
+  const canShowPaymentOptions = paymentFlowRequested && !paymentConfirmedMessage;
   const canSplitBill = connectedClients > 1 && !paymentConfirmedMessage;
   const restaurantName = menu?.store_name || "Tu restaurante";
   const themePreset = menu?.theme_preset || "CLASSIC";
   const accentColor = menu?.accent_color || "ROJO";
+  const backgroundColor = menu?.background_color || accentColor;
   const clientThemeClass = `app-shell client-theme-${String(themePreset).toLowerCase()}`;
-  const clientThemeStyle = { "--client-accent": ACCENT_HEX[accentColor] || ACCENT_HEX.ROJO };
+  const clientThemeStyle = {
+    "--client-accent": ACCENT_HEX[accentColor] || ACCENT_HEX.ROJO,
+    "--client-bg-color": ACCENT_HEX[backgroundColor] || ACCENT_HEX.ROJO,
+    "--client-bg-image": menu?.background_image_url ? `url("${menu.background_image_url}")` : "none",
+  };
 
   const requestWaiterHelp = async () => {
     if (waiterBusy) return;
@@ -845,7 +967,7 @@ export function App() {
   const requestPaymentFlow = async () => {
     if (mesaActionBusy) return;
     if (!activeOrderId) {
-      setMesaActionMessage("Primero envia un pedido para iniciar el pago.");
+      setMesaActionMessage("Primero envia un pedido para poder pedir la cuenta.");
       return;
     }
     setMesaActionBusy(true);
@@ -860,10 +982,11 @@ export function App() {
         note: "Quiero pagar",
         tableSessionToken,
       });
+      setPaymentFlowOrderId(activeOrderId);
       setSelectedPaymentMethod("");
-      setMesaActionMessage("Solicitud de pago enviada. Esperando confirmacion del staff.");
+      setMesaActionMessage("Cuenta solicitada. El staff fue avisado para acercarse a tu mesa.");
     } catch (error) {
-      setMesaActionMessage(error.message || "No se pudo iniciar el pago.");
+      setMesaActionMessage(error.message || "No se pudo pedir la cuenta.");
     } finally {
       setMesaActionBusy(false);
     }
@@ -871,6 +994,9 @@ export function App() {
 
   const selectPaymentMethod = async (method) => {
     if (mesaActionBusy) return;
+    if (activeOrderId) {
+      setPaymentFlowOrderId(activeOrderId);
+    }
     setSelectedPaymentMethod(method);
     if (method !== PAYMENT_METHODS.CASH) {
       const methodLabel =
@@ -879,7 +1005,7 @@ export function App() {
           : method === PAYMENT_METHODS.MODO
           ? "MODO"
           : "Transferencia";
-      setMesaActionMessage(`Elegiste ${methodLabel}. Cuando termines, toca "Ya pague".`);
+      setMesaActionMessage(`Elegiste ${methodLabel}. Cuando termines, avisanos con "Avisar que ya pague".`);
       return;
     }
     if (!tableSessionId) {
@@ -887,7 +1013,7 @@ export function App() {
       return;
     }
     setMesaActionBusy(true);
-    setMesaActionMessage("Avisando al staff para cobrar en efectivo...");
+    setMesaActionMessage("Avisando al staff para acercarse con el cobro en efectivo...");
     const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
     try {
       await requestWaiterHelpBySession({
@@ -897,7 +1023,7 @@ export function App() {
         note: "Cobro en efectivo",
         tableSessionToken,
       });
-      setMesaActionMessage('Mozo en camino para cobrar en efectivo. Cuando termine, toca "Ya pague".');
+      setMesaActionMessage("Staff en camino para cobrar en efectivo. Cuando retiren el pago, ellos mismos lo van a confirmar.");
     } catch (error) {
       setMesaActionMessage(error.message || "No se pudo avisar al staff para cobrar en efectivo.");
     } finally {
@@ -920,6 +1046,7 @@ export function App() {
     try {
       const split = await createEqualSplit({ orderId: activeOrderId, partsCount: connectedClients, tableSessionToken });
       setMesaBillSplit(split);
+      setPaymentFlowOrderId(activeOrderId);
       setMesaActionMessage(`Cuenta dividida en ${connectedClients} partes iguales.`);
     } catch (error) {
       setMesaActionMessage(error.message || "No se pudo dividir la cuenta.");
@@ -931,11 +1058,11 @@ export function App() {
   const reportPaymentFromTable = async () => {
     if (mesaActionBusy) return;
     if (sessionOrderIds.length === 0) {
-      setMesaActionMessage("Primero envia un pedido para pagar.");
+      setMesaActionMessage("Primero envia un pedido antes de cerrar la mesa.");
       return;
     }
     if (!selectedPaymentMethod) {
-      setMesaActionMessage("Elegi primero como queres pagar.");
+      setMesaActionMessage("Elegi primero el medio de pago.");
       return;
     }
     setMesaActionBusy(true);
@@ -980,22 +1107,25 @@ export function App() {
 
       if (latestHandledSplit) {
         setMesaBillSplit(latestHandledSplit);
+        if (activeOrderId) {
+          setPaymentFlowOrderId(activeOrderId);
+        }
       }
 
       if (allAlreadyConfirmed) {
-        setMesaActionMessage("Pago confirmado. Gracias por venir, te esperamos pronto.");
-        setMesaPaymentStateMessage("Pago confirmado. Gracias por venir, te esperamos pronto.");
+        setMesaActionMessage(PAYMENT_CONFIRMED_MESSAGE);
+        setMesaPaymentStateMessage(PAYMENT_CONFIRMED_MESSAGE);
         return;
       }
       setMesaActionMessage(
         hasReportedOrWaiting
           ? "Estamos verificando tu pago, aguarda hasta la confirmacion del staff."
-          : "Pago confirmado. Gracias por venir, te esperamos pronto."
+          : PAYMENT_CONFIRMED_MESSAGE
       );
       setMesaPaymentStateMessage(
         hasReportedOrWaiting
           ? "Estamos verificando tu pago, aguarda hasta la confirmacion del staff."
-          : "Pago confirmado. Gracias por venir, te esperamos pronto."
+          : PAYMENT_CONFIRMED_MESSAGE
       );
     } catch (error) {
       setMesaActionMessage(error.message || "No se pudo reportar el pago.");
@@ -1011,6 +1141,7 @@ export function App() {
     setEntryValidated(false);
     setEntryErrors({ table: "", guests: "" });
     setActiveOrderId(null);
+    setActiveOrderDetail(null);
     setActiveTab(CLIENT_TABS.MENU);
     setMenuResetSignal((current) => current + 1);
     setHasTrackingAlert(false);
@@ -1033,6 +1164,7 @@ export function App() {
     setMesaActionMessage("");
     setMesaPaymentStateMessage("");
     setSelectedPaymentMethod("");
+    setPaymentFlowOrderId(null);
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem(SESSION_STATE_KEY);
@@ -1056,10 +1188,30 @@ export function App() {
         comment,
         tableSessionToken,
       });
-      resetSession();
+      setClosedSession((current) =>
+        current
+          ? {
+              ...current,
+              feedbackSubmitted: true,
+            }
+          : current
+      );
       setUiToast("Gracias por tu valoracion.");
     } catch (error) {
-      setFeedbackError(error.message || "No se pudo guardar tu valoracion.");
+      if (error?.status === 409) {
+        setClosedSession((current) =>
+          current
+            ? {
+                ...current,
+                feedbackSubmitted: true,
+              }
+            : current
+        );
+        setFeedbackError("");
+        setUiToast("La valoracion ya habia sido enviada.");
+      } else {
+        setFeedbackError(error.message || "No se pudo guardar tu valoracion.");
+      }
     } finally {
       setFeedbackSaving(false);
     }
@@ -1077,6 +1229,9 @@ export function App() {
           <p className="kicker">Mesa digital</p>
         </div>
         <h1>{restaurantName}</h1>
+        <p className="muted">
+          Store ID activo: <strong>{storeId}</strong>
+        </p>
         {showSessionHeader ? (
           <div className="hero-table-meta">
             <p className="hero-table-row">
@@ -1100,6 +1255,7 @@ export function App() {
 
       {!entryValidated ? (
         <EntryGatePage
+          serviceMode={serviceMode}
           tableCode={tableCode}
           guestCount={guestCount}
           submitting={entrySubmitting}
@@ -1111,6 +1267,7 @@ export function App() {
       ) : closedSession ? (
         <SessionClosedFeedbackPage
           tableCode={closedSession.tableCode}
+          feedbackSubmitted={Boolean(closedSession.feedbackSubmitted)}
           clientUrl={
             typeof window !== "undefined"
               ? `${window.location.origin}/?mesa=${encodeURIComponent(closedSession.tableCode || "")}`
@@ -1141,6 +1298,7 @@ export function App() {
           {activeTab === CLIENT_TABS.TABLE && (
             <>
               <CheckoutPage
+                serviceMode={serviceMode}
                 tableCode={tableCode}
                 guestCount={guestCount}
                 cartItems={cartItems}
@@ -1175,6 +1333,8 @@ export function App() {
                 canSplitBill={canSplitBill}
                 canShowPaymentOptions={canShowPaymentOptions}
                 selectedPaymentMethod={selectedPaymentMethod}
+                paymentFlowRequested={paymentFlowRequested}
+                paymentConfirmed={paymentConfirmedMessage}
                 paymentHelpMessage={paymentRequestAccepted ? waiterAlertMessage : ""}
                 showLiveTotal={showLiveTotalToClient}
                 showSessionContext={false}

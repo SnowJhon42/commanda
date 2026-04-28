@@ -54,6 +54,7 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
         )
 
     return MenuResponse(
+        tenant_id=store.tenant_id,
         store_id=store_id,
         store_name=store.name,
         show_live_total_to_client=bool(store.show_live_total_to_client),
@@ -62,6 +63,8 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
         cover_image_url=store.cover_image_url,
         theme_preset=store.theme_preset or "CLASSIC",
         accent_color=store.accent_color or "ROJO",
+        background_color=store.background_color or "ROJO",
+        background_image_url=store.background_image_url,
         show_watermark_logo=bool(store.show_watermark_logo),
         categories=[CategoryOut(id=c.id, name=c.name, image_url=c.image_url, sort_order=c.sort_order) for c in categories],
         products=[

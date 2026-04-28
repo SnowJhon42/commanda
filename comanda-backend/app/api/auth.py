@@ -23,9 +23,21 @@ def sector_login(payload: SectorLoginRequest, db: Session = Depends(get_db)) -> 
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     token = create_access_token(
-        {"staff_id": staff.id, "store_id": staff.store_id, "sector": staff.sector, "username": staff.username}
+        {
+            "staff_id": staff.id,
+            "store_id": staff.store_id,
+            "sector": staff.sector,
+            "username": staff.username,
+            "display_name": staff.display_name,
+        }
     )
     return LoginResponse(
         access_token=token,
-        staff=StaffInfo(id=staff.id, store_id=staff.store_id, sector=staff.sector, username=staff.username),
+        staff=StaffInfo(
+            id=staff.id,
+            store_id=staff.store_id,
+            sector=staff.sector,
+            display_name=staff.display_name,
+            username=staff.username,
+        ),
     )

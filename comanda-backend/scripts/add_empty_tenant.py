@@ -69,6 +69,7 @@ def ensure_tables(conn: sqlite3.Connection, store_id: int, table_count: int) -> 
 def ensure_staff(conn: sqlite3.Connection, store_id: int, username_prefix: str, pin: str) -> int:
     created = 0
     staff_users = (
+        ("ADMIN", f"dueno_{username_prefix}"),
         ("ADMIN", f"admin_{username_prefix}"),
         ("KITCHEN", f"cocina_{username_prefix}"),
         ("BAR", f"barra_{username_prefix}"),
@@ -76,22 +77,23 @@ def ensure_staff(conn: sqlite3.Connection, store_id: int, username_prefix: str, 
     )
     pin_hash = hash_pin(pin)
     for sector, username in staff_users:
+        display_name = username.replace("_", " ").title()
         row = conn.execute(
             "SELECT id FROM staff_accounts WHERE store_id = ? AND username = ?",
             (store_id, username),
         ).fetchone()
         if row:
             conn.execute(
-                "UPDATE staff_accounts SET sector = ?, active = 1 WHERE id = ?",
-                (sector, int(row[0])),
+                "UPDATE staff_accounts SET sector = ?, display_name = ?, active = 1 WHERE id = ?",
+                (sector, display_name, int(row[0])),
             )
             continue
         cursor = conn.execute(
             """
-            INSERT INTO staff_accounts (store_id, sector, username, pin_hash, active)
-            VALUES (?, ?, ?, ?, 1)
+            INSERT INTO staff_accounts (store_id, sector, display_name, username, pin_hash, active)
+            VALUES (?, ?, ?, ?, ?, 1)
             """,
-            (store_id, sector, username, pin_hash),
+            (store_id, sector, display_name, username, pin_hash),
         )
         if cursor.rowcount:
             created += 1
@@ -138,6 +140,7 @@ if __name__ == "__main__":
     print(f"staff_created={staff_created}")
     print(f"staff_pin={args.pin}")
     print(f"owner_password={args.owner_password}")
+    print(f"owner_user=dueno_{username_prefix}")
     print(f"admin_user=admin_{username_prefix}")
     print(f"kitchen_user=cocina_{username_prefix}")
     print(f"bar_user=barra_{username_prefix}")

@@ -51,9 +51,11 @@ function formFromProduct(product) {
   };
 }
 
-export function MenuEditorPage({ token, storeId }) {
+export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [ownerPassword, setOwnerPassword] = useState("");
+  const [unlocked, setUnlocked] = useState(false);
   const [form, setForm] = useState(DEFAULT_FORM);
   const [editingId, setEditingId] = useState(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -73,12 +75,17 @@ export function MenuEditorPage({ token, storeId }) {
   const [importImageUploadingId, setImportImageUploadingId] = useState("");
 
   const loadData = useCallback(async () => {
+    if (!unlocked || !ownerPassword.trim()) {
+      setCategories([]);
+      setProducts([]);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
       const [cats, prods] = await Promise.all([
-        fetchAdminMenuCategories({ token }),
-        fetchAdminMenuProducts({ token }),
+        fetchAdminMenuCategories({ token, ownerPassword }),
+        fetchAdminMenuProducts({ token, ownerPassword }),
       ]);
       setCategories(cats || []);
       setProducts(prods || []);
@@ -87,7 +94,7 @@ export function MenuEditorPage({ token, storeId }) {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [ownerPassword, token, unlocked]);
 
   useEffect(() => {
     loadData();
@@ -158,7 +165,7 @@ export function MenuEditorPage({ token, storeId }) {
     setImportErrors([]);
     setImportWarnings([]);
     try {
-      const result = await previewMenuImport({ token, file: importFile });
+      const result = await previewMenuImport({ token, file: importFile, ownerPassword });
       setImportDraft(result.items || []);
       setImportWarnings(result.warnings || []);
       setImportSource({ filename: result.source_filename, kind: result.source_kind });
@@ -169,7 +176,7 @@ export function MenuEditorPage({ token, storeId }) {
     } finally {
       setImporting(false);
     }
-  }, [importFile, token]);
+  }, [importFile, ownerPassword, token]);
 
   const openImportExcel = useCallback(() => {
     setImportOpen(true);
@@ -201,7 +208,7 @@ export function MenuEditorPage({ token, storeId }) {
       setImportImageUploadingId(rowId);
       setError("");
       try {
-        const uploaded = await uploadMenuImage({ token, file });
+        const uploaded = await uploadMenuImage({ token, file, ownerPassword });
         updateImportRow(rowId, { image_url: uploaded.image_url });
       } catch (err) {
         setError(err.message || "No se pudo subir la imagen del producto.");
@@ -221,7 +228,7 @@ export function MenuEditorPage({ token, storeId }) {
     setError("");
     setMessage("");
     try {
-      const result = await commitMenuImport({ token, items: validImportRows });
+      const result = await commitMenuImport({ token, items: validImportRows, ownerPassword });
       await loadData();
       setImportDraft([]);
       setImportErrors([]);
@@ -236,7 +243,7 @@ export function MenuEditorPage({ token, storeId }) {
     } finally {
       setImporting(false);
     }
-  }, [loadData, token, validImportRows]);
+  }, [loadData, ownerPassword, token, validImportRows]);
 
   const handleFileChange = useCallback(
     async (event) => {
@@ -245,7 +252,7 @@ export function MenuEditorPage({ token, storeId }) {
       setImageUploading(true);
       setError("");
       try {
-        const uploaded = await uploadMenuImage({ token, file });
+        const uploaded = await uploadMenuImage({ token, file, ownerPassword });
         setForm((prev) => ({ ...prev, image_url: uploaded.image_url }));
         setMessage("Imagen actualizada automáticamente.");
       } catch (err) {
@@ -255,7 +262,7 @@ export function MenuEditorPage({ token, storeId }) {
         event.target.value = "";
       }
     },
-    [token]
+    [ownerPassword, token]
   );
 
   const handleSubmit = useCallback(
@@ -271,7 +278,7 @@ export function MenuEditorPage({ token, storeId }) {
       setSaving(true);
       try {
         if (editingId) {
-          await patchAdminProduct({ token, productId: editingId, payload });
+          await patchAdminProduct({ token, productId: editingId, payload, ownerPassword });
           await loadData();
           setForm(DEFAULT_FORM);
           setExtraForm({ name: "", extra_price: "0" });
@@ -279,7 +286,7 @@ export function MenuEditorPage({ token, storeId }) {
           setEditorOpen(false);
           setMessage("Producto actualizado.");
         } else {
-          const created = await createAdminProduct({ token, payload });
+          const created = await createAdminProduct({ token, payload, ownerPassword });
           setMessage("Producto creado. Ya podés agregar extras.");
           await loadData();
           setEditingId(created.id);
@@ -293,7 +300,7 @@ export function MenuEditorPage({ token, storeId }) {
         setSaving(false);
       }
     },
-    [editingId, form, loadData, token]
+    [editingId, form, loadData, ownerPassword, token]
   );
 
   const toggleActive = useCallback(
@@ -305,6 +312,7 @@ export function MenuEditorPage({ token, storeId }) {
           token,
           productId: product.id,
           payload: { active: !product.active },
+          ownerPassword,
         });
         await loadData();
       } catch (err) {
@@ -313,7 +321,7 @@ export function MenuEditorPage({ token, storeId }) {
         setSaving(false);
       }
     },
-    [token, loadData]
+    [ownerPassword, token, loadData]
   );
 
   const handleDeleteProduct = useCallback(
@@ -327,7 +335,7 @@ export function MenuEditorPage({ token, storeId }) {
       setError("");
       setMessage("");
       try {
-        const result = await deleteAdminProduct({ token, productId: product.id });
+        const result = await deleteAdminProduct({ token, productId: product.id, ownerPassword });
         await loadData();
         if (editingId === product.id) {
           resetForm();
@@ -345,7 +353,7 @@ export function MenuEditorPage({ token, storeId }) {
         setSaving(false);
       }
     },
-    [token, loadData, editingId, resetForm]
+    [ownerPassword, token, loadData, editingId, resetForm]
   );
 
   const createExtraOption = useCallback(async () => {
@@ -364,7 +372,7 @@ export function MenuEditorPage({ token, storeId }) {
     try {
       let productId = editingId;
       if (!productId) {
-        const created = await createAdminProduct({ token, payload: productPayloadFromForm(form) });
+        const created = await createAdminProduct({ token, payload: productPayloadFromForm(form), ownerPassword });
         productId = created.id;
         setEditingId(created.id);
         setEditorOpen(true);
@@ -373,6 +381,7 @@ export function MenuEditorPage({ token, storeId }) {
       await createAdminProductExtraOption({
         token,
         productId,
+        ownerPassword,
         payload: {
           name,
           extra_price: Number(extraForm.extra_price || 0),
@@ -387,7 +396,7 @@ export function MenuEditorPage({ token, storeId }) {
     } finally {
       setSaving(false);
     }
-  }, [editingId, extraForm, form, loadData, token]);
+  }, [editingId, extraForm, form, loadData, ownerPassword, token]);
 
   const toggleExtraOption = useCallback(
     async (extra) => {
@@ -397,6 +406,7 @@ export function MenuEditorPage({ token, storeId }) {
         await patchAdminProductExtraOption({
           token,
           extraOptionId: extra.id,
+          ownerPassword,
           payload: { active: !extra.active },
         });
         await loadData();
@@ -406,7 +416,7 @@ export function MenuEditorPage({ token, storeId }) {
         setSaving(false);
       }
     },
-    [token, loadData]
+    [ownerPassword, token, loadData]
   );
 
   const draftCount = products.filter((product) => !product.image_url || !product.base_price).length;
@@ -425,6 +435,58 @@ export function MenuEditorPage({ token, storeId }) {
       .sort((a, b) => Number(b.id) - Number(a.id));
     return [...categoryGroups, { key: "__uncategorized", label: "Sin categoría", products: uncategorized }];
   }, [categories, products]);
+
+  if (!unlocked) {
+    return (
+      <section className="ops-panel menu-admin-shell">
+        <div className="menu-admin-hero">
+          <div>
+            <p className="kicker menu-admin-kicker">Carga manual o importación asistida</p>
+            <h3>Editar menú</h3>
+            <p className="muted">El menú, los precios y las importaciones requieren clave de dueño.</p>
+          </div>
+        </div>
+
+        <div className="menu-editor-card store-owner-card">
+          <div className="section-head">
+            <div>
+              <h4>Desbloquear edición sensible</h4>
+              <p className="muted">
+                Usuario actual: <strong>{staffDisplayName || "ADMIN"}</strong>.
+              </p>
+            </div>
+          </div>
+          <label className="field">
+            Clave de dueño
+            <input
+              type="password"
+              value={ownerPassword}
+              onChange={(event) => setOwnerPassword(event.target.value)}
+              placeholder="Clave de dueño"
+            />
+          </label>
+          <div className="form-actions">
+            <button
+              className="btn-primary"
+              type="button"
+              onClick={() => {
+                if (!ownerPassword.trim()) {
+                  setError("Ingresá la clave de dueño para editar el menú.");
+                  return;
+                }
+                setUnlocked(true);
+                setError("");
+              }}
+            >
+              Desbloquear
+            </button>
+          </div>
+          {message && <p className="success-text">{message}</p>}
+          {error && <p className="error-text">{error}</p>}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="ops-panel menu-admin-shell">

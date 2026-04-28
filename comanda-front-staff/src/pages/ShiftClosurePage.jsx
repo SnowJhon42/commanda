@@ -1,9 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 function formatMoney(value) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(
     value || 0
   );
+}
+
+function paymentMethodLabel(value) {
+  if (value === "CASH") return "Efectivo";
+  if (value === "CARD") return "Tarjeta";
+  if (value === "TRANSFER") return "Transferencia";
+  if (value === "OTHER") return "Otros";
+  return value || "Otro";
 }
 
 function elapsedLabel(minutesValue) {
@@ -26,11 +36,26 @@ export function ShiftClosurePage({
     avgRating: 0,
     feedbackCount: 0,
     closedTableDetails: [],
+    collectedTotal: 0,
+    paymentTotals: [],
+    pendingOrders: [],
+    pendingOrdersCount: 0,
+    cashSession: null,
   },
+  cashBusy = false,
+  collectingPaymentKey = "",
+  onOpenCashSession = () => {},
+  onCloseCashSession = () => {},
+  onCollectOrderPayment = () => {},
   onConfirmCloseShift = () => {},
   onBackToBoard = () => {},
 }) {
-  const username = activeShift?.operator_name || session?.staff?.username || "admin";
+  const username = activeShift?.operator_name || session?.staff?.display_name || session?.staff?.username || "admin";
+  const [openingFloat, setOpeningFloat] = useState("0");
+  const [cashNote, setCashNote] = useState("");
+  const [closingDeclared, setClosingDeclared] = useState("");
+  const [closingNote, setClosingNote] = useState("");
+  const [collectForms, setCollectForms] = useState({});
   const nowLabel = new Intl.DateTimeFormat("es-AR", {
     day: "2-digit",
     month: "2-digit",
@@ -39,6 +64,44 @@ export function ShiftClosurePage({
     minute: "2-digit",
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(new Date());
+  const cashSession = shiftSummary.cashSession;
+  const hasOpenCash = cashSession?.status === "OPEN";
+  const pendingOrders = shiftSummary.pendingOrders || [];
+  const paymentTotals = shiftSummary.paymentTotals || [];
+  const paymentTotalsMap = paymentTotals.reduce((acc, entry) => {
+    acc[entry.paymentMethod] = Number(entry.totalAmount || 0);
+    return acc;
+  }, {});
+  const cashTotal = Number(paymentTotalsMap.CASH || 0);
+  const cardTotal = Number(paymentTotalsMap.CARD || 0);
+  const transferTotal = Number(paymentTotalsMap.TRANSFER || 0);
+  const otherTotal = Number(paymentTotalsMap.OTHER || 0);
+  const digitalTotal = cardTotal + transferTotal + otherTotal;
+
+  useEffect(() => {
+    if (!cashSession) {
+      setClosingDeclared("");
+      return;
+    }
+    setClosingDeclared(String(cashSession.expectedAmount || 0));
+  }, [cashSession?.expectedAmount, cashSession?.id]);
+
+  useEffect(() => {
+    setCollectForms((current) => {
+      const nextForms = {};
+      pendingOrders.forEach((order) => {
+        nextForms[order.orderId] = {
+          paymentMethod: current[order.orderId]?.paymentMethod || "CASH",
+          amount:
+            current[order.orderId]?.amount && Number(current[order.orderId]?.amount) > 0
+              ? current[order.orderId].amount
+              : String(order.balanceDue || 0),
+          note: current[order.orderId]?.note || "",
+        };
+      });
+      return nextForms;
+    });
+  }, [pendingOrders]);
 
   return (
     <section className="ops-panel menu-admin-shell">
@@ -87,7 +150,7 @@ export function ShiftClosurePage({
                   : nowLabel}
               </p>
               <div className="form-actions">
-                <button type="button" className="btn-primary" onClick={onConfirmCloseShift}>
+                <button type="button" className="btn-primary" onClick={onConfirmCloseShift} disabled={hasOpenCash}>
                   Confirmar cierre
                 </button>
                 <button type="button" className="btn-secondary" onClick={onBackToBoard}>
@@ -100,10 +163,114 @@ export function ShiftClosurePage({
           <div className="menu-editor-card shift-card">
             <div className="section-head">
               <div>
-                <h4>Resumen de cierre</h4>
-                <p className="muted">Vista previa del resumen que se revisa antes de confirmar el cierre.</p>
+                <h4>Caja del turno</h4>
+                <p className="muted">Abrí caja, registrá cobros y cerrala antes del cierre final.</p>
               </div>
             </div>
+
+            {cashSession ? (
+              <div className="detail-card" style={{ marginBottom: 16 }}>
+                <strong>{cashSession.status === "OPEN" ? "Caja abierta" : "Caja cerrada"}</strong>
+                <p className="muted">Fondo inicial: {formatMoney(cashSession.openingFloat)}</p>
+                <p className="muted">Cobrado total del turno: {formatMoney(cashSession.collectedAmount)}</p>
+                <div className="shift-stats-grid" style={{ marginTop: 12 }}>
+                  <article className="shift-stat-box">
+                    <span>Caja física</span>
+                    <strong>{formatMoney(cashTotal || cashSession.cashCollectedAmount || 0)}</strong>
+                  </article>
+                  <article className="shift-stat-box">
+                    <span>Cuentas / bancos</span>
+                    <strong>{formatMoney(digitalTotal)}</strong>
+                  </article>
+                  <article className="shift-stat-box">
+                    <span>Tarjeta</span>
+                    <strong>{formatMoney(cardTotal)}</strong>
+                  </article>
+                  <article className="shift-stat-box">
+                    <span>Transferencia</span>
+                    <strong>{formatMoney(transferTotal)}</strong>
+                  </article>
+                  {otherTotal > 0 ? (
+                    <article className="shift-stat-box">
+                      <span>Otros medios</span>
+                      <strong>{formatMoney(otherTotal)}</strong>
+                    </article>
+                  ) : null}
+                </div>
+                <p className="muted">Efectivo esperado en caja: {formatMoney(cashSession.expectedAmount)}</p>
+                {cashSession.declaredAmount !== null ? (
+                  <p className="muted">
+                    Efectivo declarado: {formatMoney(cashSession.declaredAmount)} | Diferencia: {formatMoney(cashSession.differenceAmount)}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="muted" style={{ marginBottom: 16 }}>
+                Todavía no abriste caja en este turno.
+              </p>
+            )}
+
+            {!cashSession ? (
+              <div className="shift-placeholder-block" style={{ marginBottom: 18 }}>
+                <div>
+                  <h5>Abrir caja</h5>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={openingFloat}
+                    onChange={(event) => setOpeningFloat(event.target.value)}
+                    placeholder="Fondo inicial"
+                  />
+                  <textarea
+                    value={cashNote}
+                    onChange={(event) => setCashNote(event.target.value)}
+                    placeholder="Observación opcional"
+                    rows={3}
+                  />
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => onOpenCashSession({ openingFloat, note: cashNote })}
+                      disabled={cashBusy}
+                    >
+                      {cashBusy ? "Abriendo..." : "Abrir caja"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : hasOpenCash ? (
+              <div className="shift-placeholder-block" style={{ marginBottom: 18 }}>
+                <div>
+                  <h5>Cerrar caja</h5>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={closingDeclared}
+                    onChange={(event) => setClosingDeclared(event.target.value)}
+                    placeholder="Total declarado"
+                  />
+                  <textarea
+                    value={closingNote}
+                    onChange={(event) => setClosingNote(event.target.value)}
+                    placeholder="Observación de cierre"
+                    rows={3}
+                  />
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => onCloseCashSession({ declaredAmount: closingDeclared, note: closingNote })}
+                      disabled={cashBusy}
+                    >
+                      {cashBusy ? "Cerrando..." : "Cerrar caja"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             <div className="shift-stats-grid">
               <article className="shift-stat-box">
@@ -115,8 +282,20 @@ export function ShiftClosurePage({
                 <strong>{shiftSummary.closedTables}</strong>
               </article>
               <article className="shift-stat-box">
-                <span>Facturación total</span>
+                <span>Ventas cerradas</span>
                 <strong>{formatMoney(shiftSummary.totalRevenue)}</strong>
+              </article>
+              <article className="shift-stat-box">
+                <span>Cobrado en caja</span>
+                <strong>{formatMoney(cashTotal || cashSession?.cashCollectedAmount || 0)}</strong>
+              </article>
+              <article className="shift-stat-box">
+                <span>Cuentas / bancos</span>
+                <strong>{formatMoney(digitalTotal)}</strong>
+              </article>
+              <article className="shift-stat-box">
+                <span>Cobrado total</span>
+                <strong>{formatMoney(shiftSummary.collectedTotal)}</strong>
               </article>
               <article className="shift-stat-box">
                 <span>Tiempo promedio</span>
@@ -130,9 +309,29 @@ export function ShiftClosurePage({
                 <span>Opiniones</span>
                 <strong>{shiftSummary.feedbackCount || 0}</strong>
               </article>
+              <article className="shift-stat-box">
+                <span>Pedidos pendientes</span>
+                <strong>{shiftSummary.pendingOrdersCount || 0}</strong>
+              </article>
             </div>
 
             <div className="shift-placeholder-block">
+              <div>
+                <h5>Cobros por medio de pago</h5>
+                {paymentTotals.length === 0 ? (
+                  <p className="muted">Todavía no hay cobros registrados en la caja.</p>
+                ) : (
+                  <div className="shift-closed-table-list">
+                    {paymentTotals.map((entry) => (
+                      <div key={entry.paymentMethod} className="shift-closed-table-row">
+                        <strong>{paymentMethodLabel(entry.paymentMethod)}</strong>
+                        <span>{entry.paymentsCount} pagos</span>
+                        <span>{formatMoney(entry.totalAmount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div>
                 <h5>Mesas cerradas del turno</h5>
                 {shiftSummary.closedTableDetails.length === 0 ? (
@@ -150,10 +349,6 @@ export function ShiftClosurePage({
                   </div>
                 )}
               </div>
-              <div>
-                <h5>Rankings del turno</h5>
-                <p className="muted">Top platos y top bebidas del turno, sin comparativas todavía.</p>
-              </div>
             </div>
           </div>
         </div>
@@ -162,31 +357,96 @@ export function ShiftClosurePage({
           <div className="menu-editor-card shift-card">
             <div className="section-head">
               <div>
-                <h4>Cómo funciona</h4>
-                <p className="muted">La idea es ver la lógica general antes de meter backend.</p>
+                <h4>Pedidos pendientes de cobro</h4>
+                <p className="muted">Quedan abiertos y el próximo turno los encuentra tal como están.</p>
               </div>
             </div>
-            <ul className="shift-rule-list">
-              <li>Seguís operando normal desde Pedidos.</li>
-              <li>Si queda una mesa abierta, sigue viva en Pedidos.</li>
-              <li>Acá solo revisás el cierre antes de confirmar.</li>
-              <li>Cuando confirmás, volvés al login y queda constancia del cierre.</li>
-            </ul>
+            {pendingOrders.length === 0 ? (
+              <p className="muted">No hay pedidos con saldo pendiente.</p>
+            ) : (
+              <div className="shift-closed-table-list">
+                {pendingOrders.map((order) => {
+                  const form = collectForms[order.orderId] || { paymentMethod: "CASH", amount: String(order.balanceDue || 0), note: "" };
+                  return (
+                    <div key={order.orderId} className="detail-card" style={{ marginBottom: 12 }}>
+                      <strong>Mesa {order.tableCode} · Pedido #{order.orderId}</strong>
+                      <p className="muted">
+                        Total {formatMoney(order.totalAmount)} | Pagado {formatMoney(order.paidAmount)} | Saldo {formatMoney(order.balanceDue)}
+                      </p>
+                      <select
+                        value={form.paymentMethod}
+                        onChange={(event) =>
+                          setCollectForms((current) => ({
+                            ...current,
+                            [order.orderId]: { ...current[order.orderId], paymentMethod: event.target.value },
+                          }))
+                        }
+                      >
+                        <option value="CASH">Efectivo</option>
+                        <option value="CARD">Tarjeta</option>
+                        <option value="TRANSFER">Transferencia</option>
+                        <option value="OTHER">Otro</option>
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.amount}
+                        onChange={(event) =>
+                          setCollectForms((current) => ({
+                            ...current,
+                            [order.orderId]: { ...current[order.orderId], amount: event.target.value },
+                          }))
+                        }
+                      />
+                      <textarea
+                        value={form.note}
+                        onChange={(event) =>
+                          setCollectForms((current) => ({
+                            ...current,
+                            [order.orderId]: { ...current[order.orderId], note: event.target.value },
+                          }))
+                        }
+                        rows={2}
+                        placeholder="Nota opcional"
+                      />
+                      <div className="form-actions">
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={!hasOpenCash || collectingPaymentKey === String(order.orderId)}
+                          onClick={() =>
+                            onCollectOrderPayment({
+                              orderId: order.orderId,
+                              paymentMethod: form.paymentMethod,
+                              amount: form.amount,
+                              note: form.note,
+                            })
+                          }
+                        >
+                          {collectingPaymentKey === String(order.orderId) ? "Registrando..." : "Registrar cobro"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="menu-editor-card shift-card">
             <div className="section-head">
               <div>
-                <h4>Último cierre</h4>
-                <p className="muted">Referencia visual para el estado inicial del admin.</p>
+                <h4>Reglas de cierre</h4>
+                <p className="muted">Criterios de seguridad para no cerrar en falso.</p>
               </div>
             </div>
-            <div className="detail-card">
-              <strong>Turno noche</strong>
-              <p className="muted">Usuario: admin</p>
-              <p className="muted">Facturación: --</p>
-              <p className="muted">Cubiertos: --</p>
-            </div>
+            <ul className="shift-rule-list">
+              <li>Seguís operando normal desde Pedidos.</li>
+              <li>No se puede cerrar una mesa con deuda pendiente.</li>
+              <li>No se puede cerrar el turno con caja abierta.</li>
+              <li>Si quedan mesas abiertas, pasan al turno siguiente.</li>
+            </ul>
           </div>
         </aside>
       </div>

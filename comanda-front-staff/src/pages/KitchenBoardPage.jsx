@@ -18,6 +18,7 @@ export function KitchenBoardPage({
   onSelectOrder = () => {},
   selectedOrderId = null,
   alertMetaByOrder = {},
+  readOnlyReason = "",
 }) {
   return (
     <section className="panel">
@@ -25,6 +26,7 @@ export function KitchenBoardPage({
         <h3>Cocina</h3>
         <span className="muted">{rows.length} mesas activas</span>
       </div>
+      {readOnlyReason && <p className="muted operational-banner">{readOnlyReason}</p>}
       {loading && <p className="muted">Actualizando...</p>}
       {rows.length === 0 ? (
         <p className="muted">No hay items recibidos o en preparacion en cocina.</p>
@@ -72,7 +74,7 @@ export function KitchenBoardPage({
                       <span className={badgeClass(item.status)}>{statusLabel(item.status)}</span>
                       <button
                         className="btn-primary"
-                        disabled={updating}
+                        disabled={updating || Boolean(readOnlyReason)}
                         onClick={() =>
                           onAdvanceItem({
                             itemId: item.item_id,

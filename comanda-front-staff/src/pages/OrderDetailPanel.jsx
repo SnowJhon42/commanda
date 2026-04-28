@@ -52,6 +52,14 @@ function cashRequestKindLabel(kind) {
   return "Solicitud";
 }
 
+function isBarPaymentPending(orderDetail) {
+  return (
+    orderDetail?.service_mode === "BAR" &&
+    orderDetail?.payment_gate === "BEFORE_PREPARATION" &&
+    orderDetail?.payment_status !== "CONFIRMED"
+  );
+}
+
 export function OrderDetailPanel({
   orderDetail,
   selectedOrderId,
@@ -68,6 +76,7 @@ export function OrderDetailPanel({
   onConfirmPart,
   onResolveCashRequest = () => {},
   billingBusy = false,
+  readOnlyReason = "",
 }) {
   const allDelivered =
     Array.isArray(orderDetail?.items) &&
@@ -78,6 +87,7 @@ export function OrderDetailPanel({
     !orderDetail ||
     Number(orderDetail.total_amount || 0) <= 0 ||
     (orderDetail.bill_split?.status === "CLOSED" && allDelivered);
+  const barPaymentPending = isBarPaymentPending(orderDetail);
 
   return (
     <section className="panel">
@@ -91,6 +101,7 @@ export function OrderDetailPanel({
       {!selectedOrderId && <p className="muted">Selecciona un pedido para ver detalle completo.</p>}
       {selectedOrderId && loading && <p className="muted">Cargando detalle...</p>}
       {error && <p className="error-text">{error}</p>}
+      {readOnlyReason && <p className="muted operational-banner">{readOnlyReason}</p>}
 
       {orderDetail && (
         <div className="detail-grid">
@@ -109,6 +120,12 @@ export function OrderDetailPanel({
               Total: {formatMoney(orderDetail.total_amount)} | Mesa abierta: {elapsedLabel(orderDetail.table_elapsed_minutes)} | Pedido actual:{" "}
               {elapsedLabel(orderDetail.order_elapsed_minutes)}
             </p>
+            {barPaymentPending && (
+              <div className="order-actions">
+                <span className="badge badge-received">BAR · PAGO PENDIENTE</span>
+                <span className="muted">Se puede ver el pedido, pero no avanzar estados hasta confirmar el pago.</span>
+              </div>
+            )}
             {actorSector === "ADMIN" && (
               <div className="order-actions">
                 <button className="btn-secondary" onClick={onCloseTable} disabled={isClosingCurrentTable || !normalCloseEnabled}>
@@ -165,7 +182,7 @@ export function OrderDetailPanel({
                     {next ? (
                       <button
                         className="btn-primary"
-                        disabled={advancingKey === key}
+                        disabled={barPaymentPending || advancingKey === key || Boolean(readOnlyReason)}
                         onClick={() =>
                           onAdvanceItem({
                             itemId: rowItemId,
@@ -174,7 +191,7 @@ export function OrderDetailPanel({
                           })
                         }
                       >
-                        {advancingKey === key ? "..." : `Pasar a ${next}`}
+                        {barPaymentPending ? "Esperando pago" : advancingKey === key ? "..." : `Pasar a ${next}`}
                       </button>
                     ) : (
                       <span className="muted">{formatArgentinaTime(item.updated_at)}</span>
@@ -270,7 +287,7 @@ export function OrderDetailPanel({
                       {req.status === "RESOLVED" ? "TOMADO" : "PENDIENTE"}
                     </span>
                     {req.status === "PENDING" && (actorSector === "ADMIN" || actorSector === "WAITER") ? (
-                      <button className="btn-primary" onClick={() => onResolveCashRequest(req.id)} disabled={billingBusy}>
+                      <button className="btn-primary" onClick={() => onResolveCashRequest(req.id)} disabled={billingBusy || Boolean(readOnlyReason)}>
                         {billingBusy ? "..." : "Marcar atendido"}
                       </button>
                     ) : (

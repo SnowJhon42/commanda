@@ -45,6 +45,7 @@ def seed_minimum_store_data(db: Session):
     admin = StaffAccount(
         store_id=store.id,
         sector=Sector.ADMIN.value,
+        display_name="Admin Test",
         username="admin",
         pin_hash=hash_pin("1234"),
         active=True,

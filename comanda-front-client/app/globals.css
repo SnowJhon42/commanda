@@ -1281,6 +1281,90 @@ button:focus {
   gap: 8px;
 }
 
+.bar-payment-callout {
+  border: 2px solid #f59e0b;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.16);
+}
+
+.bar-payment-callout-head {
+  display: grid;
+  gap: 6px;
+}
+
+.bar-payment-pill {
+  width: fit-content;
+  border-radius: 999px;
+  background: #9a3412;
+  color: #fff;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.bar-payment-copy {
+  margin: 0;
+  color: #7c2d12;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.bar-payment-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bar-payment-steps span {
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.65);
+  padding: 8px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #9a3412;
+}
+
+.bar-payment-actions {
+  display: grid;
+}
+
+.bar-payment-state-card {
+  border: 2px solid #ef4444;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 12px 24px rgba(239, 68, 68, 0.14);
+}
+
+.bar-payment-state-card h3,
+.bar-payment-state-card p {
+  margin: 0;
+}
+
+.bar-payment-inline-note {
+  margin: 0;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #9a3412;
+  padding: 10px 12px;
+  font-weight: 700;
+}
+
+.bar-payment-detail-card {
+  border: 2px solid #fed7aa;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+}
+
 .mesa-submit {
   min-height: 42px;
   font-weight: 800;
@@ -1304,6 +1388,11 @@ button:focus {
   border-radius: 12px;
   background: #f0fdf4;
   padding: 10px;
+}
+
+.success-box-bar {
+  border-color: #fdba74;
+  background: #fff7ed;
 }
 
 .cart-sticky-bar {

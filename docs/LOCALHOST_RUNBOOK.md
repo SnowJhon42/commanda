@@ -1,7 +1,7 @@
 # COMANDA - Runbook Localhost (Windows)
 
 Este flujo levanta:
-- backend: `http://localhost:8000`
+- backend: `http://localhost:8001`
 - front cliente: `http://localhost:5173`
 - front staff: `http://localhost:5174`
 
@@ -38,7 +38,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_front_staff_local.ps1
 ## 2) Verificaciones rápidas
 
 - Health backend:
-  - `http://localhost:8000/health`
+  - `http://localhost:8001/health`
 - Front cliente:
   - `http://localhost:5173`
 - Front staff:
@@ -56,12 +56,12 @@ Usuarios seed (`store_id=1`, PIN `1234`):
 
 1. Abrir cliente (`:5173`) y verificar que cargue menú.
 2. Crear un pedido (por ahora desde API/Postman también sirve):
-   - `POST http://localhost:8000/orders`
+   - `POST http://localhost:8001/orders`
 3. Abrir staff (`:5174`) con `admin`.
 4. Ver pedido y mover estados por sector:
    - `RECEIVED -> IN_PROGRESS -> DONE -> DELIVERED`
 5. Consultar tracking:
-   - `GET http://localhost:8000/orders/{order_id}`
+   - `GET http://localhost:8001/orders/{order_id}`
 
 ## 5) Problemas conocidos
 

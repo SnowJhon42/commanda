@@ -36,9 +36,20 @@ Guardar esta misma estructura en una nota privada, password manager o workspace 
 
 - `DATABASE_URL`
 - `NEXT_PUBLIC_API_URL`
-- `CORS_ORIGINS`
+- `CORS_ALLOW_ORIGINS`
+- `CORS_ALLOW_ORIGIN_REGEX`
+- `STAFF_APP_BASIC_AUTH_USER`
+- `STAFF_APP_BASIC_AUTH_PASSWORD`
 - `ENVIRONMENT`
 - cualquier token de storage o integracion
+
+## Privacidad minima para staff publico
+
+- Si el front staff vive en Vercel con URL publica, protegerlo con `STAFF_APP_BASIC_AUTH_USER` y `STAFF_APP_BASIC_AUTH_PASSWORD`
+- No compartir previews de Vercel
+- Mantener repo privado
+- No guardar secretos en `.env` versionado
+- Confirmar `JWT_SECRET_KEY` fuerte en backend productivo
 
 ## Regla
 

@@ -16,6 +16,7 @@ class CreateOrderRequest(BaseModel):
     store_id: int
     table_code: str
     guest_count: int = Field(..., gt=0)
+    service_mode: str = Field("RESTAURANTE", pattern="^(RESTAURANTE|BAR)$")
     items: list[CreateOrderItemIn]
 
 
@@ -23,6 +24,7 @@ class OpenTableSessionRequest(BaseModel):
     store_id: int
     table_code: str
     guest_count: int = Field(1, gt=0)
+    service_mode: str = Field("RESTAURANTE", pattern="^(RESTAURANTE|BAR)$")
 
 
 class OpenTableSessionResponse(BaseModel):
@@ -31,6 +33,7 @@ class OpenTableSessionResponse(BaseModel):
     table_code: str
     guest_count: int
     status: str
+    service_mode: str = "RESTAURANTE"
     active_order_id: int | None = None
 
 
@@ -53,6 +56,7 @@ class UpsertOrderByTableRequest(BaseModel):
     table_session_id: int
     client_id: str | None = Field(default=None, min_length=1, max_length=120)
     guest_count: int = Field(..., gt=0)
+    service_mode: str = Field("RESTAURANTE", pattern="^(RESTAURANTE|BAR)$")
     items: list[CreateOrderItemIn]
 
 
@@ -62,6 +66,7 @@ class TableSessionStateResponse(BaseModel):
     table_code: str
     guest_count: int
     status: str
+    service_mode: str = "RESTAURANTE"
     connected_clients: int
     active_order_id: int | None = None
     assistance_request_kind: str | None = None
@@ -96,6 +101,7 @@ class StaffTableSessionOut(BaseModel):
     table_code: str
     guest_count: int
     status: str
+    service_mode: str = "RESTAURANTE"
     connected_clients: int
     active_order_id: int | None = None
     active_order_created_at: datetime | None = None
@@ -108,6 +114,35 @@ class StaffTableSessionsResponse(BaseModel):
     items: list[StaffTableSessionOut]
 
 
+class StaffTableOut(BaseModel):
+    table_id: int
+    table_code: str
+    active: bool
+    current_status: str
+    service_mode: str = "RESTAURANTE"
+    active_table_session_id: int | None = None
+    guest_count: int = 0
+    connected_clients: int = 0
+    active_order_id: int | None = None
+    active_order_created_at: datetime | None = None
+    elapsed_minutes: int = 0
+
+
+class StaffTablesResponse(BaseModel):
+    total: int
+    items: list[StaffTableOut]
+
+
+class CreateStaffTableRequest(BaseModel):
+    table_code: str | None = Field(default=None, min_length=1, max_length=30)
+
+
+class CreateStaffTableResponse(BaseModel):
+    table_id: int
+    table_code: str
+    active: bool
+
+
 class ChangeTableSessionStatusRequest(BaseModel):
     to_status: str
 
@@ -116,6 +151,18 @@ class ChangeTableSessionStatusResponse(BaseModel):
     table_session_id: int
     previous_status: str
     current_status: str
+    updated_by_staff_id: int
+
+
+class MoveTableSessionRequest(BaseModel):
+    target_table_code: str = Field(..., min_length=1, max_length=30)
+
+
+class MoveTableSessionResponse(BaseModel):
+    table_session_id: int
+    previous_table_code: str
+    current_table_code: str
+    moved_order_ids: list[int]
     updated_by_staff_id: int
 
 
@@ -155,7 +202,62 @@ class StoreProfileResponse(BaseModel):
     cover_image_url: str | None = None
     theme_preset: str = "CLASSIC"
     accent_color: str = "ROJO"
+    background_color: str = "ROJO"
+    background_image_url: str | None = None
     show_watermark_logo: bool = False
+
+
+class StaffAccountOut(BaseModel):
+    id: int
+    display_name: str
+    username: str
+    sector: str
+    active: bool
+    created_at: datetime
+
+
+class StaffAccountsResponse(BaseModel):
+    items: list[StaffAccountOut]
+
+
+class CreateStaffAccountRequest(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=120)
+    username: str = Field(..., min_length=1, max_length=100)
+    pin: str = Field(..., min_length=4, max_length=200)
+    sector: str = Field(..., pattern="^(ADMIN|KITCHEN|BAR|WAITER)$")
+    active: bool = True
+
+
+class UpdateStaffAccountRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    pin: str | None = Field(default=None, min_length=4, max_length=200)
+    active: bool | None = None
+
+
+class StoreFloorPlanZoneOut(BaseModel):
+    id: str = Field(..., min_length=1, max_length=80)
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+class StoreFloorPlanItemOut(BaseModel):
+    table_code: str = Field(..., min_length=1, max_length=30)
+    zone_id: str = Field(..., min_length=1, max_length=80)
+    x: float = Field(..., ge=0, le=5000)
+    y: float = Field(..., ge=0, le=5000)
+    width: float = Field(..., gt=20, le=800)
+    height: float = Field(..., gt=20, le=800)
+    shape: str = Field(..., pattern="^(SQUARE|RECT|CIRCLE)$")
+
+
+class StoreFloorPlanResponse(BaseModel):
+    store_id: int
+    zones: list[StoreFloorPlanZoneOut]
+    items: list[StoreFloorPlanItemOut]
+
+
+class UpdateStoreFloorPlanRequest(BaseModel):
+    zones: list[StoreFloorPlanZoneOut]
+    items: list[StoreFloorPlanItemOut]
 
 
 class UpdateStoreProfileRequest(BaseModel):
@@ -166,6 +268,8 @@ class UpdateStoreProfileRequest(BaseModel):
     cover_image_url: str | None = Field(default=None, max_length=2048)
     theme_preset: str = Field("CLASSIC", pattern="^(CLASSIC|MODERN|PREMIUM)$")
     accent_color: str = Field("ROJO", pattern="^(ROJO|VERDE|DORADO|AZUL|NEGRO)$")
+    background_color: str = Field("ROJO", pattern="^(ROJO|VERDE|DORADO|AZUL|NEGRO)$")
+    background_image_url: str | None = Field(default=None, max_length=2048)
     show_watermark_logo: bool = False
 
 
@@ -187,6 +291,29 @@ class OpenShiftRequest(BaseModel):
     operator_name: str = Field(..., min_length=1, max_length=120)
 
 
+class BootstrapShiftRequest(BaseModel):
+    label: str = Field(..., min_length=1, max_length=120)
+    operator_name: str = Field(..., min_length=1, max_length=120)
+    opening_float: float = Field(0, ge=0, le=100000000)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class OpenCashSessionRequest(BaseModel):
+    opening_float: float = Field(0, ge=0, le=100000000)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CloseCashSessionRequest(BaseModel):
+    declared_amount: float = Field(..., ge=0, le=100000000)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CollectOrderPaymentRequest(BaseModel):
+    payment_method: str = Field(..., pattern="^(CASH|CARD|TRANSFER|OTHER)$")
+    amount: float = Field(..., gt=0, le=100000000)
+    note: str | None = Field(default=None, max_length=500)
+
+
 class ShiftClosedTableOut(BaseModel):
     table_code: str
     guest_count: int
@@ -195,14 +322,53 @@ class ShiftClosedTableOut(BaseModel):
     closed_at: datetime | None = None
 
 
+class ShiftPaymentMethodSummaryOut(BaseModel):
+    payment_method: str
+    total_amount: float
+    payments_count: int
+
+
+class ShiftPendingOrderOut(BaseModel):
+    order_id: int
+    table_code: str
+    guest_count: int
+    total_amount: float
+    paid_amount: float
+    balance_due: float
+    created_at: datetime
+
+
+class CashSessionOut(BaseModel):
+    id: int
+    store_id: int
+    service_shift_id: int | None = None
+    status: str
+    opening_float: float
+    collected_amount: float = 0
+    cash_collected_amount: float = 0
+    expected_amount: float = 0
+    declared_amount: float | None = None
+    difference_amount: float = 0
+    note: str | None = None
+    opened_by_staff_id: int
+    closed_by_staff_id: int | None = None
+    opened_at: datetime
+    closed_at: datetime | None = None
+
+
 class ShiftSummaryOut(BaseModel):
     closed_covers: int = 0
     closed_tables: int = 0
     total_revenue: float = 0
+    collected_total: float = 0
     avg_duration_minutes: int = 0
     avg_rating: float = 0
     feedback_count: int = 0
     closed_table_details: list[ShiftClosedTableOut] = []
+    payment_totals: list[ShiftPaymentMethodSummaryOut] = []
+    pending_orders: list[ShiftPendingOrderOut] = []
+    pending_orders_count: int = 0
+    cash_session: CashSessionOut | None = None
     top_products: list[dict] = []
     top_beverages: list[dict] = []
 
@@ -226,6 +392,11 @@ class ActiveShiftResponse(BaseModel):
 
 class CloseShiftResponse(BaseModel):
     closed_shift: StaffShiftOut
+    summary: ShiftSummaryOut
+
+
+class CashSessionResponse(BaseModel):
+    cash_session: CashSessionOut
     summary: ShiftSummaryOut
 
 
@@ -353,6 +524,9 @@ class CreateOrderResponse(BaseModel):
     order_id: int
     ticket_number: int
     status_aggregated: str
+    service_mode: str = "RESTAURANTE"
+    payment_gate: str = "NONE"
+    payment_status: str = "CONFIRMED"
     sectors: list[SectorStatusOut]
 
 
@@ -382,6 +556,9 @@ class OrderDetailResponse(BaseModel):
     guest_count: int
     ticket_number: int
     status_aggregated: str
+    service_mode: str = "RESTAURANTE"
+    payment_gate: str = "NONE"
+    payment_status: str = "CONFIRMED"
     sectors: list[OrderSectorDetailOut]
     items: list[OrderItemOut]
     created_at: datetime
@@ -431,7 +608,28 @@ class AdminOrderSummaryOut(BaseModel):
     updated_at: datetime
     bill_split_closed: bool = False
     payment_confirmed: bool = False
+    service_mode: str = "RESTAURANTE"
+    payment_gate: str = "NONE"
+    payment_status: str = "CONFIRMED"
     print_status: "OrderPrintStatusOut"
+
+
+class ConfirmBarOrderPaymentResponse(BaseModel):
+    order_id: int
+    service_mode: str
+    payment_gate: str
+    payment_status: str
+    confirmed_by_staff_id: int
+
+
+class CollectOrderPaymentResponse(BaseModel):
+    order_id: int
+    payment_id: int
+    payment_method: str
+    amount: float
+    total_paid: float
+    balance_due: float
+    payment_confirmed: bool
 
 
 class AdminOrdersResponse(BaseModel):
@@ -450,6 +648,9 @@ class StaffBoardItemOut(BaseModel):
     notes: str | None = None
     sector: str
     status: str
+    service_mode: str = "RESTAURANTE"
+    payment_gate: str = "NONE"
+    payment_status: str = "CONFIRMED"
     created_at: datetime
     updated_at: datetime
 

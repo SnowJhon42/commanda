@@ -1,13 +1,18 @@
 ﻿"use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  bootstrapShift,
   fetchAdminOrderItems,
   fetchAdminOrders,
   fetchFeedbackSummary,
   fetchStorePrintMode,
   fetchActiveShift,
+  openCashSession,
+  closeCashSession,
+  collectOrderPayment,
   fetchStaffBoardItems,
   fetchShiftSummaries,
+  fetchTables,
   fetchTableSessions,
   fetchTableSessionConsumption,
   fetchStaffOrderItems,
@@ -18,15 +23,16 @@ import {
   closeTableSession,
   forceCloseTableSession,
   closeShift,
+  confirmBarOrderPayment,
   confirmSplitPart,
   forceConfirmOrderPayment,
   createEqualSplit,
   patchStoreClientVisibility,
   patchStorePrintMode,
   resolveCashRequest,
+  moveTableSession,
   patchItemStatus,
   patchTableSessionStatus,
-  openShift,
 } from "./api/staffApi";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminBoardPage } from "./pages/AdminBoardPage";
@@ -40,15 +46,31 @@ import { StoreProfilePage } from "./pages/StoreProfilePage";
 import { StoreMessagingPage } from "./pages/StoreMessagingPage";
 import { ShiftClosurePage } from "./pages/ShiftClosurePage";
 import { ShiftSummariesPage } from "./pages/ShiftSummariesPage";
+import { SalonTablesPage } from "./pages/SalonTablesPage";
 import { TableSessionsPanel } from "./pages/TableSessionsPanel";
 import { TableQrPage } from "./pages/TableQrPage";
+import { StartupGatePage } from "./pages/StartupGatePage";
 import { elapsedMinutes } from "./utils/boardMeta";
 import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
-const ADMIN_VIEW_OPTIONS = ["BOARD", "FEEDBACK", "PROFILE", "MENU", "QR", "MESSAGING", "CLOSURE", "SUMMARIES"];
+const ADMIN_VIEW_OPTIONS = ["BOARD", "SALON", "BAR", "FEEDBACK", "PROFILE", "MENU", "QR", "MESSAGING", "CLOSURE", "SUMMARIES"];
 const ARG_TZ = "America/Argentina/Buenos_Aires";
+
+function adminViewLabel(mode) {
+  if (mode === "BOARD") return "PEDIDOS";
+  if (mode === "SALON") return "SALON";
+  if (mode === "BAR") return "BAR";
+  if (mode === "FEEDBACK") return "FEEDBACK CLIENTES";
+  if (mode === "MENU") return "EDITOR DE MENÚ";
+  if (mode === "QR") return "QR MESAS";
+  if (mode === "PROFILE") return "MI LOCAL";
+  if (mode === "MESSAGING") return "MENSAJES";
+  if (mode === "CLOSURE") return "CIERRE";
+  if (mode === "SUMMARIES") return "RESUMENES";
+  return mode;
+}
 
 function formatArgentinaClock(value) {
   return new Intl.DateTimeFormat("es-AR", {
@@ -57,6 +79,67 @@ function formatArgentinaClock(value) {
     minute: "2-digit",
     second: "2-digit",
   }).format(value);
+}
+
+function toShiftSummary(summary) {
+  const paymentTotals = Array.isArray(summary?.payment_totals)
+    ? summary.payment_totals.map((entry) => ({
+        paymentMethod: entry.payment_method,
+        totalAmount: Number(entry.total_amount || 0),
+        paymentsCount: Number(entry.payments_count || 0),
+      }))
+    : [];
+  const pendingOrders = Array.isArray(summary?.pending_orders)
+    ? summary.pending_orders.map((entry) => ({
+        orderId: entry.order_id,
+        tableCode: entry.table_code,
+        guestCount: Number(entry.guest_count || 0),
+        totalAmount: Number(entry.total_amount || 0),
+        paidAmount: Number(entry.paid_amount || 0),
+        balanceDue: Number(entry.balance_due || 0),
+        createdAt: entry.created_at,
+      }))
+    : [];
+
+  return {
+    closedCovers: Number(summary?.closed_covers || 0),
+    closedTables: Number(summary?.closed_tables || 0),
+    totalRevenue: Number(summary?.total_revenue || 0),
+    collectedTotal: Number(summary?.collected_total || 0),
+    avgDurationMinutes: Number(summary?.avg_duration_minutes || 0),
+    avgRating: Number(summary?.avg_rating || 0),
+    feedbackCount: Number(summary?.feedback_count || 0),
+    closedTableDetails: Array.isArray(summary?.closed_table_details)
+      ? summary.closed_table_details.map((entry) => ({
+          tableCode: entry.table_code,
+          guestCount: Number(entry.guest_count || 0),
+          totalAmount: Number(entry.total_amount || 0),
+          durationMinutes: Number(entry.duration_minutes || 0),
+          closedAt: entry.closed_at,
+        }))
+      : [],
+    paymentTotals,
+    pendingOrders,
+    pendingOrdersCount: Number(summary?.pending_orders_count || pendingOrders.length || 0),
+    cashSession: summary?.cash_session
+        ? {
+            id: summary.cash_session.id,
+            status: summary.cash_session.status,
+            openingFloat: Number(summary.cash_session.opening_float || 0),
+            collectedAmount: Number(summary.cash_session.collected_amount || 0),
+            cashCollectedAmount: Number(summary.cash_session.cash_collected_amount || 0),
+            expectedAmount: Number(summary.cash_session.expected_amount || 0),
+            declaredAmount:
+              summary.cash_session.declared_amount === null || summary.cash_session.declared_amount === undefined
+              ? null
+              : Number(summary.cash_session.declared_amount),
+          differenceAmount: Number(summary.cash_session.difference_amount || 0),
+          note: summary.cash_session.note || "",
+          openedAt: summary.cash_session.opened_at,
+          closedAt: summary.cash_session.closed_at,
+        }
+      : null,
+  };
 }
 
 function getNextStatusForAction({ currentStatus, sector, actorSector }) {
@@ -168,6 +251,118 @@ function applyItemEventPayloadToDetail(detail, payload) {
   return applyItemStatusToDetail(detail, payload.item_id, payload.item_status);
 }
 
+function SalonOrderModal({
+  open = false,
+  onClose = () => {},
+  orderDetail,
+  selectedOrderId,
+  loading = false,
+  error = "",
+  advancingKey = "",
+  closingTableCode = "",
+  billingBusy = false,
+  onRefresh = () => {},
+  onAdvanceItem = () => {},
+  onCloseTable = () => {},
+  onForceCloseTable = () => {},
+  onCreateSplit = () => {},
+  onConfirmPart = () => {},
+  onResolveCashRequest = () => {},
+  availableTables = [],
+  busyId = null,
+  onMoveTableSession = async () => {},
+}) {
+  const [moveTargetTableCode, setMoveTargetTableCode] = useState("");
+
+  if (!open) return null;
+
+  const title = orderDetail?.table_code
+    ? `Mesa ${orderDetail.table_code} · Pedido #${orderDetail.order_id || selectedOrderId || "-"}`
+    : `Pedido #${selectedOrderId || "-"}`;
+  const subtitle = orderDetail
+    ? `${orderDetail.guest_count || 0} personas · ${orderDetail.total_items || 0} items`
+    : "Detalle operativo del pedido abierto desde el salon.";
+  const availableMoveTargets = (availableTables || []).filter(
+    (table) => table.table_code !== orderDetail?.table_code && !table.active_table_session_id
+  );
+  const tableSessionId = orderDetail?.table_session_id || null;
+
+  useEffect(() => {
+    if (!availableMoveTargets.length) {
+      setMoveTargetTableCode("");
+      return;
+    }
+    if (!availableMoveTargets.some((table) => table.table_code === moveTargetTableCode)) {
+      setMoveTargetTableCode(availableMoveTargets[0].table_code);
+    }
+  }, [availableMoveTargets, moveTargetTableCode]);
+
+  return (
+    <div className="staff-modal-backdrop" onClick={onClose}>
+      <div className="staff-modal-card" onClick={(event) => event.stopPropagation()}>
+        <div className="staff-modal-head">
+          <div>
+            <h4>{title}</h4>
+            <p className="muted">{subtitle}</p>
+          </div>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            X
+          </button>
+        </div>
+        <div className="staff-modal-body">
+          {tableSessionId ? (
+            <div className="detail-card" style={{ marginBottom: 14 }}>
+              <h4>Cambiar mesa</h4>
+              <div className="order-actions">
+                <select
+                  value={moveTargetTableCode}
+                  onChange={(event) => setMoveTargetTableCode(event.target.value)}
+                  disabled={busyId === tableSessionId || availableMoveTargets.length === 0}
+                >
+                  {availableMoveTargets.length === 0 ? (
+                    <option value="">No hay mesas libres</option>
+                  ) : (
+                    availableMoveTargets.map((table) => (
+                      <option key={table.table_code} value={table.table_code}>
+                        {table.table_code}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={busyId === tableSessionId || !moveTargetTableCode || availableMoveTargets.length === 0}
+                  onClick={() => onMoveTableSession(tableSessionId, moveTargetTableCode)}
+                >
+                  {busyId === tableSessionId ? "Cambiando..." : "Cambiar mesa"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          <OrderDetailPanel
+            orderDetail={orderDetail}
+            selectedOrderId={selectedOrderId}
+            loading={loading}
+            error={error}
+            actorSector="ADMIN"
+            onRefresh={onRefresh}
+            onAdvanceItem={onAdvanceItem}
+            advancingKey={advancingKey}
+            onCloseTable={onCloseTable}
+            onForceCloseTable={onForceCloseTable}
+            closingTableCode={closingTableCode}
+            onCreateSplit={onCreateSplit}
+            onConfirmPart={onConfirmPart}
+            onResolveCashRequest={onResolveCashRequest}
+            billingBusy={billingBusy}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const [clockNow, setClockNow] = useState(() => new Date());
   const [session, setSession] = useState(null);
@@ -187,6 +382,7 @@ export function App() {
   const [printModeSaving, setPrintModeSaving] = useState(false);
   const [advancingKey, setAdvancingKey] = useState("");
   const [tableSessionsRows, setTableSessionsRows] = useState([]);
+  const [tablesRows, setTablesRows] = useState([]);
   const [tableSessionsLoading, setTableSessionsLoading] = useState(false);
   const [tableSessionBusyId, setTableSessionBusyId] = useState(null);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
@@ -195,25 +391,26 @@ export function App() {
   const [detailError, setDetailError] = useState("");
   const [closingTableCode, setClosingTableCode] = useState("");
   const [validatingPaymentKey, setValidatingPaymentKey] = useState("");
+  const [confirmingBarPaymentKey, setConfirmingBarPaymentKey] = useState("");
   const [billingBusy, setBillingBusy] = useState(false);
   const [printingKey, setPrintingKey] = useState("");
   const [liveConnected, setLiveConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [alarmText, setAlarmText] = useState("");
+  const [recentOrderActivity, setRecentOrderActivity] = useState({});
   const [activeShift, setActiveShift] = useState(null);
-  const [shiftSummary, setShiftSummary] = useState({
-    closedCovers: 0,
-    closedTables: 0,
-    totalRevenue: 0,
-    avgDurationMinutes: 0,
-    avgRating: 0,
-    feedbackCount: 0,
-    closedTableDetails: [],
-  });
+  const [shiftSummary, setShiftSummary] = useState(() => toShiftSummary(null));
+  const [adminStartupGate, setAdminStartupGate] = useState(null);
+  const [startupBusy, setStartupBusy] = useState(false);
   const [shiftSummaries, setShiftSummaries] = useState([]);
+  const [cashBusy, setCashBusy] = useState(false);
+  const [collectingPaymentKey, setCollectingPaymentKey] = useState("");
   const lastDoneAlertRef = useRef("");
   const lastDelayAlertRef = useRef("");
   const lastCashAlertRef = useRef("");
+  const lastIncomingOrderAlertRef = useRef("");
+  const adminOrderSnapshotRef = useRef({});
+  const adminOrderSnapshotReadyRef = useRef(false);
   const attemptedAutoPrintRef = useRef(new Set());
   const autoPrintBusyRef = useRef(false);
 
@@ -276,7 +473,52 @@ export function App() {
           storeId: session.staff.store_id,
           status: backendStatusFilter,
         });
-        setBoardRows(data.items);
+        const nextItems = data.items || [];
+        const previousSnapshot = adminOrderSnapshotRef.current;
+        const changedRows = nextItems
+          .filter((row) => {
+            const previous = previousSnapshot[row.order_id];
+            if (!previous) return false;
+            const nextTime = new Date(row.updated_at || row.created_at || 0).getTime();
+            const prevTime = new Date(previous.updated_at || previous.created_at || 0).getTime();
+            return (
+              nextTime > prevTime ||
+              Number(row.total_items || 0) > Number(previous.total_items || 0) ||
+              Number(row.total_amount || 0) > Number(previous.total_amount || 0)
+            );
+          })
+          .sort(
+            (a, b) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() -
+              new Date(a.updated_at || a.created_at || 0).getTime()
+          );
+
+        if (adminOrderSnapshotReadyRef.current && changedRows.length > 0) {
+          const leadChanged = changedRows[0];
+          const alertKey = `poll:${leadChanged.order_id}:${leadChanged.updated_at || leadChanged.created_at || ""}`;
+          if (lastIncomingOrderAlertRef.current !== alertKey) {
+            lastIncomingOrderAlertRef.current = alertKey;
+            setAlarmText(`Mesa ${leadChanged.table_code || "?"} tuvo actividad nueva`);
+            playAlarm("delay");
+            setRecentOrderActivity((current) => {
+              const previous = current[leadChanged.order_id] || { at: 0, count: 0 };
+              return {
+                ...current,
+                [leadChanged.order_id]: {
+                  at: Date.now(),
+                  count: Number(previous.count || 0) + 1,
+                },
+              };
+            });
+            if ((adminView === "SALON" || adminView === "BOARD") && leadChanged.order_id) {
+              setSelectedOrderId(leadChanged.order_id);
+            }
+          }
+        }
+
+        adminOrderSnapshotRef.current = Object.fromEntries(nextItems.map((row) => [row.order_id, row]));
+        adminOrderSnapshotReadyRef.current = true;
+        setBoardRows(nextItems);
       } else {
         const data = await fetchStaffBoardItems({
           token: session.access_token,
@@ -290,7 +532,7 @@ export function App() {
     } finally {
       setLoading(false);
     }
-  }, [session, statusFilter, adminQueueFilter]);
+  }, [session, statusFilter, adminQueueFilter, adminView, playAlarm]);
 
   const loadOrderDetail = useCallback(async () => {
     if (!selectedOrderId || !session) return;
@@ -362,31 +604,28 @@ export function App() {
     }
   }, [session]);
 
+  const loadTables = useCallback(async () => {
+    if (!session) return;
+    try {
+      const data = await fetchTables({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+      });
+      setTablesRows(data.items || []);
+    } catch (err) {
+      setError(err.message || "No se pudieron cargar las mesas del local.");
+    }
+  }, [session]);
+
   const loadShiftState = useCallback(async () => {
-    if (!session || session.staff.sector !== "ADMIN") return;
+    if (!session) return;
     try {
       const data = await fetchActiveShift({
         token: session.access_token,
         storeId: session.staff.store_id,
       });
       setActiveShift(data.active_shift || null);
-      setShiftSummary({
-        closedCovers: Number(data.summary?.closed_covers || 0),
-        closedTables: Number(data.summary?.closed_tables || 0),
-        totalRevenue: Number(data.summary?.total_revenue || 0),
-        avgDurationMinutes: Number(data.summary?.avg_duration_minutes || 0),
-        avgRating: Number(data.summary?.avg_rating || 0),
-        feedbackCount: Number(data.summary?.feedback_count || 0),
-        closedTableDetails: Array.isArray(data.summary?.closed_table_details)
-          ? data.summary.closed_table_details.map((entry) => ({
-              tableCode: entry.table_code,
-              guestCount: Number(entry.guest_count || 0),
-              totalAmount: Number(entry.total_amount || 0),
-              durationMinutes: Number(entry.duration_minutes || 0),
-              closedAt: entry.closed_at,
-            }))
-          : [],
-      });
+      setShiftSummary(toShiftSummary(data.summary));
     } catch (err) {
       setError(err.message || "No se pudo cargar el turno activo.");
     }
@@ -498,6 +737,10 @@ export function App() {
   const advanceItem = useCallback(
     async ({ itemId, currentStatus, itemSector }) => {
       if (!session) return;
+      if (!activeShift) {
+        setError("No hay turno abierto. Un encargado debe abrir turno y caja primero.");
+        return;
+      }
       const toStatus = getNextStatusForAction({
         currentStatus,
         sector: itemSector,
@@ -529,7 +772,7 @@ export function App() {
         setAdvancingKey("");
       }
     },
-    [session, selectedOrderId, loadBoard, loadOrderDetail]
+    [session, activeShift, selectedOrderId, loadBoard, loadOrderDetail]
   );
 
   const closeTable = useCallback(async () => {
@@ -645,6 +888,30 @@ export function App() {
     [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
   );
 
+  const confirmBarPayment = useCallback(
+    async (orderId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !orderId) return;
+      setError("");
+      setConfirmingBarPaymentKey(String(orderId));
+      try {
+        await confirmBarOrderPayment({
+          token: session.access_token,
+          orderId,
+        });
+        await loadBoard();
+        await loadTableSessions();
+        if (selectedOrderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo confirmar el pago BAR.");
+      } finally {
+        setConfirmingBarPaymentKey("");
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
+  );
+
   const createSplit = useCallback(async () => {
     if (!selectedOrderDetail) return;
     setError("");
@@ -684,6 +951,10 @@ export function App() {
   const resolveCash = useCallback(
     async (cashRequestId) => {
       if (!session) return;
+      if (!activeShift) {
+        setError("No hay turno abierto. Un encargado debe abrir turno y caja primero.");
+        return;
+      }
       setError("");
       setBillingBusy(true);
       try {
@@ -697,12 +968,16 @@ export function App() {
         setBillingBusy(false);
       }
     },
-    [session, loadOrderDetail, loadBoard, loadTableSessions]
+    [session, activeShift, loadOrderDetail, loadBoard, loadTableSessions]
   );
 
   const resolveWaiterCall = useCallback(
     async (cashRequestId) => {
       if (!session) return;
+      if (!activeShift) {
+        setError("No hay turno abierto. Un encargado debe abrir turno y caja primero.");
+        return;
+      }
       await resolveCashRequest({ token: session.access_token, cashRequestId });
       await loadTableSessions();
       await loadBoard();
@@ -710,7 +985,7 @@ export function App() {
         await loadOrderDetail();
       }
     },
-    [session, selectedOrderId, loadTableSessions, loadBoard, loadOrderDetail]
+    [session, activeShift, selectedOrderId, loadTableSessions, loadBoard, loadOrderDetail]
   );
 
   const updateOrderPrintTracking = useCallback(
@@ -780,6 +1055,10 @@ export function App() {
   const markTableSession = useCallback(
     async (tableSessionId, toStatus) => {
       if (!session || !tableSessionId) return;
+      if (!activeShift) {
+        setError("No hay turno abierto. Un encargado debe abrir turno y caja primero.");
+        return;
+      }
       setError("");
       setTableSessionBusyId(tableSessionId);
       try {
@@ -795,7 +1074,32 @@ export function App() {
         setTableSessionBusyId(null);
       }
     },
-    [session, loadTableSessions, loadBoard, loadShiftState]
+    [session, activeShift, loadTableSessions, loadBoard, loadShiftState]
+  );
+
+  const moveActiveTableSession = useCallback(
+    async (tableSessionId, targetTableCode) => {
+      if (!session || session.staff.sector !== "ADMIN" || !tableSessionId || !targetTableCode) return;
+      setError("");
+      setTableSessionBusyId(tableSessionId);
+      try {
+        await moveTableSession({
+          token: session.access_token,
+          tableSessionId,
+          targetTableCode,
+        });
+        await Promise.all([loadTables(), loadTableSessions(), loadBoard(), loadShiftState()]);
+        if (selectedOrderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo cambiar la mesa.");
+        throw err;
+      } finally {
+        setTableSessionBusyId(null);
+      }
+    },
+    [session, selectedOrderId, loadTables, loadTableSessions, loadBoard, loadShiftState, loadOrderDetail]
   );
 
   const handleCloseShiftPreview = useCallback(async () => {
@@ -816,74 +1120,112 @@ export function App() {
       }).format(new Date(closedShift.closed_at || new Date()));
       setRecentClosedShift({
         label: closedShift.label || "Turno actual",
-        user: closedShift.operator_name || session?.staff?.username || "admin",
+        user: closedShift.operator_name || session?.staff?.display_name || session?.staff?.username || "admin",
         dateLabel,
       });
+      setAdminStartupGate(null);
       setActiveShift(null);
-      setShiftSummary({
-        closedCovers: 0,
-        closedTables: 0,
-        totalRevenue: 0,
-        avgDurationMinutes: 0,
-        avgRating: 0,
-        feedbackCount: 0,
-        closedTableDetails: [],
-      });
+      setShiftSummary(toShiftSummary(null));
       setSession(null);
     } catch (err) {
       setError(err.message || "No se pudo cerrar el turno.");
     }
   }, [session]);
 
-  const handleLoginWithShift = useCallback(
-    async (nextSession, shiftMeta) => {
-      if (nextSession?.staff?.sector === "ADMIN") {
-        try {
-          const activeData = await fetchActiveShift({
-            token: nextSession.access_token,
-            storeId: nextSession.staff.store_id,
-          });
-          if (activeData?.active_shift) {
-            setActiveShift(activeData.active_shift);
-            setShiftSummary({
-              closedCovers: Number(activeData.summary?.closed_covers || 0),
-              closedTables: Number(activeData.summary?.closed_tables || 0),
-              totalRevenue: Number(activeData.summary?.total_revenue || 0),
-              avgDurationMinutes: Number(activeData.summary?.avg_duration_minutes || 0),
-              avgRating: Number(activeData.summary?.avg_rating || 0),
-              feedbackCount: Number(activeData.summary?.feedback_count || 0),
-              closedTableDetails: Array.isArray(activeData.summary?.closed_table_details)
-                ? activeData.summary.closed_table_details.map((entry) => ({
-                    tableCode: entry.table_code,
-                    guestCount: Number(entry.guest_count || 0),
-                    totalAmount: Number(entry.total_amount || 0),
-                    durationMinutes: Number(entry.duration_minutes || 0),
-                    closedAt: entry.closed_at,
-                  }))
-                : [],
-            });
-          } else {
-            const opened = await openShift({
-              token: nextSession.access_token,
-              storeId: nextSession.staff.store_id,
-              label: shiftMeta?.label || "Turno actual",
-              operatorName: shiftMeta?.operator || nextSession.staff.username || "admin",
-            });
-            setActiveShift(opened.active_shift || null);
-            setShiftSummary({
-              closedCovers: Number(opened.summary?.closed_covers || 0),
-              closedTables: Number(opened.summary?.closed_tables || 0),
-              totalRevenue: Number(opened.summary?.total_revenue || 0),
-              avgDurationMinutes: Number(opened.summary?.avg_duration_minutes || 0),
-              avgRating: Number(opened.summary?.avg_rating || 0),
-              feedbackCount: Number(opened.summary?.feedback_count || 0),
-              closedTableDetails: [],
-            });
-          }
-        } catch (err) {
-          setError(err.message || "No se pudo iniciar el turno.");
-          throw err;
+  const handleOpenCashSession = useCallback(
+    async ({ openingFloat, note }) => {
+      if (!session || session.staff.sector !== "ADMIN") return;
+      setCashBusy(true);
+      try {
+        const data = await openCashSession({
+          token: session.access_token,
+          storeId: session.staff.store_id,
+          openingFloat,
+          note,
+        });
+        setShiftSummary(toShiftSummary(data.summary));
+      } catch (err) {
+        setError(err.message || "No se pudo abrir la caja.");
+      } finally {
+        setCashBusy(false);
+      }
+    },
+    [session]
+  );
+
+  const handleCloseCashSession = useCallback(
+    async ({ declaredAmount, note }) => {
+      if (!session || session.staff.sector !== "ADMIN") return;
+      setCashBusy(true);
+      try {
+        const data = await closeCashSession({
+          token: session.access_token,
+          storeId: session.staff.store_id,
+          declaredAmount,
+          note,
+        });
+        setShiftSummary(toShiftSummary(data.summary));
+      } catch (err) {
+        setError(err.message || "No se pudo cerrar la caja.");
+      } finally {
+        setCashBusy(false);
+      }
+    },
+    [session]
+  );
+
+  const handleCollectOrderPayment = useCallback(
+    async ({ orderId, paymentMethod, amount, note }) => {
+      if (!session || session.staff.sector !== "ADMIN") return;
+      setCollectingPaymentKey(String(orderId));
+      try {
+        await collectOrderPayment({
+          token: session.access_token,
+          orderId,
+          paymentMethod,
+          amount,
+          note,
+        });
+        await Promise.all([loadShiftState(), loadBoard(), loadTableSessions()]);
+        if (selectedOrderId === orderId) {
+          await loadOrderDetail();
         }
+      } catch (err) {
+        setError(err.message || "No se pudo registrar el cobro.");
+      } finally {
+        setCollectingPaymentKey("");
+      }
+    },
+    [session, loadShiftState, loadBoard, loadTableSessions, selectedOrderId, loadOrderDetail]
+  );
+
+  const resetOperationalSession = useCallback(() => {
+    setSession(null);
+    setActiveShift(null);
+    setShiftSummary(toShiftSummary(null));
+    setAdminStartupGate(null);
+    setStartupBusy(false);
+  }, []);
+
+  const handleLoginWithShift = useCallback(
+    async (nextSession) => {
+      try {
+        const activeData = await fetchActiveShift({
+          token: nextSession.access_token,
+          storeId: nextSession.staff.store_id,
+        });
+        setActiveShift(activeData.active_shift || null);
+        setShiftSummary(toShiftSummary(activeData.summary));
+        setAdminStartupGate(
+          nextSession?.staff?.sector === "ADMIN"
+            ? activeData?.active_shift
+              ? "PENDING"
+              : "OPEN"
+            : null
+        );
+      } catch (err) {
+        setError(err.message || "No se pudo cargar el estado operativo.");
+        throw err;
       }
       setRecentClosedShift(null);
       setSession(nextSession);
@@ -891,7 +1233,53 @@ export function App() {
     []
   );
 
+  const handleBootstrapShift = useCallback(
+    async ({ label, operatorName, openingFloat, note }) => {
+      if (!session || session.staff.sector !== "ADMIN") return;
+      setStartupBusy(true);
+      setError("");
+      try {
+        const data = await bootstrapShift({
+          token: session.access_token,
+          storeId: session.staff.store_id,
+          label,
+          operatorName,
+          openingFloat,
+          note,
+        });
+        setActiveShift(data.active_shift || null);
+        setShiftSummary(toShiftSummary(data.summary));
+        setAdminView("BOARD");
+        setAdminStartupGate("READY");
+      } catch (err) {
+        setError(err.message || "No se pudo abrir el turno y la caja.");
+      } finally {
+        setStartupBusy(false);
+      }
+    },
+    [session]
+  );
+
+  const handleResolvePendingShift = useCallback(() => {
+    setAdminView("CLOSURE");
+    setAdminStartupGate("READY");
+  }, []);
+
+  const acknowledgeRecentOrderActivity = useCallback((orderId) => {
+    if (!orderId) return;
+    setRecentOrderActivity((current) => {
+      if (!current[orderId]) return current;
+      const next = { ...current };
+      delete next[orderId];
+      return next;
+    });
+  }, []);
+
   const board = useMemo(() => {
+    const readOnlyReason =
+      staffSector !== "ADMIN" && !activeShift
+        ? "No hay turno abierto. El encargado debe abrir turno y caja antes de operar."
+        : "";
     const alertMetaByOrder = boardRows.reduce((acc, row) => {
       const mediumThreshold = mediumThresholdBySector(staffSector);
       const criticalThreshold = criticalThresholdBySector(staffSector);
@@ -940,7 +1328,10 @@ export function App() {
             ? 1
             : 0;
         if (aActive !== bActive) return bActive - aActive;
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        const recentDiff =
+          Number(recentOrderActivity[b.order_id]?.at || 0) - Number(recentOrderActivity[a.order_id]?.at || 0);
+        if (recentDiff !== 0) return recentDiff;
+        return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime();
       });
     } else {
       const prioritizedRows = [...boardRows].sort((a, b) => {
@@ -956,7 +1347,7 @@ export function App() {
     }
 
     const freshByOrder = visibleRows.reduce((acc, row) => {
-      const ageMs = Date.now() - new Date(row.created_at).getTime();
+      const ageMs = Date.now() - new Date(row.updated_at || row.created_at).getTime();
       acc[row.order_id] = ageMs <= 3 * 60 * 1000;
       return acc;
     }, {});
@@ -971,20 +1362,53 @@ export function App() {
       actorSector: staffSector,
       alertMetaByOrder,
       freshByOrder,
+      readOnlyReason,
     };
 
     if (staffSector === "ADMIN") {
+      if (adminView === "SALON") {
+        return (
+          <SalonTablesPage
+            token={session?.access_token}
+            storeId={session?.staff?.store_id}
+            tables={tablesRows}
+            loading={tableSessionsLoading}
+            selectedOrderId={selectedOrderId}
+            onSelectOrder={setSelectedOrderId}
+            onMarkRetired={(tableSessionId) => markTableSession(tableSessionId, "SE_RETIRARON")}
+            onMoveTableSession={moveActiveTableSession}
+            onTableCreated={loadTables}
+            busyId={tableSessionBusyId}
+          />
+        );
+      }
       if (adminView === "MENU") {
-        return <MenuEditorPage token={session?.access_token} storeId={session?.staff?.store_id} />;
+        return (
+          <MenuEditorPage
+            token={session?.access_token}
+            storeId={session?.staff?.store_id}
+            staffDisplayName={session?.staff?.display_name || session?.staff?.username}
+          />
+        );
       }
       if (adminView === "PROFILE") {
-        return <StoreProfilePage token={session?.access_token} storeId={session?.staff?.store_id} />;
+        return (
+          <StoreProfilePage
+            token={session?.access_token}
+            storeId={session?.staff?.store_id}
+            sessionStaffId={session?.staff?.id}
+            staffDisplayName={session?.staff?.display_name || session?.staff?.username}
+          />
+        );
       }
       if (adminView === "MESSAGING") {
         return <StoreMessagingPage token={session?.access_token} storeId={session?.staff?.store_id} />;
       }
+      if (adminView === "BAR") {
+        return <TableQrPage storeId={session?.staff?.store_id} initialServiceMode="BAR" title="QR BAR" />;
+      }
       if (adminView === "QR") {
-        return <TableQrPage storeId={session?.staff?.store_id} />;
+        return <TableQrPage storeId={session?.staff?.store_id} initialServiceMode="RESTAURANTE" title="QR MESAS" />;
       }
       if (adminView === "CLOSURE") {
         return (
@@ -992,6 +1416,11 @@ export function App() {
             session={session}
             activeShift={activeShift}
             shiftSummary={shiftSummary}
+            cashBusy={cashBusy}
+            collectingPaymentKey={collectingPaymentKey}
+            onOpenCashSession={handleOpenCashSession}
+            onCloseCashSession={handleCloseCashSession}
+            onCollectOrderPayment={handleCollectOrderPayment}
             onConfirmCloseShift={handleCloseShiftPreview}
             onBackToBoard={() => setAdminView("BOARD")}
           />
@@ -1017,9 +1446,13 @@ export function App() {
           onResolveWaiterCall={resolveWaiterCall}
           onConfirmReportedPayments={confirmReportedPayments}
           validatingPaymentKey={validatingPaymentKey}
+          onConfirmBarPayment={confirmBarPayment}
+          confirmingBarPaymentKey={confirmingBarPaymentKey}
           onMarkPrint={updateOrderPrintTracking}
           printingKey={printingKey}
           printMode={printMode}
+          recentOrderActivity={recentOrderActivity}
+          onAcknowledgeRecentOrderActivity={acknowledgeRecentOrderActivity}
         />
       );
     }
@@ -1039,15 +1472,27 @@ export function App() {
     adminView,
     session,
     tableSessionsRows,
+    tablesRows,
     requestAdminOrderDetail,
     requestAdminWaiterCalls,
     resolveWaiterCall,
     confirmReportedPayments,
+    confirmBarPayment,
+    confirmingBarPaymentKey,
     validatingPaymentKey,
     activeShift,
     shiftSummary,
     shiftSummaries,
+    cashBusy,
+    collectingPaymentKey,
+    recentOrderActivity,
     handleCloseShiftPreview,
+    handleOpenCashSession,
+    handleCloseCashSession,
+    handleCollectOrderPayment,
+    markTableSession,
+    tableSessionsLoading,
+    tableSessionBusyId,
   ]);
 
   useEffect(() => {
@@ -1058,7 +1503,12 @@ export function App() {
   useEffect(() => {
     if (!session) return;
     const poll = async () => {
+      if (session.staff.sector === "ADMIN" && adminStartupGate && adminStartupGate !== "READY") {
+        await loadShiftState();
+        return;
+      }
       if (session.staff.sector === "ADMIN") {
+        await loadTables();
         if (adminView === "FEEDBACK") {
           await loadFeedback();
           await loadTableSessions();
@@ -1069,6 +1519,8 @@ export function App() {
           return;
         }
         if (
+          adminView === "SALON" ||
+          adminView === "BAR" ||
           adminView === "MENU" ||
           adminView === "QR" ||
           adminView === "PROFILE" ||
@@ -1097,7 +1549,10 @@ export function App() {
       }
     };
     poll();
-    if (session.staff.sector === "ADMIN") {
+    if (session.staff.sector === "ADMIN" && adminStartupGate && adminStartupGate !== "READY") {
+      loadShiftState();
+    } else if (session.staff.sector === "ADMIN") {
+      loadTables();
       loadStoreClientVisibility();
       loadStorePrintMode();
       loadShiftState();
@@ -1105,13 +1560,15 @@ export function App() {
     }
     const timer = setInterval(poll, 10000);
     return () => clearInterval(timer);
-  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode, loadShiftState, loadShiftSummaries]);
+  }, [session, adminView, adminStartupGate, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode, loadShiftState, loadShiftSummaries, loadTables]);
 
   useEffect(() => {
     if (
       !session ||
+      (session.staff.sector === "ADMIN" && adminStartupGate && adminStartupGate !== "READY") ||
       (session.staff.sector === "ADMIN" &&
         (adminView === "MENU" ||
+          adminView === "BAR" ||
           adminView === "QR" ||
           adminView === "PROFILE" ||
           adminView === "MESSAGING" ||
@@ -1133,6 +1590,9 @@ export function App() {
           await loadFeedback();
         } else {
           await loadBoard();
+        }
+        if (session.staff.sector === "ADMIN") {
+          await loadTables();
         }
         await loadTableSessions();
         if (session.staff.sector === "ADMIN") {
@@ -1159,6 +1619,28 @@ export function App() {
       setBoardRows((current) => applyItemEventPayloadToBoardRows(current, payload));
       setSelectedOrderDetail((current) => applyItemEventPayloadToDetail(current, payload));
       scheduleRefresh();
+      const eventId = String(event?.lastEventId || "");
+      const incomingReason = String(payload.reason || "").toLowerCase();
+      const isIncomingOrderSignal =
+        session.staff.sector === "ADMIN" &&
+        (incomingReason === "items_appended" || incomingReason === "order_created");
+
+      if (isIncomingOrderSignal) {
+        const incomingKey = eventId || `${payload.order_id || "?"}:${incomingReason}:${payload.table_code || "?"}`;
+        if (lastIncomingOrderAlertRef.current !== incomingKey) {
+          lastIncomingOrderAlertRef.current = incomingKey;
+          setAlarmText(
+            incomingReason === "items_appended"
+              ? `Mesa ${payload.table_code || "?"} agrego items nuevos`
+              : `Nuevo pedido en mesa ${payload.table_code || "?"}`
+          );
+          playAlarm("delay");
+          if ((adminView === "SALON" || adminView === "BOARD") && payload.order_id) {
+            setSelectedOrderId(payload.order_id);
+          }
+        }
+      }
+
       const itemId = payload.item_id ? String(payload.item_id) : "";
       if (payload.item_status === "DONE" && (session.staff.sector === "WAITER" || session.staff.sector === "ADMIN")) {
         if (lastDoneAlertRef.current !== itemId) {
@@ -1166,6 +1648,52 @@ export function App() {
           setAlarmText(`Item listo en pedido #${payload.order_id || "?"}`);
           playAlarm("done");
         }
+      }
+    };
+
+    const handleOrderCreated = (event) => {
+      scheduleRefresh();
+      if (session.staff.sector !== "ADMIN") return;
+
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!payload) return;
+
+      const eventId = String(event?.lastEventId || "");
+      const incomingKey = eventId || `created:${payload.order_id || "?"}:${payload.table_code || "?"}`;
+      if (lastIncomingOrderAlertRef.current === incomingKey) return;
+      lastIncomingOrderAlertRef.current = incomingKey;
+      setAlarmText(`Nuevo pedido en mesa ${payload.table_code || "?"}`);
+      playAlarm("delay");
+      if ((adminView === "SALON" || adminView === "BOARD") && payload.order_id) {
+        setSelectedOrderId(payload.order_id);
+      }
+    };
+
+    const handleTableSessionUpdated = (event) => {
+      scheduleRefresh();
+      if (session.staff.sector !== "ADMIN") return;
+
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!payload?.active_order_id || payload.status !== "CON_PEDIDO") return;
+
+      const eventId = String(event?.lastEventId || "");
+      const incomingKey = eventId || `table-session:${payload.table_session_id || "?"}:${payload.active_order_id}`;
+      if (lastIncomingOrderAlertRef.current === incomingKey) return;
+      lastIncomingOrderAlertRef.current = incomingKey;
+      setAlarmText(`Mesa ${payload.table_code || "?"} tuvo actividad nueva`);
+      playAlarm("delay");
+      if ((adminView === "SALON" || adminView === "BOARD") && payload.active_order_id) {
+        setSelectedOrderId(payload.active_order_id);
       }
     };
 
@@ -1206,7 +1734,8 @@ export function App() {
     stream.onerror = () => setLiveConnected(false);
     stream.onmessage = scheduleRefresh;
     stream.addEventListener("items.changed", handleItemChanged);
-    stream.addEventListener("order.created", scheduleRefresh);
+    stream.addEventListener("order.created", handleOrderCreated);
+    stream.addEventListener("table.session.updated", handleTableSessionUpdated);
     stream.addEventListener("table.session.closed", scheduleRefresh);
     stream.addEventListener("bill.split.updated", scheduleRefresh);
     stream.addEventListener("bill.cash.requested", handleCashRequested);
@@ -1217,7 +1746,7 @@ export function App() {
       stream.close();
       setLiveConnected(false);
     };
-  }, [session, adminView, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, loadTableSessions, loadShiftState, loadShiftSummaries, playAlarm]);
+  }, [session, adminView, adminStartupGate, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, loadTableSessions, loadShiftState, loadShiftSummaries, playAlarm, loadTables]);
 
   useEffect(() => {
     if (!session || session.staff.sector === "ADMIN") return;
@@ -1259,7 +1788,21 @@ export function App() {
   }, [session, adminView, printMode, boardRows, autoPrintOrder]);
 
   if (!session) {
-    return <LoginPage onLogin={handleLoginWithShift} closureReceipt={recentClosedShift} activeShift={activeShift} />;
+    return <LoginPage onLogin={handleLoginWithShift} closureReceipt={recentClosedShift} />;
+  }
+
+  if (staffSector === "ADMIN" && adminStartupGate && adminStartupGate !== "READY") {
+    return (
+      <StartupGatePage
+        session={session}
+        activeShift={activeShift}
+        shiftSummary={shiftSummary}
+        busy={startupBusy}
+        onStartShiftAndCash={handleBootstrapShift}
+        onGoToClosure={handleResolvePendingShift}
+        onLogout={resetOperationalSession}
+      />
+    );
   }
 
   return (
@@ -1269,11 +1812,11 @@ export function App() {
           <p className="kicker">Panel operativo</p>
           <h1>Comanda Staff</h1>
           <p className="muted">
-            Usuario: <strong>{session.staff.username}</strong> | Sector: <strong>{session.staff.sector}</strong>
+            Usuario: <strong>{session.staff.display_name || session.staff.username}</strong> | Sector: <strong>{session.staff.sector}</strong>
           </p>
           {staffSector === "ADMIN" && (
             <p className="muted">
-              Turno: <strong>{activeShift?.label || "-"}</strong> | Nombre: <strong>{activeShift?.operator_name || session.staff.username}</strong>
+              Turno: <strong>{activeShift?.label || "-"}</strong> | Nombre: <strong>{activeShift?.operator_name || session.staff.display_name || session.staff.username}</strong>
             </p>
           )}
           <p className={liveConnected ? "live-pill live-pill-on" : "live-pill"}>
@@ -1289,7 +1832,7 @@ export function App() {
           <button className={soundEnabled ? "btn-secondary" : "btn-primary"} onClick={() => setSoundEnabled((v) => !v)}>
             {soundEnabled ? "Silenciar alarmas" : "Activar alarmas"}
           </button>
-          <button className="btn-secondary" onClick={() => setSession(null)}>
+          <button className="btn-secondary" onClick={resetOperationalSession}>
             Cerrar sesion
           </button>
         </div>
@@ -1297,32 +1840,18 @@ export function App() {
 
       {staffSector === "ADMIN" && (
         <section className="panel toolbar">
-          <label className="field">
-            Vista
-            <select value={adminView} onChange={(e) => setAdminView(e.target.value)}>
-              {ADMIN_VIEW_OPTIONS.map((mode) => (
-                <option key={mode} value={mode}>
-                  {mode === "BOARD"
-                    ? "PEDIDOS"
-                    : mode === "FEEDBACK"
-                    ? "FEEDBACK CLIENTES"
-                    : mode === "MENU"
-                    ? "EDITOR DE MENÚ"
-                    : mode === "QR"
-                    ? "QR MESAS"
-                    : mode === "PROFILE"
-                    ? "MI LOCAL"
-                    : mode === "MESSAGING"
-                    ? "MENSAJES"
-                    : mode === "CLOSURE"
-                    ? "CIERRE"
-                    : mode === "SUMMARIES"
-                    ? "RESUMENES"
-                    : mode}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="admin-view-tabs" role="tablist" aria-label="Vistas admin">
+            {ADMIN_VIEW_OPTIONS.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={adminView === mode ? "btn-primary admin-view-tab" : "btn-secondary admin-view-tab"}
+                onClick={() => setAdminView(mode)}
+              >
+                {adminViewLabel(mode)}
+              </button>
+            ))}
+          </div>
 
           {adminView === "BOARD" && (
             <>
@@ -1351,13 +1880,25 @@ export function App() {
 
           <button
             className="btn-primary"
-            onClick={adminView === "FEEDBACK" ? loadFeedback : loadBoard}
+            onClick={
+              adminView === "FEEDBACK"
+                ? loadFeedback
+                : adminView === "SALON" || adminView === "BAR" || adminView === "QR"
+                ? loadTables
+                : loadBoard
+            }
             disabled={adminView === "FEEDBACK" ? feedbackLoading : loading}
           >
             {adminView === "FEEDBACK"
               ? feedbackLoading
                 ? "Actualizando..."
                 : "Actualizar feedback"
+              : adminView === "SALON"
+              ? "Actualizar salon"
+              : adminView === "BAR"
+              ? "Actualizar bar"
+              : adminView === "QR"
+              ? "Actualizar qr"
               : loading
               ? "Actualizando..."
               : "Actualizar ahora"}
@@ -1413,13 +1954,14 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "SALON" || adminView === "BAR" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <TableSessionsPanel
             rows={tableSessionsRows}
             loading={tableSessionsLoading}
             actorSector={staffSector}
             busyId={tableSessionBusyId}
-          onMarkRetired={(id) => markTableSession(id, "SE_RETIRARON")}
+            readOnlyReason={staffSector !== "ADMIN" && !activeShift ? "No hay turno abierto. Espera al encargado." : ""}
+            onMarkRetired={(id) => markTableSession(id, "SE_RETIRARON")}
         />
       )}
       {staffSector === "ADMIN" && adminView === "FEEDBACK" ? (
@@ -1428,23 +1970,48 @@ export function App() {
         board
       )}
 
-        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+      {staffSector === "ADMIN" && adminView === "SALON" && selectedOrderId ? (
+        <SalonOrderModal
+          open={Boolean(selectedOrderId)}
+          onClose={() => setSelectedOrderId(null)}
+          orderDetail={selectedOrderDetail}
+          selectedOrderId={selectedOrderId}
+          loading={detailLoading}
+          error={detailError}
+          advancingKey={advancingKey}
+          closingTableCode={closingTableCode}
+          billingBusy={billingBusy}
+          onRefresh={loadOrderDetail}
+          onAdvanceItem={advanceItem}
+          onCloseTable={closeTable}
+          onForceCloseTable={() => forceCloseTableByCode(selectedOrderDetail?.table_code)}
+          onCreateSplit={createSplit}
+          onConfirmPart={confirmPart}
+          onResolveCashRequest={resolveCash}
+          availableTables={tablesRows}
+          busyId={tableSessionBusyId}
+          onMoveTableSession={moveActiveTableSession}
+        />
+      ) : null}
+
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "SALON" || adminView === "BAR" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <OrderDetailPanel
             orderDetail={selectedOrderDetail}
             selectedOrderId={selectedOrderId}
             loading={detailLoading}
             error={detailError}
-          actorSector={staffSector}
-          onRefresh={loadOrderDetail}
-          onAdvanceItem={advanceItem}
-          advancingKey={advancingKey}
-          onCloseTable={closeTable}
-          onForceCloseTable={() => forceCloseTableByCode(selectedOrderDetail?.table_code)}
-          closingTableCode={closingTableCode}
-          onCreateSplit={createSplit}
-          onConfirmPart={confirmPart}
-          onResolveCashRequest={resolveCash}
-          billingBusy={billingBusy}
+            actorSector={staffSector}
+            onRefresh={loadOrderDetail}
+            onAdvanceItem={advanceItem}
+            advancingKey={advancingKey}
+            readOnlyReason={staffSector !== "ADMIN" && !activeShift ? "No hay turno abierto. Espera al encargado." : ""}
+            onCloseTable={closeTable}
+            onForceCloseTable={() => forceCloseTableByCode(selectedOrderDetail?.table_code)}
+            closingTableCode={closingTableCode}
+            onCreateSplit={createSplit}
+            onConfirmPart={confirmPart}
+            onResolveCashRequest={resolveCash}
+            billingBusy={billingBusy}
         />
       )}
     </main>

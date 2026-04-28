@@ -21,6 +21,7 @@ export function TableSessionsPanel({
   actorSector = "ADMIN",
   busyId = null,
   onMarkRetired = () => {},
+  readOnlyReason = "",
 }) {
   const canUpdate = actorSector === "ADMIN" || actorSector === "WAITER";
   const sortedRows = [...rows].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
@@ -31,6 +32,7 @@ export function TableSessionsPanel({
         <h3>Mesas activas</h3>
         <span className="muted">{sortedRows.length} activas</span>
       </div>
+      {readOnlyReason && <p className="muted operational-banner">{readOnlyReason}</p>}
       {loading && <p className="muted">Actualizando mesas...</p>}
       {sortedRows.length === 0 ? (
         <p className="muted">No hay mesas activas.</p>
@@ -62,7 +64,7 @@ export function TableSessionsPanel({
                       {!row.active_order_id && (
                         <button
                           className="btn-secondary"
-                          disabled={!canUpdate || busyId === row.table_session_id}
+                          disabled={!canUpdate || busyId === row.table_session_id || Boolean(readOnlyReason)}
                           onClick={() => onMarkRetired(row.table_session_id)}
                         >
                           Se retiraron

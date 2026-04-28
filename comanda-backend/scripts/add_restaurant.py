@@ -35,6 +35,7 @@ DEFAULT_PIN = "1234"
 DEFAULT_OWNER_PASSWORD = "1234"
 TABLE_CODES = [f"M{i}" for i in range(1, 13)]
 STAFF_USERS = (
+    ("ADMIN", "dueno_agrarabas"),
     ("ADMIN", "admin_agrarabas"),
     ("KITCHEN", "cocina_agrarabas"),
     ("BAR", "barra_agrarabas"),
@@ -175,6 +176,7 @@ def ensure_staff(conn: sqlite3.Connection, store_id: int) -> int:
     created = 0
     pin_hash = hash_pin(DEFAULT_PIN)
     for sector, username in STAFF_USERS:
+        display_name = username.replace("_", " ").title()
         row = conn.execute(
             "SELECT id FROM staff_accounts WHERE store_id = ? AND username = ?",
             (store_id, username),
@@ -183,18 +185,18 @@ def ensure_staff(conn: sqlite3.Connection, store_id: int) -> int:
             conn.execute(
                 """
                 UPDATE staff_accounts
-                SET sector = ?, active = 1
+                SET sector = ?, display_name = ?, active = 1
                 WHERE id = ?
                 """,
-                (sector, int(row[0])),
+                (sector, display_name, int(row[0])),
             )
             continue
         cursor = conn.execute(
             """
-            INSERT INTO staff_accounts (store_id, sector, username, pin_hash, active)
-            VALUES (?, ?, ?, ?, 1)
+            INSERT INTO staff_accounts (store_id, sector, display_name, username, pin_hash, active)
+            VALUES (?, ?, ?, ?, ?, 1)
             """,
-            (store_id, sector, username, pin_hash),
+            (store_id, sector, display_name, username, pin_hash),
         )
         if cursor.rowcount:
             created += 1

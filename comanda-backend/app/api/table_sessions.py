@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -11,10 +11,13 @@ from app.db.models import (
     CashRequestStatus,
     Order,
     OrderItem,
+    OrderPaymentStatus,
     OrderStatus,
+    PaymentGate,
     Product,
     ProductExtraOption,
     ProductVariant,
+    ServiceMode,
     Table,
     TableSession,
     TableSessionCashRequest,
@@ -68,6 +71,7 @@ def _active_order_for_session(db: Session, *, table_session_id: int, store_id: i
 @router.post("/table/session/open", response_model=OpenTableSessionResponse)
 def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(get_db)) -> OpenTableSessionResponse:
     normalized_table_code = normalize_table_code(payload.table_code)
+    service_mode = payload.service_mode or ServiceMode.RESTAURANTE.value
     table = db.scalar(
         select(Table).where(Table.store_id == payload.store_id, Table.code == normalized_table_code, Table.active == True)
     )
@@ -90,6 +94,7 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
             table_id=table.id,
             guest_count=payload.guest_count,
             status=TableSessionStatus.MESA_OCUPADA.value,
+            service_mode=service_mode,
         )
         db.add(table_session)
         db.flush()
@@ -98,6 +103,7 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
             db, table_session_id=table_session.id, store_id=payload.store_id
         )
         table_session.guest_count = payload.guest_count
+        table_session.service_mode = service_mode
         table_session.status = TableSessionStatus.CON_PEDIDO.value if active_order else TableSessionStatus.MESA_OCUPADA.value
         db.add(table_session)
     active_order = _active_order_for_session(db, table_session_id=table_session.id, store_id=payload.store_id)
@@ -110,6 +116,7 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
             "table_code": table.code,
             "guest_count": table_session.guest_count,
             "status": table_session.status,
+            "service_mode": table_session.service_mode,
             "active_order_id": active_order.id if active_order else None,
         },
     )
@@ -120,6 +127,7 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
         table_code=table.code,
         guest_count=table_session.guest_count,
         status=table_session.status,
+        service_mode=table_session.service_mode,
         active_order_id=active_order.id if active_order else None,
     )
 
@@ -237,6 +245,7 @@ def get_table_session_state(
         table_code=table.code if table else "-",
         guest_count=table_session.guest_count,
         status=table_session.status,
+        service_mode=table_session.service_mode,
         connected_clients=int(connected_clients),
         active_order_id=active_order.id if active_order else None,
         assistance_request_kind=assistance_kind,
@@ -334,19 +343,17 @@ def submit_table_session_feedback(
             TableSessionFeedback.client_id == payload.client_id,
         )
     )
-    if not feedback:
-        feedback = TableSessionFeedback(
-            table_session_id=table_session_id,
-            store_id=table_session.store_id,
-            client_id=payload.client_id,
-            rating=payload.rating,
-            comment=payload.comment,
-        )
-        db.add(feedback)
-    else:
-        feedback.rating = payload.rating
-        feedback.comment = payload.comment
-        db.add(feedback)
+    if feedback:
+        raise HTTPException(status_code=409, detail="Feedback already submitted for this session")
+
+    feedback = TableSessionFeedback(
+        table_session_id=table_session_id,
+        store_id=table_session.store_id,
+        client_id=payload.client_id,
+        rating=payload.rating,
+        comment=payload.comment,
+    )
+    db.add(feedback)
 
     db.commit()
     db.refresh(feedback)
@@ -397,6 +404,13 @@ def upsert_order_by_table(
     order = _active_order_for_session(
         db, table_session_id=table_session.id, store_id=payload.store_id
     )
+    service_mode = payload.service_mode or ServiceMode.RESTAURANTE.value
+    payment_gate = (
+        PaymentGate.BEFORE_PREPARATION.value if service_mode == ServiceMode.BAR.value else PaymentGate.NONE.value
+    )
+    payment_status = (
+        OrderPaymentStatus.PENDING.value if service_mode == ServiceMode.BAR.value else OrderPaymentStatus.CONFIRMED.value
+    )
     created_new = False
     if not order:
         created_new = True
@@ -409,6 +423,9 @@ def upsert_order_by_table(
             guest_count=payload.guest_count,
             ticket_number=ticket_number,
             status_aggregated=OrderStatus.RECEIVED.value,
+            service_mode=service_mode,
+            payment_gate=payment_gate,
+            payment_status=payment_status,
         )
         db.add(order)
         db.flush()
@@ -416,6 +433,9 @@ def upsert_order_by_table(
         if order.table_session_id != table_session.id:
             raise HTTPException(status_code=409, detail="Active order belongs to a different table session")
         order.guest_count = max(order.guest_count, payload.guest_count)
+        if order.service_mode != service_mode:
+            raise HTTPException(status_code=409, detail="Active order has a different service mode")
+        order.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.add(order)
         db.flush()
 
@@ -426,6 +446,7 @@ def upsert_order_by_table(
     table_session.status = TableSessionStatus.CON_PEDIDO.value
     db.add(table_session)
     order.status_aggregated = recompute_order_status_from_items(db, order.id)
+    order.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.add(order)
     previous_split = get_latest_bill_split(db, order.id)
     previous_split_id = previous_split.id if previous_split else None
@@ -491,5 +512,8 @@ def upsert_order_by_table(
         order_id=order.id,
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
+        service_mode=order.service_mode,
+        payment_gate=order.payment_gate,
+        payment_status=order.payment_status,
         sectors=[SectorStatusOut(sector=s, status=OrderStatus.RECEIVED.value) for s in sorted(sectors_present)],
     )

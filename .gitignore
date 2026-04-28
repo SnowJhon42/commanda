@@ -24,20 +24,28 @@ __pycache__/
 logs/
 *.pid
 tmp-*.log
+.pytest_tmp/
+**/.pytest_tmp/
+pytest_tmp_brand/
+**/pytest_tmp_brand/
 
 # Local DB and env
 comanda_dev.db
 comanda-backend/comanda_dev.db
+*.db.backup_*
 *.db-shm
 *.db-wal
 .env
 .env.local
+backups/
 
 # Coverage / caches
 coverage/
 .cache/
 pytest-cache-files-*/
 **/pytest-cache-files-*/
+.pytest_cache/
+**/.pytest_cache/
 
 # Temp accidental files
 26.0.1

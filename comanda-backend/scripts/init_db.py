@@ -45,6 +45,13 @@ if __name__ == "__main__":
         )
         conn.execute(
             """
+            UPDATE staff_accounts
+            SET display_name = COALESCE(NULLIF(TRIM(display_name), ''), username)
+            WHERE display_name IS NULL OR TRIM(display_name) = ''
+            """
+        )
+        conn.execute(
+            """
             UPDATE stores
             SET owner_password_hash = ?
             WHERE owner_password_hash IS NULL

@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import TableClientContext, get_current_staff, get_current_table_client
 from app.db.models import (
@@ -16,6 +16,8 @@ from app.db.models import (
     Order,
     OrderItem,
     Sector,
+    ServiceMode,
+    ServiceShift,
     StaffAccount,
     Table,
     TableSessionCashRequest,
@@ -67,6 +69,68 @@ def _publish_split_event(order: Order, split: BillSplit, reason: str, part_id: i
     if part_id:
         payload["part_id"] = part_id
     event_bus.publish("bill.split.updated", payload)
+
+
+def _latest_active_shift(db: Session, store_id: int) -> ServiceShift | None:
+    return db.scalar(
+        select(ServiceShift)
+        .where(ServiceShift.store_id == store_id, ServiceShift.closed_at.is_(None))
+        .order_by(ServiceShift.id.desc())
+        .limit(1)
+    )
+
+
+def _order_payment_confirmed(db: Session, order: Order) -> bool:
+    total_amount = _order_total_amount(order)
+    if total_amount <= Decimal("0.00"):
+        return True
+
+    split = get_latest_bill_split(db, order.id)
+    if not split or split.status != BillSplitStatus.CLOSED.value:
+        return False
+
+    parts = db.scalars(select(BillSplitPart).where(BillSplitPart.bill_split_id == split.id)).all()
+    return bool(parts) and all(part.payment_status == BillPartPaymentStatus.CONFIRMED.value for part in parts)
+
+
+def _order_fully_delivered(order: Order) -> bool:
+    return bool(order.items) and all(item.status == "DELIVERED" for item in order.items)
+
+
+def _maybe_auto_close_restaurant_session(db: Session, order: Order) -> dict[str, int | str | None] | None:
+    if order.service_mode != ServiceMode.RESTAURANTE.value or not order.table_session_id:
+        return None
+
+    table_session = db.scalar(select(TableSession).where(TableSession.id == order.table_session_id))
+    if not table_session or table_session.status == TableSessionStatus.CLOSED.value:
+        return None
+
+    related_orders = db.scalars(
+        select(Order)
+        .where(Order.table_session_id == table_session.id, Order.store_id == order.store_id)
+        .options(joinedload(Order.items))
+    ).unique().all()
+    if not related_orders:
+        return None
+    if any(related_order.service_mode != ServiceMode.RESTAURANTE.value for related_order in related_orders):
+        return None
+    if any(not _order_payment_confirmed(db, related_order) for related_order in related_orders):
+        return None
+    if any(not _order_fully_delivered(related_order) for related_order in related_orders):
+        return None
+
+    table = db.scalar(select(Table).where(Table.id == table_session.table_id))
+    active_shift = _latest_active_shift(db, table_session.store_id)
+    table_session.status = TableSessionStatus.CLOSED.value
+    table_session.closed_at = datetime.utcnow()
+    table_session.closed_shift_id = active_shift.id if active_shift else None
+    db.add(table_session)
+    return {
+        "table_session_id": table_session.id,
+        "store_id": table_session.store_id,
+        "table_code": table.code if table else order.table.code if order.table else None,
+        "closed_at": table_session.closed_at.isoformat() if table_session.closed_at else None,
+    }
 
 
 def _cash_request_out(req: TableSessionCashRequest) -> TableSessionCashRequestOut:
@@ -464,11 +528,14 @@ def confirm_part_payment(
     if split.status == BillSplitStatus.CLOSED.value:
         split.closed_at = datetime.utcnow()
     db.add(split)
+    order = db.scalar(select(Order).where(Order.id == split.order_id).options(joinedload(Order.table)))
+    close_payload = _maybe_auto_close_restaurant_session(db, order) if order else None
     db.commit()
 
-    order = db.scalar(select(Order).where(Order.id == split.order_id))
     if order:
         _publish_split_event(order, split, "payment_confirmed", part.id)
+    if close_payload:
+        event_bus.publish("table.session.closed", close_payload)
     return to_bill_split_out(db, split)  # type: ignore[return-value]
 
 
@@ -526,8 +593,11 @@ def force_confirm_order_payment(
     split.closed_at = datetime.utcnow()
     db.add(split)
     order = db.scalar(select(Order).where(Order.id == order_id))
+    close_payload = _maybe_auto_close_restaurant_session(db, order) if order else None
     if order:
         _publish_split_event(order, split, "forced_payment_confirmed")
     db.commit()
     db.refresh(split)
+    if close_payload:
+        event_bus.publish("table.session.closed", close_payload)
     return to_bill_split_out(db, split)

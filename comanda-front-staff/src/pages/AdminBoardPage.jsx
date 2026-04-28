@@ -68,6 +68,33 @@ function printStatusClass(status) {
   return "badge";
 }
 
+function serviceModeLabel(mode) {
+  return mode === "BAR" ? "BAR" : "RESTAURANTE";
+}
+
+function serviceModeClass(mode) {
+  return mode === "BAR" ? "badge badge-progress" : "badge";
+}
+
+function paymentFlowLabel(row) {
+  if (!row.lead_order_id) return null;
+  if (row.service_mode !== "BAR") return null;
+  return row.payment_status === "CONFIRMED" ? "PAGO CONFIRMADO" : "PAGO PENDIENTE";
+}
+
+function paymentFlowClass(row) {
+  if (row.service_mode !== "BAR") return "badge";
+  return row.payment_status === "CONFIRMED" ? "badge badge-done" : "badge badge-received";
+}
+
+function isBarPaymentPending(entity) {
+  return (
+    entity?.service_mode === "BAR" &&
+    entity?.payment_gate === "BEFORE_PREPARATION" &&
+    entity?.payment_status !== "CONFIRMED"
+  );
+}
+
 function printButtonLabel({ target, status, sector }) {
   const printed = status === "PRINTED";
   if (target === "FULL") return printed ? "Ya impreso" : "Imprimir pedido completo";
@@ -222,6 +249,8 @@ export function AdminBoardPage({
   rows = [],
   loading = false,
   tableSessionsRows = [],
+  recentOrderActivity = {},
+  onAcknowledgeRecentOrderActivity = () => {},
   onRequestOrderDetail,
   onAdvanceItem,
   advancingKey = "",
@@ -234,6 +263,8 @@ export function AdminBoardPage({
   onResolveWaiterCall = async () => {},
   onConfirmReportedPayments = async () => {},
   validatingPaymentKey = "",
+  onConfirmBarPayment = async () => {},
+  confirmingBarPaymentKey = "",
   onMarkPrint = async () => {},
   printingKey = "",
   printMode = "MANUAL",
@@ -271,7 +302,7 @@ export function AdminBoardPage({
     return tableCodes
       .map((tableCode) => {
         const tableOrders = [...(groupedOrders[tableCode] || [])].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          (a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
         );
         const tableSession = sessionByTable[tableCode];
         const sessionOrders = tableOrders.filter((order) => order.is_active_session);
@@ -321,13 +352,16 @@ export function AdminBoardPage({
             ? "ESPERANDO_PAGO"
             : "EN_SERVICIO";
         const printStatuses = visibleOrders.map((order) => order.print_status?.overall_status || "NONE");
-        const printStatus = printStatuses.every((value) => value === "TOTAL")
-          ? "TOTAL"
-          : printStatuses.every((value) => value === "NONE")
-          ? "NONE"
-          : "PARTIAL";
+        const printStatus =
+          visibleOrders.length === 0
+            ? "NONE"
+            : printStatuses.every((value) => value === "TOTAL")
+            ? "TOTAL"
+            : printStatuses.every((value) => value === "NONE")
+            ? "NONE"
+            : "PARTIAL";
         const referenceDate =
-          leadOrder?.created_at || tableSession?.active_order_created_at || tableSession?.created_at || null;
+          leadOrder?.updated_at || leadOrder?.created_at || tableSession?.active_order_created_at || tableSession?.created_at || null;
         const shouldShowRow =
           Number(tableSession?.connected_clients || 0) > 0 ||
           effectiveOrders.length > 0 ||
@@ -356,14 +390,23 @@ export function AdminBoardPage({
               : referenceDate
               ? elapsedMinutes(referenceDate)
               : 0,
-          latest_at: leadOrder?.created_at || tableSession?.created_at || null,
+          latest_at: leadOrder?.updated_at || leadOrder?.created_at || tableSession?.created_at || null,
+          recent_activity_at: leadOrder?.order_id ? Number(recentOrderActivity[leadOrder.order_id]?.at || 0) : 0,
+          recent_activity_count: leadOrder?.order_id ? Number(recentOrderActivity[leadOrder.order_id]?.count || 0) : 0,
           lead_order_id: leadOrder?.order_id || null,
+          service_mode: leadOrder?.service_mode || tableSession?.service_mode || "RESTAURANTE",
+          payment_gate: leadOrder?.payment_gate || "NONE",
+          payment_status: leadOrder?.payment_status || "PENDING",
           should_show_row: shouldShowRow,
         };
       })
       .filter((row) => row.table_session_id && row.should_show_row)
-      .sort((a, b) => new Date(b.latest_at || 0).getTime() - new Date(a.latest_at || 0).getTime());
-  }, [rows, tableSessionsRows, cashSignals]);
+      .sort((a, b) => {
+        const recentDiff = Number(b.recent_activity_at || 0) - Number(a.recent_activity_at || 0);
+        if (recentDiff !== 0) return recentDiff;
+        return new Date(b.latest_at || 0).getTime() - new Date(a.latest_at || 0).getTime();
+      });
+  }, [rows, tableSessionsRows, cashSignals, recentOrderActivity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -431,6 +474,9 @@ export function AdminBoardPage({
   }, [cashSignals, tableRows]);
 
   async function openModal(kind, row, sector = null) {
+    if (row?.lead_order_id) {
+      onAcknowledgeRecentOrderActivity(row.lead_order_id);
+    }
     setActiveModal({ kind, row, sector });
     setModalDetail(null);
     setModalSessionConsumption(null);
@@ -561,6 +607,7 @@ export function AdminBoardPage({
       : 0;
   const modalTableElapsedLabel =
     activeModal?.kind === "TABLE" ? elapsedLabel(activeModal?.row?.elapsed_minutes || 0) : "-";
+  const modalBarPaymentPending = isBarPaymentPending(modalDetail);
 
   async function takeWaiterCall(requestId, tableSessionId) {
     if (!requestId || typeof onResolveWaiterCall !== "function") return;
@@ -594,6 +641,7 @@ export function AdminBoardPage({
   }
 
   async function advanceFromModal(item) {
+    if (modalBarPaymentPending) return;
     const toStatus = nextStatusForAction({
       currentStatus: item.status,
       itemSector: item.sector,
@@ -612,6 +660,7 @@ export function AdminBoardPage({
   }
 
   async function advanceLotFromModal(lot) {
+    if (modalBarPaymentPending) return;
     const target = lotNextStatus(lot.state, actorSector);
     if (!target || typeof onAdvanceItem !== "function") return;
 
@@ -747,17 +796,42 @@ export function AdminBoardPage({
                   <td>
                     <div className="sector-chip-wrap">
                       {(row.sectors || []).length === 0 ? (
-                        <span className="muted">-</span>
+                        <>
+                          <span className={serviceModeClass(row.service_mode)}>{serviceModeLabel(row.service_mode)}</span>
+                          {paymentFlowLabel(row) ? (
+                            <span className={paymentFlowClass(row)}>{paymentFlowLabel(row)}</span>
+                          ) : null}
+                          <span className="muted">-</span>
+                        </>
                       ) : (
-                        row.sectors.map((sector) => (
-                          <button
-                            key={`${row.id}:${sector}`}
-                            className={sectorClass(sector)}
-                            onClick={() => openModal("SECTOR", row, sector)}
-                          >
-                            {sectorLabel(sector)}
-                          </button>
-                        ))
+                        <>
+                          <span className={serviceModeClass(row.service_mode)}>{serviceModeLabel(row.service_mode)}</span>
+                          {paymentFlowLabel(row) ? (
+                            <span className={paymentFlowClass(row)}>{paymentFlowLabel(row)}</span>
+                          ) : null}
+                          {row.sectors.map((sector) => (
+                            <button
+                              key={`${row.id}:${sector}`}
+                              className={sectorClass(sector)}
+                              onClick={() => openModal("SECTOR", row, sector)}
+                            >
+                              {sectorLabel(sector)}
+                            </button>
+                          ))}
+                          {row.recent_activity_count > 0 ? (
+                            <button
+                              type="button"
+                              className="btn-secondary bell-btn bell-btn-alert sector-activity-btn"
+                              onClick={() => openModal("TABLE", row)}
+                              title="Actividad nueva en la mesa"
+                            >
+                              🔔
+                              <span className="bell-dot">
+                                {row.recent_activity_count > 9 ? "9+" : row.recent_activity_count}
+                              </span>
+                            </button>
+                          ) : null}
+                        </>
                       )}
                     </div>
                   </td>
@@ -797,6 +871,16 @@ export function AdminBoardPage({
                             {acceptingCashRequestId === cashSignals[row.table_session_id]?.latestPending?.id
                               ? "Aceptando..."
                               : "Aceptar pago"}
+                          </button>
+                        ) : row.service_mode === "BAR" && row.payment_status !== "CONFIRMED" ? (
+                          <button
+                            className="btn-primary"
+                            disabled={confirmingBarPaymentKey === String(row.lead_order_id || "")}
+                            onClick={() => onConfirmBarPayment(row.lead_order_id)}
+                          >
+                            {confirmingBarPaymentKey === String(row.lead_order_id || "")
+                              ? "Confirmando..."
+                              : "Confirmar pago BAR"}
                           </button>
                         ) : row.status === "PAGO_REPORTADO" ? (
                           <button
@@ -899,6 +983,16 @@ export function AdminBoardPage({
               )}
               {!modalLoading && !modalError && (modalDetail || hasTableConsumption) && (
                 <div className="staff-modal-list">
+                  {modalBarPaymentPending && (
+                    <article className="detail-card">
+                      <div className="order-actions">
+                        <span className="badge badge-received">BAR · PAGO PENDIENTE</span>
+                        <span className="muted">
+                          El pedido ya se puede ver, pero no se puede avanzar hasta confirmar el pago.
+                        </span>
+                      </div>
+                    </article>
+                  )}
                   {activeModal.kind === "TABLE_PRINT" && <article className="detail-card">
                     <h4>Impresion</h4>
                     <div className="sector-list">
@@ -1099,10 +1193,14 @@ export function AdminBoardPage({
                                   {!showLotAction && nextStatus && (
                                     <button
                                       className="btn-primary"
-                                      disabled={advancingKey === `${item.item_id}:${nextStatus}`}
+                                      disabled={modalBarPaymentPending || advancingKey === `${item.item_id}:${nextStatus}`}
                                       onClick={() => advanceFromModal(item)}
                                     >
-                                      {advancingKey === `${item.item_id}:${nextStatus}` ? "..." : `Pasar a ${nextStatus}`}
+                                      {modalBarPaymentPending
+                                        ? "Esperando pago"
+                                        : advancingKey === `${item.item_id}:${nextStatus}`
+                                        ? "..."
+                                        : `Pasar a ${nextStatus}`}
                                     </button>
                                   )}
                                 </div>
@@ -1113,8 +1211,12 @@ export function AdminBoardPage({
                         <div className="sector-lot-footer">
                           <span className={lotButtonClass(lot.state)}>{lot.state}</span>
                           {showLotAction && (
-                            <button className="btn-primary" disabled={lotBusy} onClick={() => advanceLotFromModal(lot)}>
-                              {lotBusy ? "..." : lotActionLabel(next)}
+                            <button
+                              className="btn-primary"
+                              disabled={modalBarPaymentPending || lotBusy}
+                              onClick={() => advanceLotFromModal(lot)}
+                            >
+                              {modalBarPaymentPending ? "Esperando pago" : lotBusy ? "..." : lotActionLabel(next)}
                             </button>
                           )}
                           <span className="muted">{elapsedLabel(lot.elapsed)}</span>
@@ -1142,6 +1244,7 @@ export function AdminBoardPage({
                         <button
                           className="btn-primary"
                           disabled={
+                            modalBarPaymentPending ||
                             advancingKey ===
                             `${item.item_id}:${nextStatusForAction({
                               currentStatus: item.status,
@@ -1151,12 +1254,14 @@ export function AdminBoardPage({
                           }
                           onClick={() => advanceFromModal(item)}
                         >
-                          {advancingKey ===
-                          `${item.item_id}:${nextStatusForAction({
-                            currentStatus: item.status,
-                            itemSector: item.sector,
-                            actorSector,
-                          })}`
+                          {modalBarPaymentPending
+                            ? "Esperando pago"
+                            : advancingKey ===
+                              `${item.item_id}:${nextStatusForAction({
+                                currentStatus: item.status,
+                                itemSector: item.sector,
+                                actorSector,
+                              })}`
                             ? "..."
                             : `Pasar a ${nextStatusForAction({
                                 currentStatus: item.status,

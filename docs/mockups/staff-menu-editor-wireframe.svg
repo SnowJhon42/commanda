@@ -1,0 +1,91 @@
+﻿<svg width="1440" height="960" viewBox="0 0 1440 960" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1440" height="960" fill="#EEF4FB"/>
+  <rect x="40" y="28" width="1360" height="96" rx="24" fill="url(#hero)"/>
+  <text x="78" y="72" fill="#EAF4FF" font-size="18" font-family="Arial">PANEL OPERATIVO</text>
+  <text x="78" y="104" fill="white" font-size="44" font-weight="700" font-family="Arial">Editar menu</text>
+  <text x="900" y="72" fill="#EAF4FF" font-size="18" font-family="Arial">Carga manual o importacion asistida</text>
+  <rect x="1120" y="52" width="120" height="44" rx="14" fill="#F7FAFF"/>
+  <text x="1145" y="80" fill="#163A6B" font-size="18" font-weight="700" font-family="Arial">Guardar</text>
+  <rect x="1255" y="52" width="110" height="44" rx="14" fill="#FFFFFF"/>
+  <text x="1274" y="80" fill="#163A6B" font-size="18" font-weight="700" font-family="Arial">Publicar</text>
+
+  <rect x="40" y="152" width="880" height="248" rx="28" fill="white" stroke="#D7E2F0" stroke-width="2"/>
+  <text x="72" y="198" fill="#0F172A" font-size="32" font-weight="700" font-family="Arial">Como queres cargar tu menu?</text>
+  <text x="72" y="228" fill="#61758A" font-size="18" font-family="Arial">Elegí un camino. Todo termina en un borrador editable antes de publicar.</text>
+
+  <rect x="72" y="258" width="250" height="112" rx="22" fill="#F8FBFF" stroke="#C9D9EB" stroke-width="2"/>
+  <text x="96" y="298" fill="#0F172A" font-size="24" font-weight="700" font-family="Arial">Carga manual</text>
+  <text x="96" y="328" fill="#61758A" font-size="16" font-family="Arial">Crear categorias y productos</text>
+  <rect x="96" y="340" width="118" height="18" rx="9" fill="#DFF5E9"/>
+  <text x="108" y="353" fill="#157347" font-size="12" font-weight="700" font-family="Arial">Base estable</text>
+
+  <rect x="344" y="258" width="250" height="112" rx="22" fill="#FFF9F1" stroke="#F3D7AA" stroke-width="2"/>
+  <text x="368" y="298" fill="#0F172A" font-size="24" font-weight="700" font-family="Arial">Importar fotos</text>
+  <text x="368" y="328" fill="#61758A" font-size="16" font-family="Arial">Subi carta en imagen y generá borrador</text>
+  <rect x="368" y="340" width="148" height="18" rx="9" fill="#FFE8BE"/>
+  <text x="380" y="353" fill="#9A4D00" font-size="12" font-weight="700" font-family="Arial">IA + revision humana</text>
+
+  <rect x="616" y="258" width="250" height="112" rx="22" fill="#F4F8FF" stroke="#C9D9EB" stroke-width="2"/>
+  <text x="640" y="298" fill="#0F172A" font-size="24" font-weight="700" font-family="Arial">Importar Excel</text>
+  <text x="640" y="328" fill="#61758A" font-size="16" font-family="Arial">Productos, categorias y precios</text>
+  <rect x="640" y="340" width="138" height="18" rx="9" fill="#DDEBFF"/>
+  <text x="652" y="353" fill="#1C4FA3" font-size="12" font-weight="700" font-family="Arial">Carga masiva controlada</text>
+
+  <rect x="950" y="152" width="450" height="248" rx="28" fill="white" stroke="#D7E2F0" stroke-width="2"/>
+  <text x="982" y="198" fill="#0F172A" font-size="30" font-weight="700" font-family="Arial">Estado actual</text>
+  <rect x="982" y="226" width="108" height="78" rx="18" fill="#F5FAFF" stroke="#D7E2F0"/>
+  <text x="1012" y="258" fill="#61758A" font-size="14" font-family="Arial">Categorias</text>
+  <text x="1022" y="292" fill="#0F172A" font-size="28" font-weight="700" font-family="Arial">8</text>
+  <rect x="1106" y="226" width="108" height="78" rx="18" fill="#F5FAFF" stroke="#D7E2F0"/>
+  <text x="1138" y="258" fill="#61758A" font-size="14" font-family="Arial">Productos</text>
+  <text x="1140" y="292" fill="#0F172A" font-size="28" font-weight="700" font-family="Arial">64</text>
+  <rect x="1230" y="226" width="138" height="78" rx="18" fill="#FFF8EE" stroke="#F3D7AA"/>
+  <text x="1253" y="258" fill="#61758A" font-size="14" font-family="Arial">Borradores</text>
+  <text x="1284" y="292" fill="#0F172A" font-size="28" font-weight="700" font-family="Arial">3</text>
+  <rect x="982" y="324" width="386" height="44" rx="14" fill="#0F6B63"/>
+  <text x="1098" y="352" fill="white" font-size="18" font-weight="700" font-family="Arial">Ver borrador pendiente</text>
+
+  <rect x="40" y="432" width="1360" height="488" rx="28" fill="white" stroke="#D7E2F0" stroke-width="2"/>
+  <text x="72" y="478" fill="#0F172A" font-size="32" font-weight="700" font-family="Arial">Menu actual</text>
+  <text x="72" y="506" fill="#61758A" font-size="18" font-family="Arial">Edicion rapida por categoria y producto</text>
+
+  <rect x="72" y="536" width="250" height="340" rx="22" fill="#F8FBFF" stroke="#D7E2F0"/>
+  <text x="96" y="576" fill="#0F172A" font-size="22" font-weight="700" font-family="Arial">Categorias</text>
+  <rect x="96" y="598" width="202" height="42" rx="12" fill="#E9F4FF"/>
+  <text x="118" y="625" fill="#11407E" font-size="18" font-weight="700" font-family="Arial">Hamburguesas</text>
+  <rect x="96" y="650" width="202" height="42" rx="12" fill="#FFFFFF" stroke="#D7E2F0"/>
+  <text x="118" y="677" fill="#334155" font-size="18" font-family="Arial">Pizzas</text>
+  <rect x="96" y="702" width="202" height="42" rx="12" fill="#FFFFFF" stroke="#D7E2F0"/>
+  <text x="118" y="729" fill="#334155" font-size="18" font-family="Arial">Bebidas</text>
+  <rect x="96" y="754" width="202" height="42" rx="12" fill="#FFFFFF" stroke="#D7E2F0"/>
+  <text x="118" y="781" fill="#334155" font-size="18" font-family="Arial">Postres</text>
+
+  <rect x="348" y="536" width="1024" height="340" rx="22" fill="#FCFEFF" stroke="#D7E2F0"/>
+  <text x="380" y="576" fill="#0F172A" font-size="22" font-weight="700" font-family="Arial">Productos</text>
+  <rect x="380" y="602" width="960" height="86" rx="18" fill="#FFFFFF" stroke="#D7E2F0"/>
+  <rect x="398" y="620" width="54" height="50" rx="14" fill="#DDEBFF"/>
+  <text x="470" y="638" fill="#0F172A" font-size="20" font-weight="700" font-family="Arial">Doble cheddar</text>
+  <text x="470" y="663" fill="#61758A" font-size="16" font-family="Arial">Pan brioche, doble medallon, cheddar, salsa</text>
+  <text x="1098" y="640" fill="#0F172A" font-size="22" font-weight="700" font-family="Arial">$ 18.500</text>
+  <rect x="1210" y="620" width="110" height="34" rx="12" fill="#EAF4FF"/>
+  <text x="1243" y="642" fill="#11407E" font-size="16" font-weight="700" font-family="Arial">Editar</text>
+  <rect x="1210" y="658" width="110" height="34" rx="12" fill="#F4FFF8"/>
+  <text x="1230" y="680" fill="#157347" font-size="16" font-weight="700" font-family="Arial">Imagen OK</text>
+
+  <rect x="380" y="700" width="960" height="86" rx="18" fill="#FFFFFF" stroke="#D7E2F0"/>
+  <rect x="398" y="718" width="54" height="50" rx="14" fill="#FFE8BE"/>
+  <text x="470" y="736" fill="#0F172A" font-size="20" font-weight="700" font-family="Arial">Cheeseburger simple</text>
+  <text x="470" y="761" fill="#61758A" font-size="16" font-family="Arial">Sin imagen cargada • precio editable • descripcion corta</text>
+  <text x="1098" y="738" fill="#0F172A" font-size="22" font-weight="700" font-family="Arial">$ 12.300</text>
+  <rect x="1210" y="718" width="110" height="34" rx="12" fill="#EAF4FF"/>
+  <text x="1243" y="740" fill="#11407E" font-size="16" font-weight="700" font-family="Arial">Editar</text>
+  <rect x="1210" y="756" width="110" height="34" rx="12" fill="#FFF3F3"/>
+  <text x="1234" y="778" fill="#C2410C" font-size="16" font-weight="700" font-family="Arial">Sin foto</text>
+
+  <defs>
+    <linearGradient id="hero" x1="40" y1="28" x2="1400" y2="124" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1767D4"/>
+      <stop offset="1" stop-color="#0C9BA5"/>
+    </linearGradient>
+  </defs>
+</svg>

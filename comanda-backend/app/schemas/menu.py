@@ -53,6 +53,7 @@ class ProductOut(BaseModel):
 
 
 class MenuResponse(BaseModel):
+    tenant_id: int
     store_id: int
     store_name: str
     show_live_total_to_client: bool = True
@@ -61,6 +62,8 @@ class MenuResponse(BaseModel):
     cover_image_url: str | None = None
     theme_preset: str = "CLASSIC"
     accent_color: str = "ROJO"
+    background_color: str = "ROJO"
+    background_image_url: str | None = None
     show_watermark_logo: bool = False
     categories: list[CategoryOut]
     products: list[ProductOut]

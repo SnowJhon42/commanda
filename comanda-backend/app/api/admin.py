@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_staff
+from app.core.security import verify_pin
 from app.db.models import (
     BillPartPaymentStatus,
     BillSplitStatus,
@@ -12,12 +13,16 @@ from app.db.models import (
     MenuCategory,
     Order,
     OrderItem,
+    OrderPaymentStatus,
     OrderStatus,
+    PaymentGate,
     Product,
     ProductExtraOption,
     ProductVariant,
     Sector,
+    ServiceMode,
     StaffAccount,
+    Store,
     Table,
     TableSession,
     TableSessionCashRequest,
@@ -65,11 +70,24 @@ def _ensure_admin(current_staff: StaffAccount) -> None:
         raise HTTPException(status_code=403, detail="Admin only")
 
 
+def _ensure_owner_access(current_staff: StaffAccount, db: Session, owner_password: str | None) -> None:
+    _ensure_admin(current_staff)
+    store = db.get(Store, current_staff.store_id)
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    owner_hash = (store.owner_password_hash or "").strip()
+    if not owner_hash or not verify_pin((owner_password or "").strip(), owner_hash):
+        raise HTTPException(status_code=403, detail="Contraseña de dueño incorrecta.")
+
+
 def _order_total_amount(order: Order) -> float:
     return float(sum(float(item.unit_price) * item.qty for item in order.items))
 
 
 def _order_has_pending_payment(db: Session, order: Order) -> bool:
+    if order.service_mode == ServiceMode.BAR.value and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+        return order.payment_status != OrderPaymentStatus.CONFIRMED.value
+
     total_amount = _order_total_amount(order)
     if total_amount <= 0:
         return False
@@ -100,6 +118,9 @@ def _order_has_pending_payment(db: Session, order: Order) -> bool:
 
 
 def _order_payment_confirmed(db: Session, order: Order) -> bool:
+    if order.service_mode == ServiceMode.BAR.value and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+        return order.payment_status == OrderPaymentStatus.CONFIRMED.value
+
     total_amount = _order_total_amount(order)
     if total_amount <= 0:
         return True
@@ -151,9 +172,11 @@ def _product_out(product: Product) -> ProductOut:
 
 @router.get("/menu/categories", response_model=list[CategoryOut])
 def list_admin_menu_categories(
-    db: Session = Depends(get_db), current_staff: StaffAccount = Depends(get_current_staff)
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
 ) -> list[CategoryOut]:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     categories = (
         db.scalars(
             select(MenuCategory)
@@ -170,10 +193,11 @@ def list_admin_menu_categories(
 @router.post("/menu/categories", response_model=CategoryOut, status_code=201)
 def create_admin_menu_category(
     payload: CategoryCreateIn,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> CategoryOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     name = payload.name.strip()
     existing = db.scalar(
         select(MenuCategory).where(MenuCategory.store_id == current_staff.store_id, MenuCategory.name == name)
@@ -240,10 +264,11 @@ def _validated_import_item(item: MenuImportDraftItem) -> bool:
 @router.post("/menu/import/preview", response_model=MenuImportPreviewOut)
 async def preview_menu_import(
     file: UploadFile = File(...),
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> MenuImportPreviewOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     filename = file.filename or "carta"
     content = await file.read()
     source_kind, result = build_menu_import_preview(filename=filename, content=content)
@@ -266,10 +291,11 @@ async def preview_menu_import(
 @router.post("/menu/import/commit", response_model=MenuImportCommitOut)
 def commit_menu_import(
     payload: MenuImportCommitIn,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> MenuImportCommitOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     category_cache = {
         category.name.lower(): category
         for category in db.scalars(select(MenuCategory).where(MenuCategory.store_id == current_staff.store_id)).all()
@@ -323,9 +349,11 @@ def commit_menu_import(
 
 @router.get("/menu/products", response_model=list[ProductOut])
 def list_admin_menu_products(
-    db: Session = Depends(get_db), current_staff: StaffAccount = Depends(get_current_staff)
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
 ) -> list[ProductOut]:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     products = (
         db.execute(
             select(Product)
@@ -343,10 +371,11 @@ def list_admin_menu_products(
 @router.post("/menu/products", response_model=ProductOut, status_code=201)
 def create_admin_product(
     payload: ProductCreateIn,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> ProductOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     sector_value = payload.fulfillment_sector.upper()
     if sector_value not in {value.value for value in FulfillmentSector}:
         raise HTTPException(status_code=422, detail="Sector inválido")
@@ -383,10 +412,11 @@ def create_admin_product(
 def update_admin_product(
     product_id: int,
     payload: ProductUpdateIn,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> ProductOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     product = db.scalar(select(Product).where(Product.id == product_id, Product.store_id == current_staff.store_id))
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -428,10 +458,11 @@ def update_admin_product(
 def create_product_extra_option(
     product_id: int,
     payload: ExtraOptionCreateIn,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> ExtraOptionOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     product = db.scalar(select(Product).where(Product.id == product_id, Product.store_id == current_staff.store_id))
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -452,10 +483,11 @@ def create_product_extra_option(
 def update_product_extra_option(
     extra_option_id: int,
     payload: ExtraOptionUpdateIn,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> ExtraOptionOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     extra = db.scalar(
         select(ProductExtraOption)
         .join(Product, Product.id == ProductExtraOption.product_id)
@@ -480,9 +512,11 @@ def update_product_extra_option(
 @router.post("/menu/images", response_model=ImageUploadOut)
 def upload_menu_image(
     file: UploadFile = File(...),
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
+    db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> ImageUploadOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     image_url = upload_menu_image_to_r2(file)
     return ImageUploadOut(image_url=image_url)
 
@@ -491,10 +525,11 @@ def upload_menu_image(
 def patch_category_image_url(
     category_id: int,
     payload: ImageUrlPatchIn,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> ImageUrlPatchOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     category = db.scalar(
         select(MenuCategory).where(MenuCategory.id == category_id, MenuCategory.store_id == current_staff.store_id)
     )
@@ -512,10 +547,11 @@ def patch_category_image_url(
 def patch_product_image_url(
     product_id: int,
     payload: ImageUrlPatchIn,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> ImageUrlPatchOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     product = db.scalar(select(Product).where(Product.id == product_id, Product.store_id == current_staff.store_id))
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -530,10 +566,11 @@ def patch_product_image_url(
 @router.delete("/menu/products/{product_id}", response_model=ProductDeleteOut)
 def delete_admin_product(
     product_id: int,
+    owner_password: str | None = Header(default=None, alias="X-Owner-Password"),
     db: Session = Depends(get_db),
     current_staff: StaffAccount = Depends(get_current_staff),
 ) -> ProductDeleteOut:
-    _ensure_admin(current_staff)
+    _ensure_owner_access(current_staff, db, owner_password)
     product = db.scalar(select(Product).where(Product.id == product_id, Product.store_id == current_staff.store_id))
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -640,6 +677,9 @@ def list_admin_orders(
                 updated_at=order.updated_at,
                 bill_split_closed=bool(bill_split and bill_split.status == BillSplitStatus.CLOSED.value),
                 payment_confirmed=_order_payment_confirmed(db, order),
+                service_mode=order.service_mode,
+                payment_gate=order.payment_gate,
+                payment_status=order.payment_status,
                 print_status=build_order_print_status(order),
             )
         )

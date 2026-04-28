@@ -1,10 +1,17 @@
 from sqlalchemy import select
 
 from app.api.deps import TableClientContext
-from app.api.staff import close_table_session
+from app.api.staff import close_table_session, collect_order_payment, open_cash_session, open_shift
 from app.api.table_sessions import join_table_session, open_table_session, upsert_order_by_table
 from app.db.models import Order, OrderItem, OrderStatus, TableSession, TableSessionStatus
-from app.schemas.orders import JoinTableSessionRequest, OpenTableSessionRequest, UpsertOrderByTableRequest
+from app.schemas.orders import (
+    CollectOrderPaymentRequest,
+    JoinTableSessionRequest,
+    OpenCashSessionRequest,
+    OpenShiftRequest,
+    OpenTableSessionRequest,
+    UpsertOrderByTableRequest,
+)
 
 from conftest import seed_minimum_store_data
 
@@ -39,6 +46,15 @@ def test_close_table_session_finalizes_session_orders_and_items(session_factory)
             ),
             table_client=table_client,
             db=db,
+        )
+
+        open_shift(OpenShiftRequest(label="Turno test", operator_name="admin"), store_id=store.id, db=db, current_staff=admin)
+        open_cash_session(OpenCashSessionRequest(opening_float=5000), store_id=store.id, db=db, current_staff=admin)
+        collect_order_payment(
+            created.order_id,
+            CollectOrderPaymentRequest(payment_method="CASH", amount=1000),
+            db=db,
+            current_staff=admin,
         )
 
         closed = close_table_session(table.code, db=db, current_staff=admin)

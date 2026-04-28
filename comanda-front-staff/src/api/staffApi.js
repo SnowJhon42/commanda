@@ -17,6 +17,12 @@ async function toApiError(res, fallbackMessage) {
   throw error;
 }
 
+function withOwnerPassword(headers = {}, ownerPassword) {
+  const trimmed = String(ownerPassword || "").trim();
+  if (!trimmed) return headers;
+  return { ...headers, "X-Owner-Password": trimmed };
+}
+
 function toNetworkError(error, fallbackMessage) {
   if (error?.name === "TypeError") {
     return new Error(
@@ -106,6 +112,37 @@ export async function fetchTableSessions({ token, storeId, onlyWithoutOrder = fa
   }
 }
 
+export async function fetchTables({ token, storeId }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/tables?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron cargar las mesas del local.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron cargar las mesas del local.");
+  }
+}
+
+export async function createStaffTable({ token, storeId, payload }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/tables?${qs.toString()}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload || {}),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo crear la mesa.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo crear la mesa.");
+  }
+}
+
 export async function fetchTableSessionConsumption(tableSessionId) {
   try {
     const res = await fetch(`${API_URL}/table/session/${tableSessionId}/consumption`);
@@ -130,6 +167,38 @@ export async function patchTableSessionStatus({ token, tableSessionId, toStatus 
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudo actualizar el estado de la mesa.");
+  }
+}
+
+export async function moveTableSession({ token, tableSessionId, targetTableCode }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/table-sessions/${tableSessionId}/move`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ target_table_code: targetTableCode }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cambiar la mesa.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cambiar la mesa.");
+  }
+}
+
+export async function confirmBarOrderPayment({ token, orderId }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/confirm-bar-payment`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo confirmar el pago BAR.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo confirmar el pago BAR.");
   }
 }
 
@@ -252,6 +321,37 @@ export async function fetchStoreProfileSettings({ token, storeId }) {
   }
 }
 
+export async function fetchStoreFloorPlan({ token, storeId }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/floor-plan?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar el plano del salon.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar el plano del salon.");
+  }
+}
+
+export async function patchStoreFloorPlan({ token, storeId, payload }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/store-settings/floor-plan?${qs.toString()}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo guardar el plano del salon.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo guardar el plano del salon.");
+  }
+}
+
 export async function patchStoreProfileSettings({ token, storeId, payload }) {
   try {
     const qs = new URLSearchParams({ store_id: String(storeId) });
@@ -297,6 +397,86 @@ export async function fetchActiveShift({ token, storeId }) {
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudo cargar el turno activo.");
+  }
+}
+
+export async function bootstrapShift({ token, storeId, label, operatorName, openingFloat, note }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/shifts/bootstrap?${qs.toString()}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        label,
+        operator_name: operatorName,
+        opening_float: Number(openingFloat || 0),
+        note: note || null,
+      }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo abrir el turno y la caja.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo abrir el turno y la caja.");
+  }
+}
+
+export async function openCashSession({ token, storeId, openingFloat, note }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/cash/open?${qs.toString()}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ opening_float: Number(openingFloat || 0), note: note || null }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo abrir la caja.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo abrir la caja.");
+  }
+}
+
+export async function closeCashSession({ token, storeId, declaredAmount, note }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/cash/close?${qs.toString()}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ declared_amount: Number(declaredAmount || 0), note: note || null }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cerrar la caja.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cerrar la caja.");
+  }
+}
+
+export async function collectOrderPayment({ token, orderId, paymentMethod, amount, note }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/payments/orders/${orderId}/collect`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        payment_method: paymentMethod,
+        amount: Number(amount),
+        note: note || null,
+      }),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo registrar el cobro.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo registrar el cobro.");
   }
 }
 
@@ -478,10 +658,10 @@ export async function fetchTableSessionCashRequests({ token, tableSessionId }) {
   }
 }
 
-export async function fetchAdminMenuCategories({ token }) {
+export async function fetchAdminMenuCategories({ token, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/categories`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: withOwnerPassword({ Authorization: `Bearer ${token}` }, ownerPassword),
     });
     if (!res.ok) await toApiError(res, "No se pudieron cargar las categorías.");
     return res.json();
@@ -490,14 +670,14 @@ export async function fetchAdminMenuCategories({ token }) {
   }
 }
 
-export async function createAdminMenuCategory({ token, payload }) {
+export async function createAdminMenuCategory({ token, payload, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/categories`, {
       method: "POST",
-      headers: {
+      headers: withOwnerPassword({
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
       body: JSON.stringify(payload),
     });
     if (!res.ok) await toApiError(res, "No se pudo crear la categoría.");
@@ -507,10 +687,10 @@ export async function createAdminMenuCategory({ token, payload }) {
   }
 }
 
-export async function fetchAdminMenuProducts({ token }) {
+export async function fetchAdminMenuProducts({ token, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/products`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: withOwnerPassword({ Authorization: `Bearer ${token}` }, ownerPassword),
     });
     if (!res.ok) await toApiError(res, "No se pudieron cargar los productos.");
     return res.json();
@@ -519,14 +699,14 @@ export async function fetchAdminMenuProducts({ token }) {
   }
 }
 
-export async function createAdminProduct({ token, payload }) {
+export async function createAdminProduct({ token, payload, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/products`, {
       method: "POST",
-      headers: {
+      headers: withOwnerPassword({
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
       body: JSON.stringify(payload),
     });
     if (!res.ok) await toApiError(res, "No se pudo crear el producto.");
@@ -536,14 +716,14 @@ export async function createAdminProduct({ token, payload }) {
   }
 }
 
-export async function patchAdminProduct({ token, productId, payload }) {
+export async function patchAdminProduct({ token, productId, payload, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/products/${productId}`, {
       method: "PATCH",
-      headers: {
+      headers: withOwnerPassword({
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
       body: JSON.stringify(payload),
     });
     if (!res.ok) await toApiError(res, "No se pudo actualizar el producto.");
@@ -553,13 +733,13 @@ export async function patchAdminProduct({ token, productId, payload }) {
   }
 }
 
-export async function deleteAdminProduct({ token, productId }) {
+export async function deleteAdminProduct({ token, productId, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/products/${productId}`, {
       method: "DELETE",
-      headers: {
+      headers: withOwnerPassword({
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
     });
     if (!res.ok) await toApiError(res, "No se pudo eliminar el producto.");
     return res.json();
@@ -568,14 +748,14 @@ export async function deleteAdminProduct({ token, productId }) {
   }
 }
 
-export async function createAdminProductExtraOption({ token, productId, payload }) {
+export async function createAdminProductExtraOption({ token, productId, payload, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/products/${productId}/extra-options`, {
       method: "POST",
-      headers: {
+      headers: withOwnerPassword({
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
       body: JSON.stringify(payload),
     });
     if (!res.ok) await toApiError(res, "No se pudo crear el extra.");
@@ -585,14 +765,14 @@ export async function createAdminProductExtraOption({ token, productId, payload 
   }
 }
 
-export async function patchAdminProductExtraOption({ token, extraOptionId, payload }) {
+export async function patchAdminProductExtraOption({ token, extraOptionId, payload, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/extra-options/${extraOptionId}`, {
       method: "PATCH",
-      headers: {
+      headers: withOwnerPassword({
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
       body: JSON.stringify(payload),
     });
     if (!res.ok) await toApiError(res, "No se pudo actualizar el extra.");
@@ -602,15 +782,15 @@ export async function patchAdminProductExtraOption({ token, extraOptionId, paylo
   }
 }
 
-export async function previewMenuImport({ token, file }) {
+export async function previewMenuImport({ token, file, ownerPassword }) {
   try {
     const body = new FormData();
     body.append("file", file);
     const res = await fetch(`${API_URL}/admin/menu/import/preview`, {
       method: "POST",
-      headers: {
+      headers: withOwnerPassword({
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
       body,
     });
     if (!res.ok) await toApiError(res, "No se pudo interpretar la carta.");
@@ -620,14 +800,14 @@ export async function previewMenuImport({ token, file }) {
   }
 }
 
-export async function commitMenuImport({ token, items }) {
+export async function commitMenuImport({ token, items, ownerPassword }) {
   try {
     const res = await fetch(`${API_URL}/admin/menu/import/commit`, {
       method: "POST",
-      headers: {
+      headers: withOwnerPassword({
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
       body: JSON.stringify({ items }),
     });
     if (!res.ok) await toApiError(res, "No se pudo crear el menú importado.");
@@ -637,21 +817,76 @@ export async function commitMenuImport({ token, items }) {
   }
 }
 
-export async function uploadMenuImage({ token, file }) {
+export async function uploadMenuImage({ token, file, ownerPassword }) {
   try {
     const body = new FormData();
     body.append("file", file);
     const res = await fetch(`${API_URL}/admin/menu/images`, {
       method: "POST",
-      headers: {
+      headers: withOwnerPassword({
         Authorization: `Bearer ${token}`,
-      },
+      }, ownerPassword),
       body,
     });
     if (!res.ok) await toApiError(res, "No se pudo subir la imagen.");
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudo subir la imagen.");
+  }
+}
+
+export async function fetchStaffAccounts({ token, storeId, ownerPassword }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/accounts?${qs.toString()}`, {
+      headers: withOwnerPassword({ Authorization: `Bearer ${token}` }, ownerPassword),
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron cargar los usuarios del staff.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron cargar los usuarios del staff.");
+  }
+}
+
+export async function createStaffAccount({ token, storeId, ownerPassword, payload }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/accounts?${qs.toString()}`, {
+      method: "POST",
+      headers: withOwnerPassword(
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        ownerPassword
+      ),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo crear el usuario.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo crear el usuario.");
+  }
+}
+
+export async function patchStaffAccount({ token, storeId, staffId, ownerPassword, payload }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    const res = await fetch(`${API_URL}/staff/accounts/${staffId}?${qs.toString()}`, {
+      method: "PATCH",
+      headers: withOwnerPassword(
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        ownerPassword
+      ),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo actualizar el usuario.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar el usuario.");
   }
 }
 

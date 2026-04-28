@@ -157,6 +157,31 @@ Definition of Done:
 - Cada cambio importante indica estado: local, subido o desplegado.
 - Las URLs publicas necesarias para demo y validacion estan documentadas.
 
+### 9) Security-Agent
+Responsabilidades:
+- Reducir riesgo de robo de cuentas, abuso operativo y exposicion de datos.
+- Revisar secretos, configuraciones inseguras, endpoints sensibles y permisos por rol.
+- Ejecutar chequeos previos a deploy sobre backend, cliente, staff y entorno online.
+- Detectar drift de seguridad entre local, GitHub y produccion.
+- Proponer hardening minimo por fase sin frenar el MVP.
+- Escalar al `CTO-Agent` cualquier hallazgo critico antes de publicar.
+
+Archivos foco:
+- `comanda-backend/app/api`
+- `comanda-backend/app/core`
+- `comanda-backend/app/services`
+- `comanda-front-client`
+- `comanda-front-staff`
+- `docs/ONLINE_STACK.md`
+- `docs/RELEASE_CHECKLIST.md`
+- `ops/`
+- `scripts/`
+
+Definition of Done:
+- Riesgos criticos identificados y priorizados.
+- Existe checklist de chequeo antes de deploy.
+- Secretos default, permisos rotos o endpoints expuestos sin control quedan corregidos o bloqueados para release.
+
 ## Protocolo de trabajo (obligatorio)
 
 1. El fundador habla con `CTO-Agent`.
@@ -165,7 +190,8 @@ Definition of Done:
 4. `Mateo (Local-Ops-Agent)` confirma salud del entorno local cuando aplique.
 5. `QA-Agent` valida flujo E2E.
 6. `Santiago (Infra-Ops-Agent)` confirma estado de despliegue y smoke test cuando aplique.
-7. `CTO-Agent` reporta resultado y propone siguiente iteracion.
+7. `Security-Agent` ejecuta chequeos de seguridad antes de cambios sensibles o releases publicos.
+8. `CTO-Agent` reporta resultado y propone siguiente iteracion.
 
 ## Formato de tarea estandar (CTO -> Agente)
 
@@ -222,6 +248,15 @@ Proximo paso:
 - Pagos productivos.
 - Multi-sucursal avanzada en UI.
 
+## Politica minima de seguridad MVP
+
+- No usar secretos default en entorno publico.
+- No exponer credenciales, links privados o tokens en repo.
+- No desplegar cambios de auth, pagos, links de administrador o configuracion sin revision de `Security-Agent`.
+- Toda URL publica nueva debe revisarse por CORS, autenticacion y alcance de datos expuestos.
+- Toda accion sensible del staff debe validar rol en backend, no solo en frontend.
+- Si aparece riesgo de robo, suplantacion, fuga de datos o takeover de cuenta, el release queda bloqueado hasta decision del `CTO-Agent`.
+
 ## Prompt sugerido para hablar con CTO-Agent
 
 ```txt
@@ -233,4 +268,17 @@ Dame:
 3) criterio de aceptacion por tarea,
 4) orden recomendado de implementacion,
 5) riesgo principal y mitigacion.
+```
+
+## Prompt sugerido para hablar con Security-Agent
+
+```txt
+Actua como Security-Agent de COMANDA.
+Quiero que revises: <area o cambio>.
+Dame:
+1) riesgos de robo, abuso o fuga de datos,
+2) chequeos concretos a ejecutar,
+3) severidad por hallazgo,
+4) mitigacion minima para no frenar el MVP,
+5) recomendacion final: bloquear release o permitir con condicion.
 ```

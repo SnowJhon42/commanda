@@ -19,10 +19,16 @@ $clientPidFile = Join-Path $logsDir "front-client.pid"
 $staffPidFile = Join-Path $logsDir "front-staff.pid"
 
 $services = @(
-  @{ Name = "Backend"; Port = 8000; Url = "http://localhost:8000/health"; PidFile = $backendPidFile; OutLog = "backend.out.log"; ErrLog = "backend.err.log" },
+  @{ Name = "Backend"; Port = 8001; Url = "http://localhost:8001/health"; PidFile = $backendPidFile; OutLog = "backend.out.log"; ErrLog = "backend.err.log" },
   @{ Name = "Client"; Port = 5173; Url = "http://localhost:5173"; PidFile = $clientPidFile; OutLog = "front-client.out.log"; ErrLog = "front-client.err.log" },
   @{ Name = "Staff"; Port = 5174; Url = "http://localhost:5174"; PidFile = $staffPidFile; OutLog = "front-staff.out.log"; ErrLog = "front-staff.err.log" }
 )
+
+function Assert-WorkspaceSupported {
+  if ($root -match "\\OneDrive(\\|$)") {
+    throw "COMANDA no debe ejecutarse desde OneDrive. Mover o usar una copia local, por ejemplo C:\Users\agust\Desktop\COMANDA_LOCAL."
+  }
+}
 
 function Resolve-PythonCommand {
   $venvPython = Join-Path $backendPath ".venv\Scripts\python.exe"
@@ -67,7 +73,7 @@ function Ensure-EnvFile {
   param([string]$ProjectPath)
   $envFile = Join-Path $ProjectPath ".env.local"
   if (-not (Test-Path $envFile)) {
-    "NEXT_PUBLIC_API_URL=http://localhost:8000" | Set-Content -Path $envFile -Encoding ASCII
+    "NEXT_PUBLIC_API_URL=http://localhost:8001" | Set-Content -Path $envFile -Encoding ASCII
   }
 }
 
@@ -239,6 +245,7 @@ function Ensure-NodeModules {
 }
 
 function Action-Down {
+  Assert-WorkspaceSupported
   Stop-FromPidFile -Name "Backend" -PidFile $backendPidFile
   Stop-FromPidFile -Name "Client" -PidFile $clientPidFile
   Stop-FromPidFile -Name "Staff" -PidFile $staffPidFile
@@ -246,7 +253,8 @@ function Action-Down {
 }
 
 function Action-Status {
-  $ok1 = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
+  Assert-WorkspaceSupported
+  $ok1 = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
   $ok2 = Check-Url -Name "Client" -Url "http://localhost:5173"
   $ok3 = Check-Url -Name "Staff" -Url "http://localhost:5174"
   if (-not ($ok1 -and $ok2 -and $ok3)) {
@@ -255,12 +263,14 @@ function Action-Status {
 }
 
 function Action-BackendDown {
+  Assert-WorkspaceSupported
   Stop-FromPidFile -Name "Backend" -PidFile $backendPidFile
-  Stop-ListenersForPort -Port 8000 -Name "Backend"
+  Stop-ListenersForPort -Port 8001 -Name "Backend"
 }
 
 function Action-BackendStatus {
-  $ok = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
+  Assert-WorkspaceSupported
+  $ok = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
   if (-not $ok) {
     exit 1
   }
@@ -276,21 +286,37 @@ function Build-NodePath {
 }
 
 function Action-BackendUp {
+  Assert-WorkspaceSupported
   Action-BackendDown
   $pythonCommand = Resolve-PythonCommand
   Load-BackendEnv
-  $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
+  $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8001" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
   Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
 
   $backendUp = Wait-Services -Checks @(
-    @{ Name = "Backend"; Url = "http://localhost:8000/health"; ProcessId = $backendProc.Id }
+    @{ Name = "Backend"; Url = "http://localhost:8001/health"; ProcessId = $backendProc.Id }
   ) -MaxSeconds 40
-  $null = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
+  $null = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
   if (-not $backendUp) {
     exit 1
   }
 }
+function Start-Front {
+  param(
+    [string]$ProjectPath,
+    [string]$Label,
+    [int]$Port,
+    [string]$LogPrefix,
+    [string]$PidFile
+  )
+  $cmd = "/c set NODE_PATH=$(Build-NodePath -ProjectPath $ProjectPath)&& npm.cmd run dev -- -H 0.0.0.0 -p $Port"
+  $proc = Start-Process -FilePath "cmd.exe" -ArgumentList $cmd -WorkingDirectory $ProjectPath -RedirectStandardOutput (Join-Path $logsDir "$LogPrefix.out.log") -RedirectStandardError (Join-Path $logsDir "$LogPrefix.err.log") -PassThru
+  Write-PidFile -Path $PidFile -ProcessId $proc.Id
+  return $proc
+}
+
 function Action-Up {
+  Assert-WorkspaceSupported
   Action-Down
 
   $pythonCommand = Resolve-PythonCommand
@@ -300,25 +326,20 @@ function Action-Up {
   Ensure-NodeModules -ProjectPath $clientPath -Label "Client"
   Ensure-NodeModules -ProjectPath $staffPath -Label "Staff"
 
-  $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
-  $clientNodePath = Build-NodePath -ProjectPath $clientPath
-  $staffNodePath = Build-NodePath -ProjectPath $staffPath
-
-  $clientProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c set NODE_PATH=$clientNodePath&& npm.cmd run dev -- -H 0.0.0.0 -p 5173" -WorkingDirectory $clientPath -RedirectStandardOutput (Join-Path $logsDir "front-client.out.log") -RedirectStandardError (Join-Path $logsDir "front-client.err.log") -PassThru
-  $staffProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c set NODE_PATH=$staffNodePath&& npm.cmd run dev -- -H 0.0.0.0 -p 5174" -WorkingDirectory $staffPath -RedirectStandardOutput (Join-Path $logsDir "front-staff.out.log") -RedirectStandardError (Join-Path $logsDir "front-staff.err.log") -PassThru
+  $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8001" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
+  $clientProc = Start-Front -ProjectPath $clientPath -Label "Client" -Port 5173 -LogPrefix "front-client" -PidFile $clientPidFile
+  $staffProc = Start-Front -ProjectPath $staffPath -Label "Staff" -Port 5174 -LogPrefix "front-staff" -PidFile $staffPidFile
 
   Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
-  Write-PidFile -Path $clientPidFile -ProcessId $clientProc.Id
-  Write-PidFile -Path $staffPidFile -ProcessId $staffProc.Id
 
   $allUp = Wait-Services -Checks @(
-    @{ Name = "Backend"; Url = "http://localhost:8000/health"; ProcessId = $backendProc.Id },
+    @{ Name = "Backend"; Url = "http://localhost:8001/health"; ProcessId = $backendProc.Id },
     @{ Name = "Client"; Url = "http://localhost:5173"; ProcessId = $clientProc.Id },
     @{ Name = "Staff"; Url = "http://localhost:5174"; ProcessId = $staffProc.Id }
   ) -MaxSeconds 45
 
   Write-Host "Servicios iniciados."
-  $null = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
+  $null = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
   $null = Check-Url -Name "Client" -Url "http://localhost:5173"
   $null = Check-Url -Name "Staff" -Url "http://localhost:5174"
   Write-Host "Logs en: $logsDir"
@@ -329,6 +350,7 @@ function Action-Up {
 }
 
 function Action-Logs {
+  Assert-WorkspaceSupported
   foreach ($svc in $services) {
     $outPath = Join-Path $logsDir $svc.OutLog
     $errPath = Join-Path $logsDir $svc.ErrLog
@@ -353,6 +375,13 @@ function Action-Doctor {
   }
 
   Write-Host "[doctor] Tooling"
+  if ($root -match "\\OneDrive(\\|$)") {
+    Write-Host "ERR Workspace dentro de OneDrive: $root"
+    Write-Host "ERR Usar copia local fuera de OneDrive, por ejemplo C:\Users\agust\Desktop\COMANDA_LOCAL"
+    $hasError = $true
+  } else {
+    Write-Host "OK  Workspace local: $root"
+  }
   try {
     $py = Resolve-PythonCommand
     $pyVer = (Invoke-Expression "$py --version") 2>&1
@@ -461,7 +490,7 @@ print("same=yes" if backend_products == root_products else "same=no")
   }
 
   Write-Host "[doctor] Endpoints actuales"
-  $null = Check-Url -Name "Backend" -Url "http://localhost:8000/health"
+  $null = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
   $null = Check-Url -Name "Client" -Url "http://localhost:5173"
   $null = Check-Url -Name "Staff" -Url "http://localhost:5174"
 

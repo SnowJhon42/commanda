@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS staff_accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   store_id INTEGER NOT NULL,
   sector TEXT NOT NULL CHECK (sector IN ('ADMIN', 'KITCHEN', 'BAR', 'WAITER')),
+  display_name TEXT NOT NULL,
   username TEXT NOT NULL,
   pin_hash TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),

@@ -58,23 +58,26 @@ def seed_minimum_data(engine) -> None:
             )
 
         for sector, username in [
+            ("ADMIN", "dueno"),
             ("ADMIN", "admin"),
             ("KITCHEN", "kitchen"),
             ("BAR", "bar"),
             ("WAITER", "waiter"),
         ]:
+            display_name = username.replace("_", " ").title()
             conn.execute(
                 text(
                     """
-                    INSERT INTO staff_accounts (store_id, sector, username, pin_hash, active, created_at)
-                    VALUES (1, :sector, :username, :pin_hash, TRUE, CURRENT_TIMESTAMP)
+                    INSERT INTO staff_accounts (store_id, sector, display_name, username, pin_hash, active, created_at)
+                    VALUES (1, :sector, :display_name, :username, :pin_hash, TRUE, CURRENT_TIMESTAMP)
                     ON CONFLICT (store_id, username) DO UPDATE
                     SET sector = EXCLUDED.sector,
+                        display_name = EXCLUDED.display_name,
                         pin_hash = EXCLUDED.pin_hash,
                         active = TRUE
                     """
                 ),
-                {"sector": sector, "username": username, "pin_hash": hashed_pin},
+                {"sector": sector, "display_name": display_name, "username": username, "pin_hash": hashed_pin},
             )
 
         categories = [

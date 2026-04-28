@@ -1,4 +1,5 @@
 export function EntryGatePage({
+  serviceMode = "RESTAURANTE",
   tableCode,
   guestCount,
   submitting = false,
@@ -14,9 +15,13 @@ export function EntryGatePage({
 
   return (
     <section className="panel entry-panel">
-      <p className="kicker">Bienvenida</p>
-      <h2>Bienvenido a tu mesa digital</h2>
-      <p className="muted">Ingresa tu mesa y cuantas personas son para empezar.</p>
+      <p className="kicker">{serviceMode === "BAR" ? "Modo BAR" : "Bienvenida"}</p>
+      <h2>{serviceMode === "BAR" ? "Pedido BAR con pago previo" : "Bienvenido a tu mesa digital"}</h2>
+      <p className="muted">
+        {serviceMode === "BAR"
+          ? "Ingresa tu mesa y cuantas personas son. El pedido entra en preparacion cuando el pago quede confirmado."
+          : "Ingresa tu mesa y cuantas personas son para empezar."}
+      </p>
 
       <form className="entry-form" onSubmit={submit}>
         <label className="field">

@@ -1,7 +1,7 @@
 # COMANDA - Release Checklist
 
 Owner: `Santiago (Infra-Ops-Agent)`
-Ultima actualizacion: `2026-03-29`
+Ultima actualizacion: `2026-04-21`
 
 ## Objetivo
 
@@ -100,4 +100,32 @@ Notas:
 - Commit de referencia: c163067
 - Requiere OPENAI_API_KEY valida con billing/cuota activa en backend
 - No esta desplegado aun en Render/Vercel
+```
+
+```txt
+Release ID: CLIENT-NATIVE-SHARE-2026-04-21
+Fecha: 2026-04-21
+Owner: CTO-Agent -> Santiago (Infra-Ops-Agent)
+Cambio: cierre de mesa del cliente prioriza share nativo del sistema en celular y deja WhatsApp como fallback
+
+Estado:
+- Local: VERIFIED
+- GitHub: IN_GIT
+- Deploy backend: NO_APLICA
+- Deploy cliente: DEPLOYED
+- Deploy staff: NO_APLICA
+
+Validacion:
+- Backend: no requiere cambios para este release
+- Cliente: local usa `navigator.share` cuando el navegador lo soporta y cae a WhatsApp si no esta disponible
+- Staff: no requiere cambios para este release
+- E2E: deploy confirmado en Vercel; falta smoke test final en celular para marcar VERIFIED si se quiere evidencia funcional explicita
+
+Notas:
+- Rama remota: sec-hardening-runtime-cut
+- Commit de referencia minimo: 7785f60
+- Commit recomendado para deploy: 4433d3f
+- Commit online confirmado en historial de Vercel: d20644d
+- Archivo afectado principal: comanda-front-client/src/views/SessionClosedFeedbackPage.jsx
+- Vercel cliente ya desplego commits que contienen el cambio (`4433d3f` y luego `d20644d`)
 ```

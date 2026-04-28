@@ -5,11 +5,14 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.deps import TableClientContext, get_current_table_client
 from app.db.models import (
     Order,
+    OrderPaymentStatus,
     OrderItem,
     OrderStatus,
+    PaymentGate,
     Product,
     ProductExtraOption,
     ProductVariant,
+    ServiceMode,
     Table,
     TableSession,
     TableSessionStatus,
@@ -59,6 +62,13 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         .order_by(TableSession.id.desc())
         .limit(1)
     )
+    service_mode = payload.service_mode or ServiceMode.RESTAURANTE.value
+    payment_gate = (
+        PaymentGate.BEFORE_PREPARATION.value if service_mode == ServiceMode.BAR.value else PaymentGate.NONE.value
+    )
+    payment_status = (
+        OrderPaymentStatus.PENDING.value if service_mode == ServiceMode.BAR.value else OrderPaymentStatus.CONFIRMED.value
+    )
     order = Order(
         tenant_id=payload.tenant_id,
         store_id=payload.store_id,
@@ -67,6 +77,9 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         guest_count=payload.guest_count,
         ticket_number=ticket_number,
         status_aggregated=OrderStatus.RECEIVED.value,
+        service_mode=service_mode,
+        payment_gate=payment_gate,
+        payment_status=payment_status,
     )
     db.add(order)
     db.flush()
@@ -118,6 +131,9 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         order_id=order.id,
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
+        service_mode=order.service_mode,
+        payment_gate=order.payment_gate,
+        payment_status=order.payment_status,
         sectors=[SectorStatusOut(sector=s, status=OrderStatus.RECEIVED.value) for s in sorted(sectors_present)],
     )
 
@@ -148,6 +164,9 @@ def get_order(
         guest_count=order.guest_count,
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
+        service_mode=order.service_mode,
+        payment_gate=order.payment_gate,
+        payment_status=order.payment_status,
         sectors=[
             OrderSectorDetailOut(sector=i.sector, status=i.status, updated_at=i.updated_at)
             for i in sorted(order.items, key=lambda row: (row.sector, row.id))

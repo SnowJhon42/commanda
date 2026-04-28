@@ -21,12 +21,13 @@ ON CONFLICT(store_id, code) DO NOTHING;
 
 -- Staff users by sector
 -- pin_hash is placeholder. Backend will replace with real hash (bcrypt/argon2).
-INSERT INTO staff_accounts (store_id, sector, username, pin_hash, active)
+INSERT INTO staff_accounts (store_id, sector, display_name, username, pin_hash, active)
 VALUES
-  (1, 'ADMIN', 'admin', 'CHANGE_ME_HASH_1234', 1),
-  (1, 'KITCHEN', 'kitchen', 'CHANGE_ME_HASH_1234', 1),
-  (1, 'BAR', 'bar', 'CHANGE_ME_HASH_1234', 1),
-  (1, 'WAITER', 'waiter', 'CHANGE_ME_HASH_1234', 1)
+  (1, 'ADMIN', 'Dueno', 'dueno', 'CHANGE_ME_HASH_1234', 1),
+  (1, 'ADMIN', 'Admin', 'admin', 'CHANGE_ME_HASH_1234', 1),
+  (1, 'KITCHEN', 'Cocina', 'kitchen', 'CHANGE_ME_HASH_1234', 1),
+  (1, 'BAR', 'Barra', 'bar', 'CHANGE_ME_HASH_1234', 1),
+  (1, 'WAITER', 'Mozo', 'waiter', 'CHANGE_ME_HASH_1234', 1)
 ON CONFLICT(store_id, username) DO NOTHING;
 
 -- Menu categories (aligned to mockups)

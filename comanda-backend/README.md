@@ -17,6 +17,8 @@ pip install -r requirements.txt
 - `DATABASE_URL` (default: `sqlite:///./comanda_dev.db`)
 - `JWT_SECRET_KEY` (obligatoria fuera de `ENVIRONMENT=dev`)
 - `ACCESS_TOKEN_EXPIRE_MINUTES` (default `120`)
+- `CORS_ALLOW_ORIGINS` (lista separada por comas; en produccion dejar solo dominios reales)
+- `CORS_ALLOW_ORIGIN_REGEX` (si no se define, solo queda activo por defecto en `ENVIRONMENT=dev`)
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_R2_BUCKET`
 - `CLOUDFLARE_API_TOKEN`

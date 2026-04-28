@@ -56,6 +56,33 @@ class CashRequestKind(str, Enum):
     CASH_PAYMENT = "CASH_PAYMENT"
 
 
+class ServiceMode(str, Enum):
+    RESTAURANTE = "RESTAURANTE"
+    BAR = "BAR"
+
+
+class PaymentGate(str, Enum):
+    NONE = "NONE"
+    BEFORE_PREPARATION = "BEFORE_PREPARATION"
+
+
+class OrderPaymentStatus(str, Enum):
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+
+
+class CashSessionStatus(str, Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class PaymentMethod(str, Enum):
+    CASH = "CASH"
+    CARD = "CARD"
+    TRANSFER = "TRANSFER"
+    OTHER = "OTHER"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -78,7 +105,10 @@ class Store(Base):
     cover_image_url: Mapped[str | None] = mapped_column(String(500))
     theme_preset: Mapped[str] = mapped_column(String(20), default="CLASSIC", nullable=False)
     accent_color: Mapped[str] = mapped_column(String(20), default="ROJO", nullable=False)
+    background_color: Mapped[str] = mapped_column(String(20), default="ROJO", nullable=False)
+    background_image_url: Mapped[str | None] = mapped_column(String(500))
     show_watermark_logo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    floor_plan_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -104,6 +134,7 @@ class TableSession(Base):
     table_id: Mapped[int] = mapped_column(ForeignKey("tables.id"), nullable=False)
     guest_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default=TableSessionStatus.MESA_OCUPADA.value, nullable=False)
+    service_mode: Mapped[str] = mapped_column(String(20), default=ServiceMode.RESTAURANTE.value, nullable=False)
     closed_shift_id: Mapped[int | None] = mapped_column(ForeignKey("service_shifts.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -205,6 +236,7 @@ class StaffAccount(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
     sector: Mapped[str] = mapped_column(String(20), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     pin_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -227,6 +259,24 @@ class ServiceShift(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class CashSession(Base):
+    __tablename__ = "cash_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    service_shift_id: Mapped[int | None] = mapped_column(ForeignKey("service_shifts.id"))
+    status: Mapped[str] = mapped_column(String(20), default=CashSessionStatus.OPEN.value, nullable=False)
+    opening_float: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    declared_amount: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    difference_amount: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    opened_by_staff_id: Mapped[int] = mapped_column(ForeignKey("staff_accounts.id"), nullable=False)
+    closed_by_staff_id: Mapped[int | None] = mapped_column(ForeignKey("staff_accounts.id"))
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
@@ -242,6 +292,9 @@ class Order(Base):
     guest_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     ticket_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status_aggregated: Mapped[str] = mapped_column(String(20), nullable=False)
+    service_mode: Mapped[str] = mapped_column(String(20), default=ServiceMode.RESTAURANTE.value, nullable=False)
+    payment_gate: Mapped[str] = mapped_column(String(32), default=PaymentGate.NONE.value, nullable=False)
+    payment_status: Mapped[str] = mapped_column(String(20), default=OrderPaymentStatus.CONFIRMED.value, nullable=False)
     printed_full_at: Mapped[datetime | None] = mapped_column(DateTime)
     printed_kitchen_at: Mapped[datetime | None] = mapped_column(DateTime)
     printed_bar_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -350,6 +403,22 @@ class BillSplitPart(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     bill_split: Mapped["BillSplit"] = relationship(back_populates="parts")
+
+
+class PaymentRecord(Base):
+    __tablename__ = "payment_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False)
+    table_session_id: Mapped[int | None] = mapped_column(ForeignKey("table_sessions.id"))
+    cash_session_id: Mapped[int | None] = mapped_column(ForeignKey("cash_sessions.id"))
+    payment_method: Mapped[str] = mapped_column(String(20), default=PaymentMethod.CASH.value, nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by_staff_id: Mapped[int] = mapped_column(ForeignKey("staff_accounts.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class TableSessionCashRequest(Base):

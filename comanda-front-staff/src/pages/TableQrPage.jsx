@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import styles from "./TableQrPage.module.css";
 
 const DEFAULT_CLIENT_URL = "https://comanda-cliente.vercel.app";
@@ -19,6 +19,14 @@ function buildTableUrl(baseUrl, storeId, tableCode) {
   const url = new URL(`${normalizeBaseUrl(baseUrl) || DEFAULT_CLIENT_URL}/`);
   url.searchParams.set("store_id", String(storeId));
   url.searchParams.set("mesa", tableCode);
+  return url.toString();
+}
+
+function buildTableUrlWithMode(baseUrl, storeId, tableCode, serviceMode) {
+  const url = new URL(buildTableUrl(baseUrl, storeId, tableCode));
+  if (serviceMode === "BAR") {
+    url.searchParams.set("service_mode", "BAR");
+  }
   return url.toString();
 }
 
@@ -85,12 +93,17 @@ function printQrSheet(cards) {
   win.document.close();
 }
 
-export function TableQrPage({ storeId }) {
+export function TableQrPage({ storeId, initialServiceMode = "RESTAURANTE", title = "QR de mesas" }) {
   const [clientBaseUrl, setClientBaseUrl] = useState(DEFAULT_CLIENT_URL);
   const [tablePrefix, setTablePrefix] = useState("M");
   const [startNumber, setStartNumber] = useState(1);
   const [tableCount, setTableCount] = useState(12);
+  const [serviceMode, setServiceMode] = useState(initialServiceMode);
   const [copyState, setCopyState] = useState("");
+
+  useEffect(() => {
+    setServiceMode(initialServiceMode === "BAR" ? "BAR" : "RESTAURANTE");
+  }, [initialServiceMode]);
 
   const cards = useMemo(() => {
     const safeStart = Math.max(1, Number(startNumber) || 1);
@@ -99,7 +112,7 @@ export function TableQrPage({ storeId }) {
 
     return Array.from({ length: safeCount }, (_, index) => {
       const tableCode = buildTableCode(tablePrefix, safeStart + index);
-      const targetUrl = buildTableUrl(clientBaseUrl, safeStoreId, tableCode);
+      const targetUrl = buildTableUrlWithMode(clientBaseUrl, safeStoreId, tableCode, serviceMode);
       return {
         storeId: safeStoreId,
         tableCode,
@@ -107,7 +120,7 @@ export function TableQrPage({ storeId }) {
         qrUrl: buildQrImageUrl(targetUrl),
       };
     });
-  }, [clientBaseUrl, startNumber, storeId, tableCount, tablePrefix]);
+  }, [clientBaseUrl, serviceMode, startNumber, storeId, tableCount, tablePrefix]);
 
   const handleCopy = async (value, label) => {
     try {
@@ -125,8 +138,12 @@ export function TableQrPage({ storeId }) {
       <div className={`menu-admin-header ${styles.header}`}>
         <div>
           <span className="menu-admin-kicker">Acceso cliente</span>
-          <h3>QR de mesas</h3>
-          <p className="muted">Genera lotes por cantidad de mesas y deja cada QR listo para imprimir o copiar.</p>
+          <h3>{title}</h3>
+          <p className="muted">
+            {serviceMode === "BAR"
+              ? "Genera QR BAR para mesas con prepago y confirmacion antes de entrar a operacion."
+              : "Genera lotes por cantidad de mesas y deja cada QR listo para imprimir o copiar."}
+          </p>
         </div>
         <div className="menu-admin-header-actions">
           <button className="btn-secondary" type="button" onClick={() => handleCopy(cards.map((card) => `${card.tableCode} -> ${card.targetUrl}`).join("\n"), "Lote copiado")}>
@@ -166,6 +183,13 @@ export function TableQrPage({ storeId }) {
           <label className="field">
             URL base cliente
             <input value={clientBaseUrl} onChange={(e) => setClientBaseUrl(e.target.value)} placeholder={DEFAULT_CLIENT_URL} />
+          </label>
+          <label className="field">
+            Flujo QR
+            <select value={serviceMode} onChange={(e) => setServiceMode(e.target.value)}>
+              <option value="RESTAURANTE">Restaurante</option>
+              <option value="BAR">Bar prepago</option>
+            </select>
           </label>
           <label className="field">
             Prefijo de mesa

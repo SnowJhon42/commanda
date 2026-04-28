@@ -1,6 +1,6 @@
 # COMANDA - Online Stack
 
-Ultima actualizacion: `2026-03-29`
+Ultima actualizacion: `2026-04-21`
 Owner: `Santiago (Infra-Ops-Agent)`
 
 ## Objetivo
@@ -18,6 +18,20 @@ Este archivo es la fuente de verdad operativa del entorno online.
 - Backend publico: `https://commanda-apy.onrender.com`
 - Front cliente publico: `https://comanda-cliente.vercel.app`
 - Front staff publico: `https://comanda-staff.vercel.app`
+
+## URLs canonicas para compartir
+
+Cuando alguien pida "el Vercel de cliente" o "el Vercel de staff", compartir solo estas URLs:
+
+- Cliente: `https://comanda-cliente.vercel.app`
+- Staff: `https://comanda-staff.vercel.app`
+
+No compartir como si fueran la app canonica:
+
+- URLs de restaurantes puntuales
+- links de pruebas
+- previews de Vercel
+- dominios que abren una tienda especifica por configuracion o seed
 
 ## Consolas privadas
 
@@ -65,8 +79,28 @@ Checklist detallado:
 - El repo local puede tener `.env.local` apuntando a `localhost`
 - Vercel puede estar usando otra `NEXT_PUBLIC_API_URL`
 - Render puede tener `DATABASE_URL`, CORS y otras variables que no existen en el repo
+- El comportamiento de share en cliente depende del soporte real de `navigator.share` del navegador/celular; si no esta disponible, cae a WhatsApp como fallback
 
 Esto no es un bug por si mismo, pero debe quedar explicitado cada vez que revisamos estado online.
+
+## Cambio pendiente de verificacion
+
+Estado online:
+- DB: `DEPLOYED`
+- Backend: `DEPLOYED`
+- Cliente: `DEPLOYED` con posible drift funcional respecto de local
+- Staff: `DEPLOYED`
+
+Estado del cambio consultado:
+- Local: `VERIFIED`
+- GitHub: `IN_GIT`
+- Deploy: `DEPLOYED`
+
+Evidencia usada:
+- archivo `comanda-front-client/src/views/SessionClosedFeedbackPage.jsx`
+- rama `sec-hardening-runtime-cut`
+- commits `7785f60` y `4433d3f`
+- historial de deploys de Vercel con `4433d3f` y `d20644d`
 
 ## Como responder a la pregunta "esto ya esta en servidor?"
 
@@ -92,3 +126,9 @@ Evidencia usada:
 
 Las URLs publicas se pueden documentar en repo.
 Los links privados de dashboard y credenciales no deben quedar hardcodeados en archivos versionados.
+
+## Endurecimiento minimo recomendado
+
+- Staff en Vercel protegido con Basic Auth via `STAFF_APP_BASIC_AUTH_USER` y `STAFF_APP_BASIC_AUTH_PASSWORD`
+- Backend con `ENVIRONMENT=prod`, `JWT_SECRET_KEY` no default y `CORS_ALLOW_ORIGINS` limitado a dominios reales
+- No compartir previews ni URLs temporales con terceros

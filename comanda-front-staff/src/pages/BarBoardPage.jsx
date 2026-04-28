@@ -10,6 +10,14 @@ function badgeClass(status) {
   return "badge";
 }
 
+function isBarPaymentPending(entity) {
+  return (
+    entity?.service_mode === "BAR" &&
+    entity?.payment_gate === "BEFORE_PREPARATION" &&
+    entity?.payment_status !== "CONFIRMED"
+  );
+}
+
 export function BarBoardPage({
   rows = [],
   loading = false,
@@ -18,6 +26,7 @@ export function BarBoardPage({
   onSelectOrder = () => {},
   selectedOrderId = null,
   alertMetaByOrder = {},
+  readOnlyReason = "",
 }) {
   return (
     <section className="panel">
@@ -25,6 +34,7 @@ export function BarBoardPage({
         <h3>Barra</h3>
         <span className="muted">{rows.length} mesas activas</span>
       </div>
+      {readOnlyReason && <p className="muted operational-banner">{readOnlyReason}</p>}
       {loading && <p className="muted">Actualizando...</p>}
       {rows.length === 0 ? (
         <p className="muted">No hay items recibidos o en preparacion en barra.</p>
@@ -32,6 +42,7 @@ export function BarBoardPage({
         <div className="card-grid">
           {rows.map((row) => {
             const meta = alertMetaByOrder[row.order_id] || {};
+            const rowPaymentPending = row.items.some((item) => isBarPaymentPending(item));
             return (
             <article className="order-card" key={row.order_id}>
               <div className="order-head">
@@ -53,12 +64,19 @@ export function BarBoardPage({
                   {selectedOrderId === row.order_id ? "Seleccionado" : "Ver detalle"}
                 </button>
               </div>
+              {rowPaymentPending ? (
+                <div className="order-actions" style={{ marginBottom: 10 }}>
+                  <span className="badge badge-received">BAR · PAGO PENDIENTE</span>
+                  <span className="muted">Visible para staff, bloqueado hasta cobrar.</span>
+                </div>
+              ) : null}
               <div className="sector-list">
                 {row.items.map((item) => {
                   const nextStatus = item.status === "RECEIVED" ? "IN_PROGRESS" : "DONE";
                   const key = `${item.item_id}:${nextStatus}`;
                   const updating = advancingKey === key;
                   const alertClass = itemAlertClass(item, "BAR");
+                  const paymentPending = isBarPaymentPending(item);
                   return (
                     <div className={`sector-row ${alertClass}`} key={item.item_id}>
                       <div className="row-main-wrap">
@@ -72,7 +90,7 @@ export function BarBoardPage({
                       <span className={badgeClass(item.status)}>{statusLabel(item.status)}</span>
                       <button
                         className="btn-primary"
-                        disabled={updating}
+                        disabled={updating || paymentPending || Boolean(readOnlyReason)}
                         onClick={() =>
                           onAdvanceItem({
                             itemId: item.item_id,
@@ -81,7 +99,7 @@ export function BarBoardPage({
                           })
                         }
                       >
-                        {updating ? "..." : item.status === "RECEIVED" ? "Tomar" : "Listo para mozo"}
+                        {paymentPending ? "Esperando pago" : updating ? "..." : item.status === "RECEIVED" ? "Tomar" : "Listo para mozo"}
                       </button>
                     </div>
                   );

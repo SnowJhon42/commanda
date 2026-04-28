@@ -29,7 +29,12 @@ function paymentMethodLabel(method) {
   return "Medio sin definir";
 }
 
+function barPaymentConfirmed(message) {
+  return String(message || "").toLowerCase().includes("pago confirmado");
+}
+
 export function CheckoutPage({
+  serviceMode = "RESTAURANTE",
   tableCode,
   guestCount,
   cartItems,
@@ -64,6 +69,8 @@ export function CheckoutPage({
   canSplitBill = false,
   canShowPaymentOptions = false,
   selectedPaymentMethod = "",
+  paymentFlowRequested = false,
+  paymentConfirmed = false,
   paymentHelpMessage = "",
   showLiveTotal = true,
   showSessionContext = true,
@@ -73,6 +80,28 @@ export function CheckoutPage({
     toSend: true,
     committed: false,
   });
+  const isBarMode = serviceMode === "BAR";
+  const hasBarOrder = isBarMode && Boolean(lastCreatedOrder?.order_id);
+  const barPaymentConfirmedState = barPaymentConfirmed(mesaPaymentStateMessage);
+  const showBarHoldAlert = hasBarOrder && !barPaymentConfirmedState;
+  const showBarIntroCallout = isBarMode && (showSessionContext || !hasBarOrder);
+  const showBarPendingStateCard = isBarMode && !showSessionContext && showBarHoldAlert;
+  const showBarInlineMessage = isBarMode ? !showBarPendingStateCard : true;
+  const cashSelected = selectedPaymentMethod === "CASH";
+  const paymentStageTitle = paymentConfirmed
+    ? "Mesa cerrada"
+    : cashSelected && paymentFlowRequested
+    ? "Cobro en efectivo en curso"
+    : paymentFlowRequested
+    ? "Cuenta solicitada"
+    : "Todavia no pediste la cuenta";
+  const paymentStageCopy = paymentConfirmed
+    ? "Cobro confirmado, el local ya tiene el pedido. Te vamos a ir avisando."
+    : cashSelected && paymentFlowRequested
+    ? "Ya avisamos al staff para cobrar en efectivo. Cuando retiren el pago, ellos mismos lo van a confirmar desde caja."
+    : paymentFlowRequested
+    ? "Ya avisamos al staff. Si queres, tambien podes indicar con que medio vas a pagar."
+    : "Cuando quieras terminar, toca \"Pedir la cuenta\". Si seguis con hambre, tambien podes sumar mas cosas.";
 
   useEffect(() => {
     setNoteOpenByKey((current) => {
@@ -137,9 +166,33 @@ export function CheckoutPage({
   return (
     <section className="panel checkout-panel">
       <div className="section-head">
-        <h2>{showSessionContext ? "Confirmar pedido" : "Consumo de mesa"}</h2>
+        <h2>{showSessionContext ? "Confirmar pedido" : "Resumen de tu mesa"}</h2>
         <span className="muted">{showSessionContext ? cartItems.length : committedItems.length + cartItems.length} lineas</span>
       </div>
+
+      {showBarIntroCallout && (
+        <article className="bar-payment-callout">
+          <div className="bar-payment-callout-head">
+            <span className="bar-payment-pill">BAR PREPAGO</span>
+            <strong>{showBarHoldAlert ? "Pedido retenido hasta pagar" : "Pago requerido antes de preparar"}</strong>
+          </div>
+          <p className="bar-payment-copy">
+            Tu pedido no entra en preparación automáticamente. Primero tenés que avanzar al pago y después el staff lo confirma.
+          </p>
+          <div className="bar-payment-steps">
+            <span>1. Pedí</span>
+            <span>2. Pagá</span>
+            <span>3. Se activa</span>
+          </div>
+          {!showSessionContext && (
+            <div className="bar-payment-actions">
+              <button type="button" className="btn-primary btn-full" onClick={onRequestTableBill} disabled={mesaActionBusy}>
+                {mesaActionBusy ? "Procesando..." : "Ir a pago ahora"}
+              </button>
+            </div>
+          )}
+        </article>
+      )}
 
       {showSessionContext && cartItems.length === 0 ? (
         <p className="muted">
@@ -344,11 +397,35 @@ export function CheckoutPage({
           {checkoutError && <p className="error-text">{checkoutError}</p>}
 
           <button className="btn-primary btn-full" disabled={submittingOrder}>
-            {submittingOrder ? "Enviando..." : "Enviar pedido"}
+            {submittingOrder ? "Enviando..." : isBarMode ? "Enviar pedido y pasar a pago" : "Enviar pedido"}
           </button>
         </form>
       ) : (
         <form className="checkout-form mesa-actions" onSubmit={submit}>
+          {!isBarMode && (
+            <article className="table-payment-card">
+              <span className="table-payment-kicker">CIERRE DE MESA</span>
+              <h3>{paymentStageTitle}</h3>
+              <p>{paymentStageCopy}</p>
+            </article>
+          )}
+          {showBarPendingStateCard && (
+            <article className="bar-payment-state-card">
+              <span className="bar-payment-pill">ATENCION</span>
+              <h3>Tu pedido está esperando pago</h3>
+              <p>
+                Hasta que el pago quede reportado y confirmado, el pedido no entra en preparación.
+              </p>
+              <button
+                type="button"
+                className="btn-primary btn-full"
+                onClick={onRequestTableBill}
+                disabled={mesaActionBusy}
+              >
+                {mesaActionBusy ? "Procesando..." : "Pagar ahora"}
+              </button>
+            </article>
+          )}
           {cartItems.length > 0 ? (
             <div className="mesa-flow-inline-wrap">
               <div className="mesa-flow-bar">
@@ -395,7 +472,7 @@ export function CheckoutPage({
               onClick={onRequestTableBill}
               disabled={mesaActionBusy}
             >
-              {mesaActionBusy ? "Procesando..." : "Pagar"}
+              {mesaActionBusy ? "Procesando..." : paymentFlowRequested ? "Volver a avisar al staff" : "Pedir la cuenta"}
             </button>
             {canSplitBill && (
               <button
@@ -419,8 +496,13 @@ export function CheckoutPage({
             </p>
           )}
           {canShowPaymentOptions && (
-            <div className="detail-card">
-              <h3>Como queres pagar</h3>
+            <div className="detail-card bar-payment-detail-card">
+              <h3>{isBarMode ? "Paso 2: como queres pagar" : "Elegi el medio para cerrar la mesa"}</h3>
+              {!isBarMode && (
+                <p className="muted">
+                  Esto no cobra solo. Sirve para avisarle al staff como queres resolver la cuenta.
+                </p>
+              )}
               {paymentHelpMessage ? <p className="toast-ok">{paymentHelpMessage}</p> : null}
               <div className="order-actions">
                 <button
@@ -429,7 +511,7 @@ export function CheckoutPage({
                   onClick={() => onSelectPaymentMethod?.("CASH")}
                   disabled={mesaActionBusy}
                 >
-                  Llamar al mozo para efectivo
+                  Efectivo en mesa
                 </button>
                 <button
                   type="button"
@@ -458,17 +540,26 @@ export function CheckoutPage({
               </div>
               {selectedPaymentMethod && (
                 <p className="muted">
-                  Medio elegido: <strong>{paymentMethodLabel(selectedPaymentMethod)}</strong>
+                  Medio elegido para esta cuenta: <strong>{paymentMethodLabel(selectedPaymentMethod)}</strong>
                 </p>
               )}
-              <button type="button" className="btn-primary btn-full" onClick={onReportPayment} disabled={mesaActionBusy}>
-                {mesaActionBusy ? "Procesando..." : "Ya pague"}
-              </button>
+              {cashSelected ? (
+                <div className="table-payment-waiting-box">
+                  <strong>Esperando confirmacion del staff</strong>
+                  <p>
+                    Cuando retiren el efectivo y lo registren en caja, vas a ver la confirmacion aca.
+                  </p>
+                </div>
+              ) : (
+                <button type="button" className="btn-primary btn-full" onClick={onReportPayment} disabled={mesaActionBusy}>
+                  {mesaActionBusy ? "Procesando..." : "Avisar que ya pague"}
+                </button>
+              )}
             </div>
           )}
-          {mesaActionMessage ? <p className="muted">{mesaActionMessage}</p> : null}
-          {mesaPaymentStateMessage && mesaPaymentStateMessage !== mesaActionMessage ? (
-            <p className="muted">{mesaPaymentStateMessage}</p>
+          {mesaActionMessage && showBarInlineMessage ? <p className={isBarMode ? "bar-payment-inline-note" : "muted"}>{mesaActionMessage}</p> : null}
+          {mesaPaymentStateMessage && mesaPaymentStateMessage !== mesaActionMessage && showBarInlineMessage ? (
+            <p className={isBarMode ? "bar-payment-inline-note" : "muted"}>{mesaPaymentStateMessage}</p>
           ) : null}
         </form>
       )}
@@ -489,10 +580,12 @@ export function CheckoutPage({
         </div>
       )}
       {!showSessionContext && lastCreatedOrder && (
-        <div className="success-box mesa-success">
+        <div className={isBarMode ? "success-box mesa-success success-box-bar" : "success-box mesa-success"}>
           <p>
             Ultimo pedido enviado: <strong>#{lastCreatedOrder.order_id}</strong>
           </p>
+          {isBarMode && !paymentConfirmed && <p>Ahora avanza al pago para que el pedido se active.</p>}
+          {isBarMode && paymentConfirmed && <p>Cobro confirmado. El local ya tomo tu pedido y te vamos a ir avisando.</p>}
         </div>
       )}
     </section>
