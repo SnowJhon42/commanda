@@ -74,6 +74,7 @@ export function CheckoutPage({
   paymentHelpMessage = "",
   showLiveTotal = true,
   showSessionContext = true,
+  barMesaCleared = false,
 }) {
   const [noteOpenByKey, setNoteOpenByKey] = useState({});
   const [mesaOpen, setMesaOpen] = useState({
@@ -81,10 +82,10 @@ export function CheckoutPage({
     committed: false,
   });
   const isBarMode = serviceMode === "BAR";
-  const hasBarOrder = isBarMode && Boolean(lastCreatedOrder?.order_id);
+  const hasBarOrder = isBarMode && !barMesaCleared && Boolean(lastCreatedOrder?.order_id);
   const barPaymentConfirmedState = barPaymentConfirmed(mesaPaymentStateMessage);
   const showBarHoldAlert = hasBarOrder && !barPaymentConfirmedState;
-  const showBarIntroCallout = isBarMode && (showSessionContext || !hasBarOrder);
+  const showBarIntroCallout = isBarMode && !barMesaCleared && (showSessionContext || !hasBarOrder);
   const showBarPendingStateCard = isBarMode && !showSessionContext && showBarHoldAlert;
   const showBarInlineMessage = isBarMode ? !showBarPendingStateCard : true;
   const cashSelected = selectedPaymentMethod === "CASH";
@@ -252,8 +253,24 @@ export function CheckoutPage({
               </article>
             ))}
           </div>
-        ) : (
-          <div className="mesa-sections">
+      ) : barMesaCleared ? (
+        <div className="mesa-sections">
+          <div className="mesa-block">
+            <article className="table-payment-card">
+              <span className="table-payment-kicker">PEDIDO TOMADO</span>
+              <h3>Mesa lista para pedir de nuevo</h3>
+              <p>El seguimiento queda en Notis. Esta pantalla vuelve limpia para que no arrastres el pago anterior.</p>
+            </article>
+            <div className="mesa-flow-inline-wrap">
+              <button type="button" className="mesa-return-bar" onClick={onContinueOrdering}>
+                <span className="mesa-return-kicker">Menu</span>
+                <strong>Seguir pidiendo</strong>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mesa-sections">
             <div className="mesa-block">
               <button
                 type="button"
@@ -579,7 +596,7 @@ export function CheckoutPage({
           )}
         </div>
       )}
-      {!showSessionContext && lastCreatedOrder && (
+      {!showSessionContext && lastCreatedOrder && !barMesaCleared && (
         <div className={isBarMode ? "success-box mesa-success success-box-bar" : "success-box mesa-success"}>
           <p>
             Ultimo pedido enviado: <strong>#{lastCreatedOrder.order_id}</strong>

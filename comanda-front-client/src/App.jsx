@@ -218,6 +218,7 @@ export function App() {
   const [mesaBillSplit, setMesaBillSplit] = useState(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [paymentFlowOrderId, setPaymentFlowOrderId] = useState(null);
+  const [barMesaClearedOrderId, setBarMesaClearedOrderId] = useState(null);
   const [tableSessionId, setTableSessionId] = useState(null);
   const [tableSessionToken, setTableSessionToken] = useState("");
   const [sessionJoinedAt, setSessionJoinedAt] = useState(null);
@@ -371,6 +372,7 @@ export function App() {
       setMesaBillSplit(null);
       setMesaPaymentStateMessage("");
       setSelectedPaymentMethod("");
+      setBarMesaClearedOrderId(null);
       return;
     }
     let mounted = true;
@@ -429,6 +431,7 @@ export function App() {
       setPaymentFlowOrderId(null);
       setLastCreatedOrder(null);
       setTableSessionConsumption(null);
+      setBarMesaClearedOrderId(null);
     }
     previousTableSessionIdRef.current = current;
   }, [tableSessionId]);
@@ -444,22 +447,12 @@ export function App() {
         const split = await fetchOrderSplit(activeOrderId, tableSessionToken);
         if (!mounted) return;
         setMesaBillSplit(split);
-        setMesaPaymentStateMessage(
-          activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
-          activeOrderDetail?.payment_status === "CONFIRMED"
-            ? PAYMENT_CONFIRMED_MESSAGE
-            : paymentStatusMessageFromSplit(split)
-        );
+        setMesaPaymentStateMessage(paymentStatusMessageFromSplit(split));
       } catch (error) {
         if (!mounted) return;
         if (error?.status === 404) {
           setMesaBillSplit(null);
-          setMesaPaymentStateMessage(
-            activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
-            activeOrderDetail?.payment_status === "CONFIRMED"
-              ? PAYMENT_CONFIRMED_MESSAGE
-              : ""
-          );
+          setMesaPaymentStateMessage("");
         }
       }
     };
@@ -472,9 +465,25 @@ export function App() {
   }, [activeOrderId, tableSessionToken, activeOrderDetail?.service_mode, activeOrderDetail?.payment_status]);
 
   useEffect(() => {
-    if (!(activeOrderDetail?.service_mode === SERVICE_MODES.BAR && activeOrderDetail?.payment_status === "CONFIRMED")) return;
-    setMesaPaymentStateMessage(PAYMENT_CONFIRMED_MESSAGE);
-  }, [activeOrderDetail?.service_mode, activeOrderDetail?.payment_status]);
+    const confirmedBarOrderId =
+      activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
+      activeOrderDetail?.payment_status === "CONFIRMED"
+        ? Number(activeOrderDetail.id || activeOrderId || 0)
+        : 0;
+
+    if (!confirmedBarOrderId) return;
+    if (barMesaClearedOrderId === confirmedBarOrderId) return;
+
+    setMesaActionMessage("");
+    setMesaPaymentStateMessage("");
+    setMesaBillSplit(null);
+    setSelectedPaymentMethod("");
+    setPaymentFlowOrderId(null);
+    setLastCreatedOrder(null);
+    setBarMesaClearedOrderId(confirmedBarOrderId);
+    setActiveTab(CLIENT_TABS.MENU);
+    setUiToast("Pago confirmado. El seguimiento queda en Notis.");
+  }, [activeOrderDetail?.id, activeOrderDetail?.service_mode, activeOrderDetail?.payment_status, activeOrderId, barMesaClearedOrderId]);
 
   const productQtyInCart = useMemo(() => {
     const map = {};
@@ -734,6 +743,7 @@ export function App() {
       setActiveOrderDetail(null);
       setLastCreatedOrder(created);
       setActiveOrderId(created.order_id);
+      setBarMesaClearedOrderId(null);
       setMesaBillSplit(null);
       setMesaPaymentStateMessage("");
       setSelectedPaymentMethod("");
@@ -914,6 +924,10 @@ export function App() {
   const showSessionHeader = entryValidated && !closedSession;
   const paymentRequestAccepted =
     assistanceRequestKind === "CASH_PAYMENT" && assistanceRequestStatus === "RESOLVED";
+  const barMesaCleared =
+    serviceMode === SERVICE_MODES.BAR &&
+    Number(barMesaClearedOrderId || 0) > 0 &&
+    Number(activeOrderDetail?.id || activeOrderId || 0) === Number(barMesaClearedOrderId || 0);
   const barOrderPaymentConfirmed =
     activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
     activeOrderDetail?.payment_status === "CONFIRMED";
@@ -984,7 +998,11 @@ export function App() {
       });
       setPaymentFlowOrderId(activeOrderId);
       setSelectedPaymentMethod("");
-      setMesaActionMessage("Cuenta solicitada. El staff fue avisado para acercarse a tu mesa.");
+      setMesaActionMessage(
+        serviceMode === SERVICE_MODES.BAR
+          ? "Pedido enviado. Ahora elegi como queres pagar para que el staff lo confirme."
+          : "Cuenta solicitada. El staff fue avisado para acercarse a tu mesa."
+      );
     } catch (error) {
       setMesaActionMessage(error.message || "No se pudo pedir la cuenta.");
     } finally {
@@ -1338,6 +1356,7 @@ export function App() {
                 paymentHelpMessage={paymentRequestAccepted ? waiterAlertMessage : ""}
                 showLiveTotal={showLiveTotalToClient}
                 showSessionContext={false}
+                barMesaCleared={barMesaCleared}
               />
             </>
           )}

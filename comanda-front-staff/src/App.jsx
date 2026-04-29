@@ -1405,7 +1405,17 @@ export function App() {
         return <StoreMessagingPage token={session?.access_token} storeId={session?.staff?.store_id} />;
       }
       if (adminView === "BAR") {
-        return <TableQrPage storeId={session?.staff?.store_id} initialServiceMode="BAR" title="QR BAR" />;
+        return (
+          <BarBoardPage
+            {...sharedProps}
+            rows={visibleRows.filter(
+              (row) =>
+                row.service_mode === "BAR" ||
+                (row.items || []).some((item) => item.sector === "BAR")
+            )}
+            actorSector="BAR"
+          />
+        );
       }
       if (adminView === "QR") {
         return <TableQrPage storeId={session?.staff?.store_id} initialServiceMode="RESTAURANTE" title="QR MESAS" />;
@@ -1520,7 +1530,6 @@ export function App() {
         }
         if (
           adminView === "SALON" ||
-          adminView === "BAR" ||
           adminView === "MENU" ||
           adminView === "QR" ||
           adminView === "PROFILE" ||
@@ -1568,7 +1577,6 @@ export function App() {
       (session.staff.sector === "ADMIN" && adminStartupGate && adminStartupGate !== "READY") ||
       (session.staff.sector === "ADMIN" &&
         (adminView === "MENU" ||
-          adminView === "BAR" ||
           adminView === "QR" ||
           adminView === "PROFILE" ||
           adminView === "MESSAGING" ||
@@ -1883,7 +1891,7 @@ export function App() {
             onClick={
               adminView === "FEEDBACK"
                 ? loadFeedback
-                : adminView === "SALON" || adminView === "BAR" || adminView === "QR"
+                : adminView === "SALON" || adminView === "QR"
                 ? loadTables
                 : loadBoard
             }
@@ -1895,8 +1903,6 @@ export function App() {
                 : "Actualizar feedback"
               : adminView === "SALON"
               ? "Actualizar salon"
-              : adminView === "BAR"
-              ? "Actualizar bar"
               : adminView === "QR"
               ? "Actualizar qr"
               : loading
@@ -1954,7 +1960,7 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "SALON" || adminView === "BAR" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "SALON" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <TableSessionsPanel
             rows={tableSessionsRows}
             loading={tableSessionsLoading}
@@ -1994,7 +2000,7 @@ export function App() {
         />
       ) : null}
 
-        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "SALON" || adminView === "BAR" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "SALON" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <OrderDetailPanel
             orderDetail={selectedOrderDetail}
             selectedOrderId={selectedOrderId}

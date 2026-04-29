@@ -68,6 +68,15 @@ def _active_order_for_session(db: Session, *, table_session_id: int, store_id: i
     )
 
 
+def _should_create_new_bar_order(existing_order: Order | None, requested_service_mode: str) -> bool:
+    if not existing_order:
+        return False
+    return (
+        requested_service_mode == ServiceMode.BAR.value
+        and existing_order.service_mode == ServiceMode.BAR.value
+    )
+
+
 @router.post("/table/session/open", response_model=OpenTableSessionResponse)
 def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(get_db)) -> OpenTableSessionResponse:
     normalized_table_code = normalize_table_code(payload.table_code)
@@ -412,6 +421,8 @@ def upsert_order_by_table(
         OrderPaymentStatus.PENDING.value if service_mode == ServiceMode.BAR.value else OrderPaymentStatus.CONFIRMED.value
     )
     created_new = False
+    if _should_create_new_bar_order(order, service_mode):
+        order = None
     if not order:
         created_new = True
         ticket_number = next_ticket_number(db, payload.store_id)
