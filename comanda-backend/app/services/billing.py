@@ -36,6 +36,7 @@ def to_bill_split_out(db: Session, bill_split: BillSplit | None) -> BillSplitOut
                 id=part.id,
                 label=part.label,
                 amount=float(part.amount),
+                payment_method=part.payment_method,
                 payment_status=part.payment_status,
                 reported_by=part.reported_by,
                 reported_at=part.reported_at,
@@ -98,6 +99,7 @@ def sync_open_split_to_order_total(db: Session, order: Order) -> BillSplit | Non
                     bill_split_id=reopened.id,
                     label=label,
                     amount=float(amount),
+                    payment_method="OTHER",
                     payment_status=BillPartPaymentStatus.PENDING.value,
                     created_at=datetime.utcnow(),
                 )
@@ -122,6 +124,7 @@ def sync_open_split_to_order_total(db: Session, order: Order) -> BillSplit | Non
 
     if len(parts) == 1:
         parts[0].amount = float(total)
+        parts[0].payment_method = "OTHER"
         parts[0].payment_status = BillPartPaymentStatus.PENDING.value
         parts[0].reported_by = None
         parts[0].reported_at = None
@@ -132,6 +135,7 @@ def sync_open_split_to_order_total(db: Session, order: Order) -> BillSplit | Non
 
     for part, amount in zip(parts, _build_equal_amounts(total, len(parts))):
         part.amount = float(amount)
+        part.payment_method = "OTHER"
         part.payment_status = BillPartPaymentStatus.PENDING.value
         part.reported_by = None
         part.reported_at = None

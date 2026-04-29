@@ -52,6 +52,15 @@ function cashRequestKindLabel(kind) {
   return "Solicitud";
 }
 
+function paymentMethodLabel(method) {
+  if (method === "CASH") return "Efectivo";
+  if (method === "MERCADO_PAGO") return "Mercado Pago";
+  if (method === "MODO") return "MODO";
+  if (method === "TRANSFER") return "Transferencia";
+  if (method === "CARD") return "Tarjeta";
+  return "Otro";
+}
+
 function isBarPaymentPending(orderDetail) {
   return (
     orderDetail?.service_mode === "BAR" &&
@@ -241,6 +250,7 @@ export function OrderDetailPanel({
                     <span>
                       {part.label} - {formatMoney(part.amount)}
                       {part.reported_by ? ` (${part.reported_by})` : ""}
+                      {part.payment_method ? ` · ${paymentMethodLabel(part.payment_method)}` : ""}
                     </span>
                     <span className={billBadgeClass(part.payment_status)}>{part.payment_status}</span>
                     {actorSector === "ADMIN" && part.payment_status === "REPORTED" ? (

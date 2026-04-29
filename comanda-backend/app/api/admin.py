@@ -135,6 +135,19 @@ def _order_payment_confirmed(db: Session, order: Order) -> bool:
     return all(part.payment_status == BillPartPaymentStatus.CONFIRMED.value for part in bill_split.parts)
 
 
+def _reported_payment_method_for_order(db: Session, order: Order) -> str | None:
+    bill_split = to_bill_split_out(db, get_latest_bill_split(db, order.id))
+    if not bill_split:
+        return None
+
+    reported_parts = [part for part in bill_split.parts if part.payment_status == BillPartPaymentStatus.REPORTED.value]
+    if not reported_parts:
+        return None
+
+    reported_parts.sort(key=lambda part: part.reported_at or datetime.min, reverse=True)
+    return reported_parts[0].payment_method or None
+
+
 def _minutes_since(reference_dt: datetime | None, now_utc: datetime) -> int:
     if not reference_dt:
         return 0
@@ -680,6 +693,7 @@ def list_admin_orders(
                 service_mode=order.service_mode,
                 payment_gate=order.payment_gate,
                 payment_status=order.payment_status,
+                reported_payment_method=_reported_payment_method_for_order(db, order),
                 print_status=build_order_print_status(order),
             )
         )

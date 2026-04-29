@@ -76,23 +76,44 @@ function serviceModeClass(mode) {
   return mode === "BAR" ? "badge badge-progress" : "badge";
 }
 
+function paymentMethodLabel(method) {
+  if (method === "CASH") return "efectivo";
+  if (method === "MERCADO_PAGO") return "Mercado Pago";
+  if (method === "MODO") return "MODO";
+  if (method === "TRANSFER") return "transferencia";
+  if (method === "CARD") return "tarjeta";
+  return "pago";
+}
+
 function paymentFlowLabel(row) {
-  if (!row.lead_order_id) return null;
-  if (row.service_mode !== "BAR") return null;
-  return row.payment_status === "CONFIRMED" ? "PAGO CONFIRMADO" : "PAGO PENDIENTE";
+  if (row?.reported_payment_method) return `PAGO ${paymentMethodLabel(row.reported_payment_method).toUpperCase()}`;
+  if (!isBarPaymentPending(row)) return null;
+  return "PAGO PENDIENTE";
 }
 
 function paymentFlowClass(row) {
-  if (row.service_mode !== "BAR") return "badge";
-  return row.payment_status === "CONFIRMED" ? "badge badge-done" : "badge badge-received";
+  if (row?.reported_payment_method) return "badge badge-progress";
+  if (!isBarPaymentPending(row)) return "badge";
+  return "badge badge-received";
 }
 
 function isBarPaymentPending(entity) {
   return (
+    Boolean(entity?.lead_order_id) &&
+    Number(entity?.qty || 0) > 0 &&
     entity?.service_mode === "BAR" &&
     entity?.payment_gate === "BEFORE_PREPARATION" &&
     entity?.payment_status !== "CONFIRMED"
   );
+}
+
+function paymentConfirmationLabel(row) {
+  if (row?.reported_payment_method) {
+    return `Confirmar pago por ${paymentMethodLabel(row.reported_payment_method)}`;
+  }
+  if (row?.status === "PAGO_REPORTADO") return "Confirmar pago";
+  if (isBarPaymentPending(row)) return "Esperando aviso de pago";
+  return "Confirmar pago";
 }
 
 function printButtonLabel({ target, status, sector }) {
@@ -397,6 +418,7 @@ export function AdminBoardPage({
           service_mode: leadOrder?.service_mode || tableSession?.service_mode || "RESTAURANTE",
           payment_gate: leadOrder?.payment_gate || "NONE",
           payment_status: leadOrder?.payment_status || "PENDING",
+          reported_payment_method: leadOrder?.reported_payment_method || null,
           should_show_row: shouldShowRow,
         };
       })
@@ -872,26 +894,31 @@ export function AdminBoardPage({
                               ? "Aceptando..."
                               : "Aceptar pago"}
                           </button>
-                        ) : row.service_mode === "BAR" && row.payment_status !== "CONFIRMED" ? (
+                        ) : row.status === "PAGO_REPORTADO" && row.reported_payment_method ? (
                           <button
                             className="btn-primary"
-                            disabled={confirmingBarPaymentKey === String(row.lead_order_id || "")}
-                            onClick={() => onConfirmBarPayment(row.lead_order_id)}
+                            disabled={
+                              (row.service_mode === "BAR" && confirmingBarPaymentKey === String(row.lead_order_id || "")) ||
+                              (row.service_mode !== "BAR" && validatingPaymentKey === String(row.lead_order_id || ""))
+                            }
+                            onClick={() =>
+                              row.service_mode === "BAR"
+                                ? onConfirmBarPayment(row.lead_order_id)
+                                : confirmReportedPayments(row)
+                            }
                           >
-                            {confirmingBarPaymentKey === String(row.lead_order_id || "")
-                              ? "Confirmando..."
-                              : "Confirmar pago BAR"}
+                            {row.service_mode === "BAR"
+                              ? confirmingBarPaymentKey === String(row.lead_order_id || "")
+                                ? "Confirmando..."
+                                : paymentConfirmationLabel(row)
+                              : validatingPaymentKey === String(row.lead_order_id || "")
+                                ? "Confirmando..."
+                                : paymentConfirmationLabel(row)}
                           </button>
+                        ) : isBarPaymentPending(row) ? (
+                          <span className="muted">{paymentConfirmationLabel(row)}</span>
                         ) : row.status === "PAGO_REPORTADO" ? (
-                          <button
-                            className="btn-primary"
-                            disabled={validatingPaymentKey === String(row.lead_order_id || "")}
-                            onClick={() => confirmReportedPayments(row)}
-                          >
-                            {validatingPaymentKey === String(row.lead_order_id || "")
-                              ? "Confirmando..."
-                              : "Confirmar pago"}
-                          </button>
+                          <span className="muted">Esperando aviso de pago</span>
                         ) : row.status === "LISTA_PARA_CERRAR" ? (
                           <button
                             className="btn-secondary"

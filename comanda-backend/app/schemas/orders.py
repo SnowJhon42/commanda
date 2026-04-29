@@ -470,6 +470,7 @@ class CreateConsumptionBillSplitRequest(BaseModel):
 
 class ReportBillPartPaymentRequest(BaseModel):
     payer_label: str = Field(..., min_length=1, max_length=120)
+    payment_method: str = Field(..., pattern="^(CASH|MERCADO_PAGO|MODO|TRANSFER|OTHER)$")
 
 
 class RequestCashPaymentRequest(BaseModel):
@@ -497,6 +498,7 @@ class BillSplitPartOut(BaseModel):
     id: int
     label: str
     amount: float
+    payment_method: str
     payment_status: str
     reported_by: str | None = None
     reported_at: datetime | None = None
@@ -611,6 +613,7 @@ class AdminOrderSummaryOut(BaseModel):
     service_mode: str = "RESTAURANTE"
     payment_gate: str = "NONE"
     payment_status: str = "CONFIRMED"
+    reported_payment_method: str | None = None
     print_status: "OrderPrintStatusOut"
 
 

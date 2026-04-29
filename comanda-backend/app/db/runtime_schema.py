@@ -219,6 +219,12 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("UPDATE orders SET payment_gate = COALESCE(NULLIF(payment_gate, ''), 'NONE')"))
         conn.execute(text("UPDATE orders SET payment_status = COALESCE(NULLIF(payment_status, ''), 'CONFIRMED')"))
 
+    if "bill_split_parts" in existing_tables:
+        split_part_columns = _table_columns(conn, "bill_split_parts")
+        if "payment_method" not in split_part_columns:
+            conn.execute(text("ALTER TABLE bill_split_parts ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'OTHER'"))
+        conn.execute(text("UPDATE bill_split_parts SET payment_method = COALESCE(NULLIF(payment_method, ''), 'OTHER')"))
+
 
 def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
     from app.core.security import hash_pin
@@ -347,6 +353,7 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
               bill_split_id INTEGER NOT NULL,
               label TEXT NOT NULL,
               amount NUMERIC(10,2) NOT NULL,
+              payment_method TEXT NOT NULL DEFAULT 'OTHER',
               payment_status TEXT NOT NULL DEFAULT 'PENDING',
               reported_by TEXT NULL,
               reported_at DATETIME NULL,

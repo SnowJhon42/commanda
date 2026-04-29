@@ -26,6 +26,7 @@ function paymentMethodLabel(method) {
   if (method === "MERCADO_PAGO") return "Mercado Pago";
   if (method === "MODO") return "MODO";
   if (method === "TRANSFER") return "Transferencia";
+  if (method === "CARD") return "Tarjeta";
   return "Medio sin definir";
 }
 
@@ -85,9 +86,12 @@ export function CheckoutPage({
   const hasBarOrder = isBarMode && !barMesaCleared && Boolean(lastCreatedOrder?.order_id);
   const barPaymentConfirmedState = barPaymentConfirmed(mesaPaymentStateMessage);
   const showBarHoldAlert = hasBarOrder && !barPaymentConfirmedState;
-  const showBarIntroCallout = isBarMode && !barMesaCleared && (showSessionContext || !hasBarOrder);
-  const showBarPendingStateCard = isBarMode && !showSessionContext && showBarHoldAlert;
-  const showBarInlineMessage = isBarMode ? !showBarPendingStateCard : true;
+  const barPaymentFlowActive = isBarMode && paymentFlowRequested && !barMesaCleared && !paymentConfirmed;
+  const showBarClearedState = isBarMode && barMesaCleared && cartItems.length === 0;
+  const showBarIntroCallout =
+    isBarMode && !barMesaCleared && (showSessionContext || (!hasBarOrder && cartItems.length === 0));
+  const showBarPendingStateCard = isBarMode && !showSessionContext && showBarHoldAlert && !barPaymentFlowActive;
+  const showBarInlineMessage = !isBarMode;
   const cashSelected = selectedPaymentMethod === "CASH";
   const paymentStageTitle = paymentConfirmed
     ? "Mesa cerrada"
@@ -115,6 +119,11 @@ export function CheckoutPage({
       return next;
     });
   }, [cartItems]);
+
+  useEffect(() => {
+    if (!showBarClearedState) return;
+    setMesaOpen((current) => ({ ...current, committed: true }));
+  }, [showBarClearedState]);
 
   const submit = (e) => {
     e.preventDefault();
@@ -185,13 +194,6 @@ export function CheckoutPage({
             <span>2. Pagá</span>
             <span>3. Se activa</span>
           </div>
-          {!showSessionContext && (
-            <div className="bar-payment-actions">
-              <button type="button" className="btn-primary btn-full" onClick={onRequestTableBill} disabled={mesaActionBusy}>
-                {mesaActionBusy ? "Procesando..." : "Ir a pago ahora"}
-              </button>
-            </div>
-          )}
         </article>
       )}
 
@@ -253,24 +255,17 @@ export function CheckoutPage({
               </article>
             ))}
           </div>
-      ) : barMesaCleared ? (
-        <div className="mesa-sections">
-          <div className="mesa-block">
-            <article className="table-payment-card">
-              <span className="table-payment-kicker">PEDIDO TOMADO</span>
-              <h3>Mesa lista para pedir de nuevo</h3>
-              <p>El seguimiento queda en Notis. Esta pantalla vuelve limpia para que no arrastres el pago anterior.</p>
-            </article>
-            <div className="mesa-flow-inline-wrap">
-              <button type="button" className="mesa-return-bar" onClick={onContinueOrdering}>
-                <span className="mesa-return-kicker">Menu</span>
-                <strong>Seguir pidiendo</strong>
-              </button>
-            </div>
-          </div>
-        </div>
       ) : (
         <div className="mesa-sections">
+            {showBarClearedState && (
+              <div className="mesa-block">
+                <article className="table-payment-card">
+                  <span className="table-payment-kicker">PEDIDO TOMADO</span>
+                  <h3>Mesa lista para pedir de nuevo</h3>
+                  <p>El seguimiento queda en Notis. Lo que ya pediste sigue visible abajo hasta que el staff cierre la mesa.</p>
+                </article>
+              </div>
+            )}
             <div className="mesa-block">
               <button
                 type="button"
@@ -426,7 +421,7 @@ export function CheckoutPage({
               <p>{paymentStageCopy}</p>
             </article>
           )}
-          {showBarPendingStateCard && (
+          {!showBarClearedState && showBarPendingStateCard && (
             <article className="bar-payment-state-card">
               <span className="bar-payment-pill">ATENCION</span>
               <h3>Tu pedido está esperando pago</h3>
@@ -443,7 +438,14 @@ export function CheckoutPage({
               </button>
             </article>
           )}
-          {cartItems.length > 0 ? (
+          {showBarClearedState ? (
+            <div className="mesa-flow-inline-wrap">
+              <button type="button" className="mesa-return-bar" onClick={onContinueOrdering}>
+                <span className="mesa-return-kicker">Menu</span>
+                <strong>Seguir pidiendo</strong>
+              </button>
+            </div>
+          ) : cartItems.length > 0 ? (
             <div className="mesa-flow-inline-wrap">
               <div className="mesa-flow-bar">
                 <div className="mesa-flow-copy">
@@ -474,45 +476,49 @@ export function CheckoutPage({
             </div>
           )}
 
-          <div className="summary mesa-summary">
-            <span>Total ya pedido</span>
-            <strong>{toMoney(committedTotal)}</strong>
-          </div>
-          <div className="summary mesa-summary mesa-summary-grand">
-            <span>Total mesa</span>
-            <strong>{toMoney(mesaGrandTotal)}</strong>
-          </div>
-          <div className="mesa-final-actions">
-            <button
-              type="button"
-              className="btn-primary btn-full"
-              onClick={onRequestTableBill}
-              disabled={mesaActionBusy}
-            >
-              {mesaActionBusy ? "Procesando..." : paymentFlowRequested ? "Volver a avisar al staff" : "Pedir la cuenta"}
-            </button>
-            {canSplitBill && (
-              <button
-                type="button"
-                className="btn-secondary btn-full"
-                onClick={onSplitBill}
-                disabled={mesaActionBusy}
-              >
-                {mesaActionBusy ? "Procesando..." : "Dividir cuenta"}
-              </button>
-            )}
-          </div>
-          {canSplitBill && (
-            <p className="muted">
-              Conectados en la mesa: <strong>{connectedClients}</strong>
-            </p>
+          {!isBarMode && (
+            <>
+              <div className="summary mesa-summary">
+                <span>Total ya pedido</span>
+                <strong>{toMoney(committedTotal)}</strong>
+              </div>
+              <div className="summary mesa-summary mesa-summary-grand">
+                <span>Total mesa</span>
+                <strong>{toMoney(mesaGrandTotal)}</strong>
+              </div>
+              <div className="mesa-final-actions">
+                <button
+                  type="button"
+                  className="btn-primary btn-full"
+                  onClick={onRequestTableBill}
+                  disabled={mesaActionBusy}
+                >
+                  {mesaActionBusy ? "Procesando..." : paymentFlowRequested ? "Volver a avisar al staff" : "Pedir la cuenta"}
+                </button>
+                {canSplitBill && (
+                  <button
+                    type="button"
+                    className="btn-secondary btn-full"
+                    onClick={onSplitBill}
+                    disabled={mesaActionBusy}
+                  >
+                    {mesaActionBusy ? "Procesando..." : "Dividir cuenta"}
+                  </button>
+                )}
+              </div>
+              {canSplitBill && (
+                <p className="muted">
+                  Conectados en la mesa: <strong>{connectedClients}</strong>
+                </p>
+              )}
+              {mesaBillSplit?.mode === "EQUAL" && (mesaBillSplit.parts || []).length > 1 && (
+                <p className="muted">
+                  Cuenta dividida en <strong>{mesaBillSplit.parts.length}</strong> partes iguales.
+                </p>
+              )}
+            </>
           )}
-          {mesaBillSplit?.mode === "EQUAL" && (mesaBillSplit.parts || []).length > 1 && (
-            <p className="muted">
-              Cuenta dividida en <strong>{mesaBillSplit.parts.length}</strong> partes iguales.
-            </p>
-          )}
-          {canShowPaymentOptions && (
+          {!showBarClearedState && canShowPaymentOptions && (
             <div className="detail-card bar-payment-detail-card">
               <h3>{isBarMode ? "Paso 2: como queres pagar" : "Elegi el medio para cerrar la mesa"}</h3>
               {!isBarMode && (
@@ -567,10 +573,12 @@ export function CheckoutPage({
                     Cuando retiren el efectivo y lo registren en caja, vas a ver la confirmacion aca.
                   </p>
                 </div>
-              ) : (
+              ) : selectedPaymentMethod ? (
                 <button type="button" className="btn-primary btn-full" onClick={onReportPayment} disabled={mesaActionBusy}>
                   {mesaActionBusy ? "Procesando..." : "Avisar que ya pague"}
                 </button>
+              ) : (
+                <p className="muted">Elegi primero el medio de pago para continuar.</p>
               )}
             </div>
           )}
@@ -596,7 +604,7 @@ export function CheckoutPage({
           )}
         </div>
       )}
-      {!showSessionContext && lastCreatedOrder && !barMesaCleared && (
+      {!showSessionContext && lastCreatedOrder && !barMesaCleared && !isBarMode && (
         <div className={isBarMode ? "success-box mesa-success success-box-bar" : "success-box mesa-success"}>
           <p>
             Ultimo pedido enviado: <strong>#{lastCreatedOrder.order_id}</strong>

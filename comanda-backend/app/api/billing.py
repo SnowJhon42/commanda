@@ -488,6 +488,7 @@ def report_part_payment(
     if part.payment_status == BillPartPaymentStatus.CONFIRMED.value:
         raise HTTPException(status_code=409, detail="Bill split part already confirmed")
 
+    part.payment_method = payload.payment_method or "OTHER"
     part.payment_status = BillPartPaymentStatus.REPORTED.value
     part.reported_by = payload.payer_label
     part.reported_at = datetime.utcnow()

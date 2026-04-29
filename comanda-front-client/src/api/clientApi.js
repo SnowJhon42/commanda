@@ -221,12 +221,12 @@ export async function createConsumptionSplit({ orderId, tableSessionToken }) {
   }
 }
 
-export async function reportSplitPartPayment({ partId, payerLabel, tableSessionToken }) {
+export async function reportSplitPartPayment({ partId, payerLabel, paymentMethod, tableSessionToken }) {
   try {
     const res = await fetch(`${API_URL}/billing/split-parts/${partId}/report`, {
       method: "POST",
       headers: withTableSessionToken({ "Content-Type": "application/json" }, tableSessionToken),
-      body: JSON.stringify({ payer_label: payerLabel }),
+      body: JSON.stringify({ payer_label: payerLabel, payment_method: paymentMethod || "OTHER" }),
     });
     if (!res.ok) {
       await toApiError(res, "No se pudo reportar el pago.");

@@ -932,15 +932,24 @@ export function App() {
     activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
     activeOrderDetail?.payment_status === "CONFIRMED";
   const paymentConfirmedMessage =
-    mesaPaymentStateMessage === PAYMENT_CONFIRMED_MESSAGE || barOrderPaymentConfirmed;
+    serviceMode === SERVICE_MODES.BAR
+      ? barOrderPaymentConfirmed
+      : mesaPaymentStateMessage === PAYMENT_CONFIRMED_MESSAGE || barOrderPaymentConfirmed;
+  const barPaymentFlowRequested =
+    serviceMode === SERVICE_MODES.BAR &&
+    !barMesaCleared &&
+    Number(paymentFlowOrderId || 0) > 0 &&
+    Number(paymentFlowOrderId || 0) === Number(activeOrderId || 0);
   const paymentFlowRequested =
-    paymentFlowOrderId === activeOrderId ||
-    (assistanceRequestKind === "CASH_PAYMENT" && serviceMode !== SERVICE_MODES.BAR) ||
-    Boolean(selectedPaymentMethod) ||
-    Boolean(mesaBillSplit) ||
-    Boolean(mesaPaymentStateMessage);
-  const canShowPaymentOptions = paymentFlowRequested && !paymentConfirmedMessage;
-  const canSplitBill = connectedClients > 1 && !paymentConfirmedMessage;
+    serviceMode === SERVICE_MODES.BAR
+      ? barPaymentFlowRequested
+      : paymentFlowOrderId === activeOrderId ||
+        assistanceRequestKind === "CASH_PAYMENT" ||
+        Boolean(selectedPaymentMethod) ||
+        Boolean(mesaBillSplit) ||
+        Boolean(mesaPaymentStateMessage);
+  const canShowPaymentOptions = paymentFlowRequested && !paymentConfirmedMessage && !(serviceMode === SERVICE_MODES.BAR && barMesaCleared);
+  const canSplitBill = serviceMode !== SERVICE_MODES.BAR && connectedClients > 1 && !paymentConfirmedMessage;
   const restaurantName = menu?.store_name || "Tu restaurante";
   const themePreset = menu?.theme_preset || "CLASSIC";
   const accentColor = menu?.accent_color || "ROJO";
@@ -1000,7 +1009,7 @@ export function App() {
       setSelectedPaymentMethod("");
       setMesaActionMessage(
         serviceMode === SERVICE_MODES.BAR
-          ? "Pedido enviado. Ahora elegi como queres pagar para que el staff lo confirme."
+          ? ""
           : "Cuenta solicitada. El staff fue avisado para acercarse a tu mesa."
       );
     } catch (error) {
@@ -1119,7 +1128,12 @@ export function App() {
           continue;
         }
 
-        latestHandledSplit = await reportSplitPartPayment({ partId: pendingPart.id, payerLabel, tableSessionToken });
+        latestHandledSplit = await reportSplitPartPayment({
+          partId: pendingPart.id,
+          payerLabel,
+          paymentMethod: selectedPaymentMethod,
+          tableSessionToken,
+        });
         hasReportedOrWaiting = true;
       }
 

@@ -395,6 +395,7 @@ class BillSplitPart(Base):
     bill_split_id: Mapped[int] = mapped_column(ForeignKey("bill_splits.id"), nullable=False)
     label: Mapped[str] = mapped_column(String(100), nullable=False)
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    payment_method: Mapped[str] = mapped_column(String(20), default=PaymentMethod.OTHER.value, nullable=False)
     payment_status: Mapped[str] = mapped_column(String(20), default=BillPartPaymentStatus.PENDING.value, nullable=False)
     reported_by: Mapped[str | None] = mapped_column(String(120))
     reported_at: Mapped[datetime | None] = mapped_column(DateTime)
