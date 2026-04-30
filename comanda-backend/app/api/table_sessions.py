@@ -12,6 +12,7 @@ from app.db.models import (
     Order,
     OrderItem,
     OrderPaymentStatus,
+    OrderReviewStatus,
     OrderStatus,
     PaymentGate,
     Product,
@@ -62,19 +63,19 @@ def _active_order_for_session(db: Session, *, table_session_id: int, store_id: i
             Order.store_id == store_id,
             Order.table_session_id == table_session_id,
             Order.status_aggregated != OrderStatus.DELIVERED.value,
+            Order.review_status != OrderReviewStatus.REJECTED.value,
         )
         .order_by(Order.created_at.desc(), Order.id.desc())
         .limit(1)
     )
 
 
-def _should_create_new_bar_order(existing_order: Order | None, requested_service_mode: str) -> bool:
+def _should_create_new_session_order(existing_order: Order | None, requested_service_mode: str) -> bool:
     if not existing_order:
         return False
-    return (
-        requested_service_mode == ServiceMode.BAR.value
-        and existing_order.service_mode == ServiceMode.BAR.value
-    )
+    if existing_order.review_status != OrderReviewStatus.PENDING.value:
+        return True
+    return existing_order.service_mode != requested_service_mode
 
 
 @router.post("/table/session/open", response_model=OpenTableSessionResponse)
@@ -244,7 +245,7 @@ def get_table_session_state(
         assistance_status = latest_assistance_request.status
         if latest_assistance_request.status == CashRequestStatus.RESOLVED.value:
             if latest_assistance_request.request_kind == CashRequestKind.CASH_PAYMENT.value:
-                assistance_message = "Tu pago fue tomado. Elegi como queres pagar."
+                assistance_message = "El staff ya registro tu pago en efectivo."
             elif latest_assistance_request.request_kind == CashRequestKind.WAITER_CALL.value:
                 assistance_message = "El mozo se esta acercando."
 
@@ -281,7 +282,10 @@ def get_table_session_consumption(
     orders = (
         db.scalars(
             select(Order)
-            .where(Order.table_session_id == table_session_id)
+            .where(
+                Order.table_session_id == table_session_id,
+                Order.review_status != OrderReviewStatus.REJECTED.value,
+            )
             .options()
             .order_by(Order.created_at.asc(), Order.id.asc())
         )
@@ -414,14 +418,10 @@ def upsert_order_by_table(
         db, table_session_id=table_session.id, store_id=payload.store_id
     )
     service_mode = payload.service_mode or ServiceMode.RESTAURANTE.value
-    payment_gate = (
-        PaymentGate.BEFORE_PREPARATION.value if service_mode == ServiceMode.BAR.value else PaymentGate.NONE.value
-    )
-    payment_status = (
-        OrderPaymentStatus.PENDING.value if service_mode == ServiceMode.BAR.value else OrderPaymentStatus.CONFIRMED.value
-    )
+    payment_gate = PaymentGate.BEFORE_PREPARATION.value
+    payment_status = OrderPaymentStatus.PENDING.value
     created_new = False
-    if _should_create_new_bar_order(order, service_mode):
+    if _should_create_new_session_order(order, service_mode):
         order = None
     if not order:
         created_new = True
@@ -434,6 +434,7 @@ def upsert_order_by_table(
             guest_count=payload.guest_count,
             ticket_number=ticket_number,
             status_aggregated=OrderStatus.RECEIVED.value,
+            review_status=OrderReviewStatus.PENDING.value,
             service_mode=service_mode,
             payment_gate=payment_gate,
             payment_status=payment_status,
@@ -446,6 +447,8 @@ def upsert_order_by_table(
         order.guest_count = max(order.guest_count, payload.guest_count)
         if order.service_mode != service_mode:
             raise HTTPException(status_code=409, detail="Active order has a different service mode")
+        if order.review_status != OrderReviewStatus.PENDING.value:
+            raise HTTPException(status_code=409, detail="Active order is no longer editable")
         order.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.add(order)
         db.flush()
@@ -523,6 +526,7 @@ def upsert_order_by_table(
         order_id=order.id,
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
+        review_status=order.review_status,
         service_mode=order.service_mode,
         payment_gate=order.payment_gate,
         payment_status=order.payment_status,

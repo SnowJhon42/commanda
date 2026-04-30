@@ -61,6 +61,10 @@ const ACCENT_HEX = {
   NEGRO: "#1f2937",
 };
 
+function assistanceSignature(kind, status, message) {
+  return [kind || "", status || "", message || ""].join("|");
+}
+
 function normalizeTableCode(input) {
   if (typeof input !== "string") return null;
   const compact = input.trim().toUpperCase().replace(/\s+/g, "");
@@ -231,6 +235,7 @@ export function App() {
   const [assistanceRequestKind, setAssistanceRequestKind] = useState("");
   const [assistanceRequestStatus, setAssistanceRequestStatus] = useState("");
   const previousTableSessionIdRef = useRef(null);
+  const dismissedWaiterAlertSignatureRef = useRef("");
   const hasPendingToSend = cartItems.length > 0;
   const pendingUnits = useMemo(
     () => cartItems.reduce((acc, item) => acc + Number(item.qty || 0), 0),
@@ -360,12 +365,15 @@ export function App() {
   );
   // "Total mesa" must only reflect confirmed consumption, not draft items.
   const mesaGrandTotal = committedTotal;
-  const sessionOrderIds = useMemo(() => {
-    const ids = (tableSessionConsumption?.order_ids || []).map((id) => Number(id)).filter((id) => id > 0);
-    if (ids.length > 0) return [...new Set(ids)];
-    return activeOrderId ? [Number(activeOrderId)] : [];
+  const trackingOrderIds = useMemo(() => {
+    const ids = (tableSessionConsumption?.order_ids || [])
+      .map((id) => Number(id))
+      .filter((id) => id > 0);
+    if (Number(activeOrderId || 0) > 0) {
+      ids.push(Number(activeOrderId));
+    }
+    return [...new Set(ids)].sort((a, b) => b - a);
   }, [tableSessionConsumption, activeOrderId]);
-
   useEffect(() => {
     if (!activeOrderId || !tableSessionToken) {
       setActiveOrderDetail(null);
@@ -748,11 +756,7 @@ export function App() {
       setMesaPaymentStateMessage("");
       setSelectedPaymentMethod("");
       setPaymentFlowOrderId(null);
-      setMesaActionMessage(
-        created.service_mode === SERVICE_MODES.BAR
-          ? "Pedido recibido. Va a entrar en preparacion cuando el pago quede confirmado."
-          : ""
-      );
+      setMesaActionMessage("Pedido enviado. El staff lo esta revisando antes de habilitar el pago.");
       try {
         const consumption = await fetchTableSessionConsumption(resolvedTableSessionId, resolvedTableSessionToken);
         setTableSessionConsumption(consumption);
@@ -800,15 +804,33 @@ export function App() {
           return;
         }
         setConnectedClients(state.connected_clients || 1);
-        setAssistanceRequestKind(state.assistance_request_kind || "");
-        setAssistanceRequestStatus(state.assistance_request_status || "");
+        const nextAssistanceKind = state.assistance_request_kind || "";
+        const nextAssistanceStatus = state.assistance_request_status || "";
         const nextWaiterMessage = state.assistance_message || "";
-        setWaiterAlertMessage(nextWaiterMessage);
+        const nextWaiterSignature = assistanceSignature(
+          nextAssistanceKind,
+          nextAssistanceStatus,
+          nextWaiterMessage
+        );
+        setAssistanceRequestKind(nextAssistanceKind);
+        setAssistanceRequestStatus(nextAssistanceStatus);
         if (!nextWaiterMessage) {
+          dismissedWaiterAlertSignatureRef.current = "";
+          setWaiterAlertMessage("");
           setHasWaiterAlert(false);
+        } else if (nextWaiterSignature === dismissedWaiterAlertSignatureRef.current) {
+          setWaiterAlertMessage("");
+          setHasWaiterAlert(false);
+        } else {
+          setWaiterAlertMessage(nextWaiterMessage);
+          setHasWaiterAlert(activeTab !== CLIENT_TABS.WAITER);
         }
-        if (nextWaiterMessage && activeTab !== CLIENT_TABS.WAITER) {
-          setHasWaiterAlert(true);
+        if (nextAssistanceKind === "WAITER_CALL") {
+          if (nextAssistanceStatus === "RESOLVED") {
+            setWaiterMessage("");
+          } else if (nextAssistanceStatus !== "PENDING") {
+            setWaiterMessage("");
+          }
         }
         if (state.active_order_id) {
           if (activeTab !== CLIENT_TABS.NOTIFICATIONS) {
@@ -922,8 +944,9 @@ export function App() {
     selectTab(CLIENT_TABS.NOTIFICATIONS);
   };
   const showSessionHeader = entryValidated && !closedSession;
-  const paymentRequestAccepted =
-    assistanceRequestKind === "CASH_PAYMENT" && assistanceRequestStatus === "RESOLVED";
+  const activeOrderReviewStatus = String(activeOrderDetail?.review_status || "");
+  const orderReviewRejected = activeOrderReviewStatus === "REJECTED";
+  const orderReviewApproved = activeOrderReviewStatus === "APPROVED";
   const barMesaCleared =
     serviceMode === SERVICE_MODES.BAR &&
     Number(barMesaClearedOrderId || 0) > 0 &&
@@ -932,24 +955,24 @@ export function App() {
     activeOrderDetail?.service_mode === SERVICE_MODES.BAR &&
     activeOrderDetail?.payment_status === "CONFIRMED";
   const paymentConfirmedMessage =
-    serviceMode === SERVICE_MODES.BAR
-      ? barOrderPaymentConfirmed
-      : mesaPaymentStateMessage === PAYMENT_CONFIRMED_MESSAGE || barOrderPaymentConfirmed;
-  const barPaymentFlowRequested =
-    serviceMode === SERVICE_MODES.BAR &&
-    !barMesaCleared &&
-    Number(paymentFlowOrderId || 0) > 0 &&
-    Number(paymentFlowOrderId || 0) === Number(activeOrderId || 0);
+    activeOrderDetail?.payment_status === "CONFIRMED" ||
+    mesaPaymentStateMessage === PAYMENT_CONFIRMED_MESSAGE ||
+    barOrderPaymentConfirmed;
+  const approvedOrderId = Number(activeOrderDetail?.id || activeOrderId || 0);
+  const orderAwaitingPayment =
+    approvedOrderId > 0 &&
+    orderReviewApproved &&
+    activeOrderDetail?.payment_status !== "CONFIRMED";
   const paymentFlowRequested =
-    serviceMode === SERVICE_MODES.BAR
-      ? barPaymentFlowRequested
-      : paymentFlowOrderId === activeOrderId ||
-        assistanceRequestKind === "CASH_PAYMENT" ||
-        Boolean(selectedPaymentMethod) ||
-        Boolean(mesaBillSplit) ||
-        Boolean(mesaPaymentStateMessage);
+    orderAwaitingPayment &&
+    !barMesaCleared &&
+    Number(paymentFlowOrderId || approvedOrderId) === approvedOrderId;
   const canShowPaymentOptions = paymentFlowRequested && !paymentConfirmedMessage && !(serviceMode === SERVICE_MODES.BAR && barMesaCleared);
-  const canSplitBill = serviceMode !== SERVICE_MODES.BAR && connectedClients > 1 && !paymentConfirmedMessage;
+  const canSplitBill =
+    serviceMode !== SERVICE_MODES.BAR &&
+    connectedClients > 1 &&
+    !paymentConfirmedMessage &&
+    orderReviewApproved;
   const restaurantName = menu?.store_name || "Tu restaurante";
   const themePreset = menu?.theme_preset || "CLASSIC";
   const accentColor = menu?.accent_color || "ROJO";
@@ -961,6 +984,26 @@ export function App() {
     "--client-bg-image": menu?.background_image_url ? `url("${menu.background_image_url}")` : "none",
   };
 
+  useEffect(() => {
+    if (!orderAwaitingPayment || approvedOrderId <= 0) return;
+    if (Number(paymentFlowOrderId || 0) === approvedOrderId) return;
+    setPaymentFlowOrderId(approvedOrderId);
+  }, [orderAwaitingPayment, approvedOrderId, paymentFlowOrderId]);
+
+  useEffect(() => {
+    if (!orderReviewRejected) return;
+    setMesaBillSplit(null);
+    setMesaPaymentStateMessage("");
+    setMesaActionMessage("El staff no pudo tomar este pedido. Volve al menu y hace uno nuevo.");
+    setSelectedPaymentMethod("");
+    setPaymentFlowOrderId(null);
+    setLastCreatedOrder(null);
+    setActiveOrderId(null);
+    setActiveOrderDetail(null);
+    setActiveTab(CLIENT_TABS.MENU);
+    setUiToast("Pedido rechazado por el staff.");
+  }, [orderReviewRejected]);
+
   const requestWaiterHelp = async () => {
     if (waiterBusy) return;
     if (!tableSessionId) {
@@ -969,6 +1012,9 @@ export function App() {
     }
     setWaiterBusy(true);
     setWaiterMessage("");
+    setWaiterAlertMessage("");
+    setHasWaiterAlert(false);
+    dismissedWaiterAlertSignatureRef.current = "";
     const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
     try {
       await requestWaiterHelpBySession({
@@ -987,42 +1033,20 @@ export function App() {
     }
   };
 
-  const requestPaymentFlow = async () => {
-    if (mesaActionBusy) return;
-    if (!activeOrderId) {
-      setMesaActionMessage("Primero envia un pedido para poder pedir la cuenta.");
-      return;
-    }
-    setMesaActionBusy(true);
-    setMesaActionMessage("");
-    const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
-    try {
-      await requestCashPayment({
-        orderId: activeOrderId,
-        clientId,
-        payerLabel,
-        requestKind: "CASH_PAYMENT",
-        note: "Quiero pagar",
-        tableSessionToken,
-      });
-      setPaymentFlowOrderId(activeOrderId);
-      setSelectedPaymentMethod("");
-      setMesaActionMessage(
-        serviceMode === SERVICE_MODES.BAR
-          ? ""
-          : "Cuenta solicitada. El staff fue avisado para acercarse a tu mesa."
-      );
-    } catch (error) {
-      setMesaActionMessage(error.message || "No se pudo pedir la cuenta.");
-    } finally {
-      setMesaActionBusy(false);
-    }
+  const dismissWaiterAlert = () => {
+    dismissedWaiterAlertSignatureRef.current = assistanceSignature(
+      assistanceRequestKind,
+      assistanceRequestStatus,
+      waiterAlertMessage
+    );
+    setWaiterAlertMessage("");
+    setHasWaiterAlert(false);
   };
 
   const selectPaymentMethod = async (method) => {
     if (mesaActionBusy) return;
-    if (activeOrderId) {
-      setPaymentFlowOrderId(activeOrderId);
+    if (approvedOrderId) {
+      setPaymentFlowOrderId(approvedOrderId);
     }
     setSelectedPaymentMethod(method);
     if (method !== PAYMENT_METHODS.CASH) {
@@ -1039,12 +1063,16 @@ export function App() {
       setMesaActionMessage("Primero registra la mesa.");
       return;
     }
+    if (!approvedOrderId) {
+      setMesaActionMessage("Todavia no hay un pedido aprobado para cobrar en efectivo.");
+      return;
+    }
     setMesaActionBusy(true);
     setMesaActionMessage("Avisando al staff para acercarse con el cobro en efectivo...");
     const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
     try {
-      await requestWaiterHelpBySession({
-        tableSessionId,
+      await requestCashPayment({
+        orderId: approvedOrderId,
         clientId,
         payerLabel,
         note: "Cobro en efectivo",
@@ -1084,8 +1112,8 @@ export function App() {
 
   const reportPaymentFromTable = async () => {
     if (mesaActionBusy) return;
-    if (sessionOrderIds.length === 0) {
-      setMesaActionMessage("Primero envia un pedido antes de cerrar la mesa.");
+    if (!approvedOrderId) {
+      setMesaActionMessage("Todavia no hay un pedido aprobado para pagar.");
       return;
     }
     if (!selectedPaymentMethod) {
@@ -1096,69 +1124,48 @@ export function App() {
     setMesaActionMessage("");
     try {
       let latestHandledSplit = null;
-      let allAlreadyConfirmed = true;
-      let hasReportedOrWaiting = false;
       const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
-
-      for (const orderId of sessionOrderIds) {
-        let activeSplit = null;
-        try {
-          activeSplit = await fetchOrderSplit(orderId, tableSessionToken);
-        } catch {
-        }
-        if (!activeSplit) {
-          activeSplit = await createEqualSplit({ orderId, partsCount: 1, tableSessionToken });
-        }
-        latestHandledSplit = activeSplit;
-
-        const allConfirmed =
-          (activeSplit.parts || []).length > 0 &&
-          (activeSplit.parts || []).every((part) => part.payment_status === "CONFIRMED");
-        if (activeSplit.status === "CLOSED" || allConfirmed) {
-          continue;
-        }
-
-        allAlreadyConfirmed = false;
-        const pendingPart = (activeSplit.parts || []).find((part) => part.payment_status === "PENDING");
-        if (!pendingPart) {
-          const hasReported = (activeSplit.parts || []).some((part) => part.payment_status === "REPORTED");
-          if (hasReported) {
-            hasReportedOrWaiting = true;
-          }
-          continue;
-        }
-
-        latestHandledSplit = await reportSplitPartPayment({
-          partId: pendingPart.id,
-          payerLabel,
-          paymentMethod: selectedPaymentMethod,
-          tableSessionToken,
-        });
-        hasReportedOrWaiting = true;
+      let activeSplit = null;
+      try {
+        activeSplit = await fetchOrderSplit(approvedOrderId, tableSessionToken);
+      } catch {
       }
-
-      if (latestHandledSplit) {
-        setMesaBillSplit(latestHandledSplit);
-        if (activeOrderId) {
-          setPaymentFlowOrderId(activeOrderId);
-        }
+      if (!activeSplit) {
+        activeSplit = await createEqualSplit({ orderId: approvedOrderId, partsCount: 1, tableSessionToken });
       }
+      latestHandledSplit = activeSplit;
 
-      if (allAlreadyConfirmed) {
+      const allConfirmed =
+        (activeSplit.parts || []).length > 0 &&
+        (activeSplit.parts || []).every((part) => part.payment_status === "CONFIRMED");
+      if (activeSplit.status === "CLOSED" || allConfirmed) {
         setMesaActionMessage(PAYMENT_CONFIRMED_MESSAGE);
         setMesaPaymentStateMessage(PAYMENT_CONFIRMED_MESSAGE);
         return;
       }
-      setMesaActionMessage(
-        hasReportedOrWaiting
-          ? "Estamos verificando tu pago, aguarda hasta la confirmacion del staff."
-          : PAYMENT_CONFIRMED_MESSAGE
-      );
-      setMesaPaymentStateMessage(
-        hasReportedOrWaiting
-          ? "Estamos verificando tu pago, aguarda hasta la confirmacion del staff."
-          : PAYMENT_CONFIRMED_MESSAGE
-      );
+
+      const pendingPart = (activeSplit.parts || []).find((part) => part.payment_status === "PENDING");
+      if (!pendingPart) {
+        setMesaActionMessage("Estamos verificando tu pago, aguarda hasta la confirmacion del staff.");
+        setMesaPaymentStateMessage("Estamos verificando tu pago, aguarda hasta la confirmacion del staff.");
+        return;
+      }
+
+      latestHandledSplit = await reportSplitPartPayment({
+        partId: pendingPart.id,
+        payerLabel,
+        paymentMethod: selectedPaymentMethod,
+        tableSessionToken,
+      });
+
+      if (latestHandledSplit) {
+        setMesaBillSplit(latestHandledSplit);
+        if (approvedOrderId) {
+          setPaymentFlowOrderId(approvedOrderId);
+        }
+      }
+      setMesaActionMessage("Estamos verificando tu pago, aguarda hasta la confirmacion del staff.");
+      setMesaPaymentStateMessage("Estamos verificando tu pago, aguarda hasta la confirmacion del staff.");
     } catch (error) {
       setMesaActionMessage(error.message || "No se pudo reportar el pago.");
     } finally {
@@ -1354,20 +1361,19 @@ export function App() {
                 onSubmitOrder={submitOrder}
                 onGoToTracking={goToTracking}
                 onContinueOrdering={() => selectTab(CLIENT_TABS.MENU)}
-                onRequestTableBill={requestPaymentFlow}
                 onSplitBill={splitBillEqually}
                 onSelectPaymentMethod={selectPaymentMethod}
                 onReportPayment={reportPaymentFromTable}
                 mesaActionBusy={mesaActionBusy}
                 mesaActionMessage={mesaActionMessage}
                 mesaPaymentStateMessage={mesaPaymentStateMessage}
+                orderReviewStatus={activeOrderReviewStatus}
                 mesaBillSplit={mesaBillSplit}
                 canSplitBill={canSplitBill}
                 canShowPaymentOptions={canShowPaymentOptions}
                 selectedPaymentMethod={selectedPaymentMethod}
                 paymentFlowRequested={paymentFlowRequested}
                 paymentConfirmed={paymentConfirmedMessage}
-                paymentHelpMessage={paymentRequestAccepted ? waiterAlertMessage : ""}
                 showLiveTotal={showLiveTotalToClient}
                 showSessionContext={false}
                 barMesaCleared={barMesaCleared}
@@ -1375,7 +1381,21 @@ export function App() {
             </>
           )}
           {activeTab === CLIENT_TABS.NOTIFICATIONS && (
-            <OrderTrackingPage orderId={activeOrderId} tableSessionToken={tableSessionToken} />
+            trackingOrderIds.length > 0 ? (
+              <>
+                {trackingOrderIds.map((orderId, index) => (
+                  <OrderTrackingPage
+                    key={orderId}
+                    orderId={orderId}
+                    tableSessionToken={tableSessionToken}
+                    heading={index === 0 ? "Estado del pedido" : `Seguimiento anterior ${index + 1}`}
+                    sectionId={index === 0 ? "tracking-section" : undefined}
+                  />
+                ))}
+              </>
+            ) : (
+              <OrderTrackingPage orderId={activeOrderId} tableSessionToken={tableSessionToken} />
+            )
           )}
           {activeTab === CLIENT_TABS.WAITER && (
             <section className="panel">
@@ -1394,7 +1414,11 @@ export function App() {
               <button className="btn-primary btn-full" onClick={requestWaiterHelp} disabled={waiterBusy}>
                 {waiterBusy ? "Enviando..." : "Llamar al mozo"}
               </button>
-              {waiterAlertMessage && <p className="toast-ok">{waiterAlertMessage}</p>}
+              {waiterAlertMessage && (
+                <button type="button" className="toast-ok" onClick={dismissWaiterAlert}>
+                  {waiterAlertMessage}
+                </button>
+              )}
               {waiterMessage && <p className="muted">{waiterMessage}</p>}
             </section>
           )}

@@ -21,6 +21,7 @@ from app.db.models import (
     Order,
     OrderItem,
     OrderPaymentStatus,
+    OrderReviewStatus,
     OrderStatus,
     PaymentMethod,
     PaymentGate,
@@ -43,6 +44,7 @@ from app.schemas.orders import (
     ChangeTableSessionStatusRequest,
     ChangeTableSessionStatusResponse,
     ConfirmBarOrderPaymentResponse,
+    ReviewOrderResponse,
     CreateStaffAccountRequest,
     MoveTableSessionRequest,
     MoveTableSessionResponse,
@@ -376,17 +378,16 @@ def _order_recorded_paid_amount(db: Session, order_id: int) -> Decimal:
     return _money(sum((float(payment.amount) for payment in recorded), 0.0))
 
 
-def _is_bar_prepay_order(order: Order) -> bool:
-    return (
-        order.service_mode == ServiceMode.BAR.value
-        and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value
-    )
+def _is_prepay_order(order: Order) -> bool:
+    return order.payment_gate == PaymentGate.BEFORE_PREPARATION.value
 
 
 def _order_paid_amount(db: Session, order: Order) -> Decimal:
+    if order.review_status == OrderReviewStatus.REJECTED.value:
+        return Decimal("0.00")
     recorded_paid = _order_recorded_paid_amount(db, order.id)
     total_amount = _money(_order_total_amount(order))
-    if _is_bar_prepay_order(order):
+    if _is_prepay_order(order):
         if recorded_paid > Decimal("0.00"):
             return min(recorded_paid, total_amount)
         confirmed_paid = total_amount if order.payment_status == OrderPaymentStatus.CONFIRMED.value else Decimal("0.00")
@@ -396,6 +397,8 @@ def _order_paid_amount(db: Session, order: Order) -> Decimal:
 
 
 def _order_balance_due(db: Session, order: Order) -> Decimal:
+    if order.review_status == OrderReviewStatus.REJECTED.value:
+        return Decimal("0.00")
     total = _money(_order_total_amount(order))
     balance = total - _order_paid_amount(db, order)
     return balance if balance > Decimal("0.00") else Decimal("0.00")
@@ -438,7 +441,7 @@ def _confirm_bar_payment_if_ready(
     *,
     current_staff: StaffAccount | None = None,
 ) -> bool:
-    if not _is_bar_prepay_order(order):
+    if not _is_prepay_order(order):
         return False
     if order.payment_status == OrderPaymentStatus.CONFIRMED.value:
         return False
@@ -810,6 +813,11 @@ def list_staff_items_board(
         .join(Table, Table.id == Order.table_id)
         .where(
             Order.store_id == store_id,
+            Order.review_status == OrderReviewStatus.APPROVED.value,
+            or_(
+                Order.payment_gate != PaymentGate.BEFORE_PREPARATION.value,
+                Order.payment_status == OrderPaymentStatus.CONFIRMED.value,
+            ),
             filter_expr,
         )
     )
@@ -833,6 +841,7 @@ def list_staff_items_board(
                 notes=item.notes,
                 sector=item.sector,
                 status=item.status,
+                review_status=order.review_status,
                 service_mode=order.service_mode,
                 payment_gate=order.payment_gate,
                 payment_status=order.payment_status,
@@ -841,6 +850,115 @@ def list_staff_items_board(
             )
             for item, order, table in rows
         ],
+    )
+
+
+@router.post("/orders/{order_id}/approve", response_model=ReviewOrderResponse)
+def approve_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ReviewOrderResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    order = db.scalar(select(Order).where(Order.id == order_id, Order.store_id == current_staff.store_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.review_status == OrderReviewStatus.REJECTED.value:
+        raise HTTPException(status_code=409, detail="Order was already rejected")
+    if order.review_status == OrderReviewStatus.APPROVED.value:
+        return ReviewOrderResponse(
+            order_id=order.id,
+            review_status=order.review_status,
+            reviewed_by_staff_id=current_staff.id,
+        )
+
+    order.review_status = OrderReviewStatus.APPROVED.value
+    order.updated_at = datetime.utcnow()
+    db.add(order)
+    db.commit()
+
+    event_bus.publish(
+        "items.changed",
+        {
+            "order_id": order.id,
+            "table_session_id": order.table_session_id,
+            "store_id": order.store_id,
+            "item_sector": None,
+            "item_status": OrderStatus.RECEIVED.value,
+            "status_aggregated": order.status_aggregated,
+            "reason": "order_approved",
+        },
+    )
+    return ReviewOrderResponse(
+        order_id=order.id,
+        review_status=order.review_status,
+        reviewed_by_staff_id=current_staff.id,
+    )
+
+
+@router.post("/orders/{order_id}/reject", response_model=ReviewOrderResponse)
+def reject_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> ReviewOrderResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    order = db.scalar(select(Order).where(Order.id == order_id, Order.store_id == current_staff.store_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.review_status == OrderReviewStatus.REJECTED.value:
+        return ReviewOrderResponse(
+            order_id=order.id,
+            review_status=order.review_status,
+            reviewed_by_staff_id=current_staff.id,
+        )
+    if order.payment_status == OrderPaymentStatus.CONFIRMED.value:
+        raise HTTPException(status_code=409, detail="No se puede rechazar un pedido ya cobrado.")
+
+    order.review_status = OrderReviewStatus.REJECTED.value
+    order.updated_at = datetime.utcnow()
+    db.add(order)
+
+    split = get_latest_bill_split(db, order.id)
+    if split and split.status != BillSplitStatus.CLOSED.value:
+        split.status = BillSplitStatus.CLOSED.value
+        split.closed_at = datetime.utcnow()
+        db.add(split)
+
+    pending_requests = db.scalars(
+        select(TableSessionCashRequest).where(
+            TableSessionCashRequest.order_id == order.id,
+            TableSessionCashRequest.status == CashRequestStatus.PENDING.value,
+        )
+    ).all()
+    for request in pending_requests:
+        request.status = CashRequestStatus.RESOLVED.value
+        request.resolved_at = datetime.utcnow()
+        request.resolved_by_staff_id = current_staff.id
+        db.add(request)
+
+    db.commit()
+
+    event_bus.publish(
+        "items.changed",
+        {
+            "order_id": order.id,
+            "table_session_id": order.table_session_id,
+            "store_id": order.store_id,
+            "item_sector": None,
+            "item_status": OrderStatus.RECEIVED.value,
+            "status_aggregated": order.status_aggregated,
+            "reason": "order_rejected",
+        },
+    )
+    return ReviewOrderResponse(
+        order_id=order.id,
+        review_status=order.review_status,
+        reviewed_by_staff_id=current_staff.id,
     )
 
 
@@ -856,12 +974,31 @@ def confirm_bar_order_payment(
     order = db.scalar(select(Order).where(Order.id == order_id, Order.store_id == current_staff.store_id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        raise HTTPException(status_code=409, detail="El pedido todavia no fue aceptado por staff.")
     if order.service_mode != ServiceMode.BAR.value:
         raise HTTPException(status_code=409, detail="Order is not BAR")
     if order.payment_gate != PaymentGate.BEFORE_PREPARATION.value:
         raise HTTPException(status_code=409, detail="Order does not require prepayment confirmation")
     if order.payment_status == OrderPaymentStatus.CONFIRMED.value:
         raise HTTPException(status_code=409, detail="BAR payment is already confirmed")
+
+    split = get_latest_bill_split(db, order.id)
+    if split and split.status != BillSplitStatus.CLOSED.value:
+        split_parts = db.scalars(
+            select(BillSplitPart).where(BillSplitPart.bill_split_id == split.id)
+        ).all()
+        for part in split_parts:
+            if part.payment_status != BillPartPaymentStatus.CONFIRMED.value:
+                part.payment_status = BillPartPaymentStatus.CONFIRMED.value
+            if not part.confirmed_at:
+                part.confirmed_at = datetime.utcnow()
+            if not part.confirmed_by_staff_id:
+                part.confirmed_by_staff_id = current_staff.id
+            db.add(part)
+        split.status = BillSplitStatus.CLOSED.value
+        split.closed_at = datetime.utcnow()
+        db.add(split)
 
     order.payment_status = OrderPaymentStatus.CONFIRMED.value
     db.add(order)
@@ -894,6 +1031,7 @@ def confirm_bar_order_payment(
 
     return ConfirmBarOrderPaymentResponse(
         order_id=order.id,
+        review_status=order.review_status,
         service_mode=order.service_mode,
         payment_gate=order.payment_gate,
         payment_status=order.payment_status,
@@ -1634,6 +1772,7 @@ def list_staff_tables(
                     Order.table_session_id == table_session.id,
                     Order.store_id == store_id,
                     Order.status_aggregated != OrderStatus.DELIVERED.value,
+                    Order.review_status != OrderReviewStatus.REJECTED.value,
                 )
                 .order_by(Order.created_at.desc(), Order.id.desc())
                 .limit(1)
@@ -1740,6 +1879,7 @@ def list_staff_table_sessions(
             Order.table_session_id == TableSession.id,
             Order.store_id == store_id,
             Order.status_aggregated != OrderStatus.DELIVERED.value,
+            Order.review_status != OrderReviewStatus.REJECTED.value,
         )
         .correlate(TableSession)
         .scalar_subquery()
@@ -1785,6 +1925,7 @@ def list_staff_table_sessions(
                 Order.table_session_id == table_session.id,
                 Order.store_id == store_id,
                 Order.status_aggregated != OrderStatus.DELIVERED.value,
+                Order.review_status != OrderReviewStatus.REJECTED.value,
             )
             .order_by(Order.created_at.desc(), Order.id.desc())
             .limit(1)
@@ -2035,6 +2176,7 @@ def get_staff_order_items_detail(
         guest_count=order.guest_count,
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
+        review_status=order.review_status,
         total_amount=float(sum(float(item.unit_price) * item.qty for item in order.items)),
         delivered_items=sum(item.qty for item in order.items if item.status == OrderStatus.DELIVERED.value),
         total_items=sum(item.qty for item in order.items),
@@ -2051,6 +2193,10 @@ def get_staff_order_items_detail(
                 notes=item.notes,
                 sector=item.sector,
                 status=item.status,
+                review_status=order.review_status,
+                service_mode=order.service_mode,
+                payment_gate=order.payment_gate,
+                payment_status=order.payment_status,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
             )
@@ -2229,14 +2375,15 @@ def patch_item_status(
         raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
     if not _latest_active_shift(db, current_staff.store_id):
         raise HTTPException(status_code=409, detail="No hay turno abierto. Un encargado debe abrir turno y caja primero.")
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        raise HTTPException(status_code=409, detail="El pedido todavia no fue aceptado por staff.")
     if (
-        order.service_mode == ServiceMode.BAR.value
-        and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value
+        order.payment_gate == PaymentGate.BEFORE_PREPARATION.value
         and order.payment_status != OrderPaymentStatus.CONFIRMED.value
     ):
         raise HTTPException(
             status_code=409,
-            detail="BAR payment must be confirmed before changing item statuses",
+            detail="El pago debe quedar confirmado antes de cambiar estados de items.",
         )
 
     try:

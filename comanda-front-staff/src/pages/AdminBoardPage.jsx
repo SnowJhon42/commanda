@@ -20,6 +20,7 @@ function elapsedLabel(minutesValue) {
 
 function statusText(status) {
   if (status === "SIN_PEDIDO") return "Sin pedido";
+  if (status === "PENDIENTE_REVISION") return "Pendiente revision";
   if (status === "EN_SERVICIO") return "En servicio";
   if (status === "PAGO_SOLICITADO") return "Solicitud de pago";
   if (status === "PAGO_REPORTADO") return "Pago reportado";
@@ -32,6 +33,7 @@ function statusText(status) {
 
 function statusClass(status) {
   if (status === "SIN_PEDIDO") return "badge";
+  if (status === "PENDIENTE_REVISION") return "badge badge-partial";
   if (status === "EN_SERVICIO") return "badge badge-received";
   if (status === "PAGO_SOLICITADO") return "badge badge-progress";
   if (status === "PAGO_REPORTADO") return "badge badge-progress";
@@ -87,21 +89,21 @@ function paymentMethodLabel(method) {
 
 function paymentFlowLabel(row) {
   if (row?.reported_payment_method) return `PAGO ${paymentMethodLabel(row.reported_payment_method).toUpperCase()}`;
-  if (!isBarPaymentPending(row)) return null;
+  if (!isPrepayPending(row)) return null;
   return "PAGO PENDIENTE";
 }
 
 function paymentFlowClass(row) {
   if (row?.reported_payment_method) return "badge badge-progress";
-  if (!isBarPaymentPending(row)) return "badge";
+  if (!isPrepayPending(row)) return "badge";
   return "badge badge-received";
 }
 
-function isBarPaymentPending(entity) {
+function isPrepayPending(entity) {
   return (
     Boolean(entity?.lead_order_id) &&
     Number(entity?.qty || 0) > 0 &&
-    entity?.service_mode === "BAR" &&
+    entity?.review_status === "APPROVED" &&
     entity?.payment_gate === "BEFORE_PREPARATION" &&
     entity?.payment_status !== "CONFIRMED"
   );
@@ -112,7 +114,7 @@ function paymentConfirmationLabel(row) {
     return `Confirmar pago por ${paymentMethodLabel(row.reported_payment_method)}`;
   }
   if (row?.status === "PAGO_REPORTADO") return "Confirmar pago";
-  if (isBarPaymentPending(row)) return "Esperando aviso de pago";
+  if (isPrepayPending(row)) return "Esperando aviso de pago";
   return "Confirmar pago";
 }
 
@@ -282,6 +284,8 @@ export function AdminBoardPage({
   onRequestWaiterCalls = async () => [],
   onRequestTableSessionConsumption = async () => null,
   onResolveWaiterCall = async () => {},
+  onApproveOrder = async () => {},
+  onRejectOrder = async () => {},
   onConfirmReportedPayments = async () => {},
   validatingPaymentKey = "",
   onConfirmBarPayment = async () => {},
@@ -328,25 +332,50 @@ export function AdminBoardPage({
         const tableSession = sessionByTable[tableCode];
         const sessionOrders = tableOrders.filter((order) => order.is_active_session);
         const effectiveOrders = sessionOrders;
+        const reviewPendingOrders = effectiveOrders.filter((order) => order.review_status === "PENDING");
         const liveOrders = effectiveOrders.filter(
-          (order) => Number(order.delivered_items || 0) < Number(order.total_items || 0)
+          (order) =>
+            order.review_status === "APPROVED" &&
+            Number(order.delivered_items || 0) < Number(order.total_items || 0)
         );
-        const pendingOrders = effectiveOrders.filter((order) => !order.payment_confirmed);
+        const pendingOrders = effectiveOrders.filter(
+          (order) => order.review_status === "APPROVED" && !order.payment_confirmed
+        );
         const visibleOrders =
-          liveOrders.length > 0 ? liveOrders : pendingOrders.length > 0 ? pendingOrders : effectiveOrders;
+          reviewPendingOrders.length > 0
+            ? reviewPendingOrders
+            : liveOrders.length > 0
+            ? liveOrders
+            : pendingOrders.length > 0
+            ? pendingOrders
+            : effectiveOrders;
         const leadOrder = visibleOrders[0] || effectiveOrders[0] || null;
         const qty = visibleOrders.reduce((sum, order) => sum + Number(order.total_items || 0), 0);
         const delivered = visibleOrders.reduce((sum, order) => sum + Number(order.delivered_items || 0), 0);
         const total = visibleOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
-        const hasPendingPayment = effectiveOrders.some((order) => Boolean(order.has_pending_payment));
+        const hasPendingReview = effectiveOrders.some((order) => order.review_status === "PENDING");
+        const hasPendingPayment = effectiveOrders.some(
+          (order) => order.review_status === "APPROVED" && Boolean(order.has_pending_payment)
+        );
         const hasConfirmedPayment =
-          effectiveOrders.length > 0 && effectiveOrders.every((order) => Boolean(order.payment_confirmed));
+          effectiveOrders.length > 0 &&
+          effectiveOrders
+            .filter((order) => order.review_status === "APPROVED")
+            .every((order) => Boolean(order.payment_confirmed));
         const cashSignal = tableSession?.table_session_id ? cashSignals[tableSession.table_session_id] : null;
         const hasPendingCashPayment = Number(cashSignal?.pending || 0) > 0;
-        const hasAcceptedCashPayment = Boolean(cashSignal?.latestResolved);
         const sectorList = [
           ...new Set(
             visibleOrders.flatMap((order) =>
+              (
+                order.review_status !== "APPROVED" ||
+                (
+                  order.payment_gate === "BEFORE_PREPARATION" &&
+                  !order.payment_confirmed
+                )
+              )
+                ? []
+                :
               (order.sectors || [])
                 .filter((sectorState) => sectorState.status !== "DELIVERED")
                 .map((sectorState) => sectorState.sector)
@@ -357,7 +386,9 @@ export function AdminBoardPage({
         const hasItems = qty > 0;
         const allDelivered = hasItems && delivered >= qty;
         const status =
-          !hasItems
+          hasPendingReview
+            ? "PENDIENTE_REVISION"
+            : !hasItems
             ? "SIN_PEDIDO"
             : !sessionOpen
             ? "CERRADA"
@@ -386,6 +417,7 @@ export function AdminBoardPage({
         const shouldShowRow =
           Number(tableSession?.connected_clients || 0) > 0 ||
           effectiveOrders.length > 0 ||
+          hasPendingReview ||
           hasPendingCashPayment ||
           hasPendingPayment ||
           hasConfirmedPayment;
@@ -399,6 +431,7 @@ export function AdminBoardPage({
           delivered,
           sectors: sectorList,
           status,
+          review_status: leadOrder?.review_status || "APPROVED",
           has_pending_payment: hasPendingPayment,
           has_pending_cash_payment: hasPendingCashPayment,
           all_delivered: allDelivered,
@@ -568,11 +601,14 @@ export function AdminBoardPage({
     }
   }
 
-  async function acceptCashRequest(requestId, tableSessionId) {
+  async function acceptCashRequest(requestId, tableSessionId, orderId) {
     if (!requestId || typeof onResolveWaiterCall !== "function") return;
     setAcceptingCashRequestId(requestId);
     try {
       await onResolveWaiterCall(requestId);
+      if (orderId && typeof onConfirmReportedPayments === "function") {
+        await onConfirmReportedPayments([orderId]);
+      }
       setActiveModal((current) => (current?.kind === "CASH_REQUEST" ? null : current));
       setCashSignals((current) => {
         if (!tableSessionId) return current;
@@ -629,7 +665,7 @@ export function AdminBoardPage({
       : 0;
   const modalTableElapsedLabel =
     activeModal?.kind === "TABLE" ? elapsedLabel(activeModal?.row?.elapsed_minutes || 0) : "-";
-  const modalBarPaymentPending = isBarPaymentPending(modalDetail);
+  const modalBarPaymentPending = isPrepayPending(modalDetail);
 
   async function takeWaiterCall(requestId, tableSessionId) {
     if (!requestId || typeof onResolveWaiterCall !== "function") return;
@@ -877,7 +913,28 @@ export function AdminBoardPage({
                       <span className="muted">Mesa cerrada</span>
                     ) : (
                       <div className="order-actions">
-                        {row.status === "PAGO_SOLICITADO" ? (
+                        {row.status === "PENDIENTE_REVISION" ? (
+                          <>
+                            <button
+                              className="btn-primary"
+                              disabled={confirmingBarPaymentKey === `approve:${row.lead_order_id || ""}`}
+                              onClick={() => onApproveOrder(row.lead_order_id)}
+                            >
+                              {confirmingBarPaymentKey === `approve:${row.lead_order_id || ""}`
+                                ? "Aceptando..."
+                                : "Aceptar pedido"}
+                            </button>
+                            <button
+                              className="btn-secondary"
+                              disabled={confirmingBarPaymentKey === `reject:${row.lead_order_id || ""}`}
+                              onClick={() => onRejectOrder(row.lead_order_id)}
+                            >
+                              {confirmingBarPaymentKey === `reject:${row.lead_order_id || ""}`
+                                ? "Rechazando..."
+                                : "Rechazar pedido"}
+                            </button>
+                          </>
+                        ) : row.status === "PAGO_SOLICITADO" ? (
                           <button
                             className="btn-primary"
                             disabled={
@@ -886,13 +943,14 @@ export function AdminBoardPage({
                             onClick={() =>
                               acceptCashRequest(
                                 cashSignals[row.table_session_id]?.latestPending?.id,
-                                row.table_session_id
+                                row.table_session_id,
+                                row.lead_order_id
                               )
                             }
                           >
                             {acceptingCashRequestId === cashSignals[row.table_session_id]?.latestPending?.id
                               ? "Aceptando..."
-                              : "Aceptar pago"}
+                              : "Aceptar pago en efectivo"}
                           </button>
                         ) : row.status === "PAGO_REPORTADO" && row.reported_payment_method ? (
                           <button
@@ -915,7 +973,7 @@ export function AdminBoardPage({
                                 ? "Confirmando..."
                                 : paymentConfirmationLabel(row)}
                           </button>
-                        ) : isBarPaymentPending(row) ? (
+                        ) : isPrepayPending(row) ? (
                           <span className="muted">{paymentConfirmationLabel(row)}</span>
                         ) : row.status === "PAGO_REPORTADO" ? (
                           <span className="muted">Esperando aviso de pago</span>
@@ -955,7 +1013,7 @@ export function AdminBoardPage({
         <Modal
           title={
             activeModal.kind === "CASH_REQUEST"
-              ? `Mesa ${activeModal.row.table_code} solicita pagar`
+              ? `Mesa ${activeModal.row.table_code} solicita cobro en efectivo`
               : activeModal.kind === "TABLE"
               ? `Mesa ${activeModal.row.table_code}`
               : activeModal.kind === "SECTOR"
@@ -964,7 +1022,7 @@ export function AdminBoardPage({
           }
           subtitle={
             activeModal.kind === "CASH_REQUEST"
-              ? "Confirma este aviso para que el cliente vea las opciones para pagar desde Mozo."
+              ? "Confirma el cobro para validar el efectivo y liberar el pedido a sectores."
               : activeModal.kind === "TABLE"
               ? "Todo lo ya pedido en esta mesa"
               : activeModal.kind === "SECTOR"

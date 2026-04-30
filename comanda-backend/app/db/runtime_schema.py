@@ -211,11 +211,14 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
         order_columns = _table_columns(conn, "orders")
         if "service_mode" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN service_mode TEXT NOT NULL DEFAULT 'RESTAURANTE'"))
+        if "review_status" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN review_status TEXT NOT NULL DEFAULT 'APPROVED'"))
         if "payment_gate" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN payment_gate TEXT NOT NULL DEFAULT 'NONE'"))
         if "payment_status" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'CONFIRMED'"))
         conn.execute(text("UPDATE orders SET service_mode = COALESCE(NULLIF(service_mode, ''), 'RESTAURANTE')"))
+        conn.execute(text("UPDATE orders SET review_status = COALESCE(NULLIF(review_status, ''), 'APPROVED')"))
         conn.execute(text("UPDATE orders SET payment_gate = COALESCE(NULLIF(payment_gate, ''), 'NONE')"))
         conn.execute(text("UPDATE orders SET payment_status = COALESCE(NULLIF(payment_status, ''), 'CONFIRMED')"))
 
@@ -600,6 +603,7 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
             "printed_bar_at",
             "printed_waiter_at",
             "service_mode",
+            "review_status",
             "payment_gate",
             "payment_status",
         } - _table_columns(conn, "orders")

@@ -202,6 +202,36 @@ export async function confirmBarOrderPayment({ token, orderId }) {
   }
 }
 
+export async function approveOrder({ token, orderId }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/approve`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo aceptar el pedido.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo aceptar el pedido.");
+  }
+}
+
+export async function rejectOrder({ token, orderId }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/reject`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo rechazar el pedido.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo rechazar el pedido.");
+  }
+}
+
 export async function fetchFeedbackSummary({ token, storeId, limit = 20 }) {
   try {
     const qs = new URLSearchParams({ store_id: String(storeId), limit: String(limit) });

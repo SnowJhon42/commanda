@@ -11,6 +11,13 @@ function statusClass(status) {
   return "badge";
 }
 
+function reviewBadgeLabel(order) {
+  if (order?.review_status === "PENDING") return "Revisando pedido";
+  if (order?.review_status === "REJECTED") return "Pedido rechazado";
+  if (order?.payment_status !== "CONFIRMED") return "Esperando pago";
+  return null;
+}
+
 function statusIcon(status) {
   if (status === "RECEIVED") return "🧾";
   if (status === "IN_PROGRESS") return "🍳";
@@ -30,7 +37,12 @@ function formatShortDate(value) {
   return formatArgentinaTime(value);
 }
 
-export function OrderTrackingPage({ orderId, tableSessionToken }) {
+export function OrderTrackingPage({
+  orderId,
+  tableSessionToken,
+  heading = "Estado del pedido",
+  sectionId = "tracking-section",
+}) {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
   const [liveConnected, setLiveConnected] = useState(false);
@@ -173,8 +185,8 @@ export function OrderTrackingPage({ orderId, tableSessionToken }) {
 
   if (!orderId) {
     return (
-      <section className="panel" id="tracking-section">
-        <h2>Estado del pedido</h2>
+      <section className="panel" id={sectionId}>
+        <h2>{heading}</h2>
         <p className="muted">Todavia no hiciste un pedido.</p>
       </section>
     );
@@ -182,15 +194,16 @@ export function OrderTrackingPage({ orderId, tableSessionToken }) {
 
   if (!order) {
     return (
-      <section className="panel" id="tracking-section">
-        <h2>Estado del pedido</h2>
+      <section className="panel" id={sectionId}>
+        <h2>{heading}</h2>
         <p className="muted">Cargando estado...</p>
       </section>
     );
   }
 
   return (
-    <section className="panel tracking-compact" id="tracking-section">
+    <section className="panel tracking-compact" id={sectionId}>
+      <h2>{heading}</h2>
       <div className="tracking-head">
         <p>
           Pedido <strong>#{order.id}</strong>
@@ -199,6 +212,7 @@ export function OrderTrackingPage({ orderId, tableSessionToken }) {
           {statusIcon(order.status_aggregated)} {statusLabel(order.status_aggregated)}
         </span>
       </div>
+      {reviewBadgeLabel(order) ? <p className="live-pill">{reviewBadgeLabel(order)}</p> : null}
 
       <p className={liveConnected ? "live-pill live-pill-on" : "live-pill"}>
         {liveConnected ? "En vivo" : "Reconectando"}

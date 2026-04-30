@@ -71,6 +71,12 @@ class OrderPaymentStatus(str, Enum):
     CONFIRMED = "CONFIRMED"
 
 
+class OrderReviewStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class CashSessionStatus(str, Enum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
@@ -292,6 +298,7 @@ class Order(Base):
     guest_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     ticket_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status_aggregated: Mapped[str] = mapped_column(String(20), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(20), default=OrderReviewStatus.APPROVED.value, nullable=False)
     service_mode: Mapped[str] = mapped_column(String(20), default=ServiceMode.RESTAURANTE.value, nullable=False)
     payment_gate: Mapped[str] = mapped_column(String(32), default=PaymentGate.NONE.value, nullable=False)
     payment_status: Mapped[str] = mapped_column(String(20), default=OrderPaymentStatus.CONFIRMED.value, nullable=False)

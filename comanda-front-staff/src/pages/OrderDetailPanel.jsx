@@ -63,7 +63,7 @@ function paymentMethodLabel(method) {
 
 function isBarPaymentPending(orderDetail) {
   return (
-    orderDetail?.service_mode === "BAR" &&
+    orderDetail?.review_status === "APPROVED" &&
     orderDetail?.payment_gate === "BEFORE_PREPARATION" &&
     orderDetail?.payment_status !== "CONFIRMED"
   );
@@ -83,6 +83,8 @@ export function OrderDetailPanel({
   closingTableCode = "",
   onCreateSplit,
   onConfirmPart,
+  onApproveOrder = () => {},
+  onRejectOrder = () => {},
   onResolveCashRequest = () => {},
   billingBusy = false,
   readOnlyReason = "",
@@ -92,6 +94,7 @@ export function OrderDetailPanel({
     orderDetail.items.length > 0 &&
     orderDetail.items.every((item) => item.status === "DELIVERED");
   const isClosingCurrentTable = Boolean(orderDetail?.table_code) && closingTableCode === orderDetail.table_code;
+  const reviewPending = orderDetail?.review_status === "PENDING";
   const normalCloseEnabled =
     !orderDetail ||
     Number(orderDetail.total_amount || 0) <= 0 ||
@@ -131,12 +134,22 @@ export function OrderDetailPanel({
             </p>
             {barPaymentPending && (
               <div className="order-actions">
-                <span className="badge badge-received">BAR · PAGO PENDIENTE</span>
+                <span className="badge badge-received">PAGO PENDIENTE</span>
                 <span className="muted">Se puede ver el pedido, pero no avanzar estados hasta confirmar el pago.</span>
               </div>
             )}
             {actorSector === "ADMIN" && (
               <div className="order-actions">
+                {reviewPending && (
+                  <>
+                    <button className="btn-primary" onClick={() => onApproveOrder(orderDetail.order_id)} disabled={billingBusy}>
+                      {billingBusy ? "..." : "Aceptar pedido"}
+                    </button>
+                    <button className="btn-secondary" onClick={() => onRejectOrder(orderDetail.order_id)} disabled={billingBusy}>
+                      {billingBusy ? "..." : "Rechazar pedido"}
+                    </button>
+                  </>
+                )}
                 <button className="btn-secondary" onClick={onCloseTable} disabled={isClosingCurrentTable || !normalCloseEnabled}>
                   {isClosingCurrentTable ? "Cerrando..." : "Cerrar mesa"}
                 </button>
@@ -191,7 +204,7 @@ export function OrderDetailPanel({
                     {next ? (
                       <button
                         className="btn-primary"
-                        disabled={barPaymentPending || advancingKey === key || Boolean(readOnlyReason)}
+                        disabled={reviewPending || barPaymentPending || advancingKey === key || Boolean(readOnlyReason)}
                         onClick={() =>
                           onAdvanceItem({
                             itemId: rowItemId,
@@ -200,7 +213,7 @@ export function OrderDetailPanel({
                           })
                         }
                       >
-                        {barPaymentPending ? "Esperando pago" : advancingKey === key ? "..." : `Pasar a ${next}`}
+                        {reviewPending ? "Esperando aprobacion" : barPaymentPending ? "Esperando pago" : advancingKey === key ? "..." : `Pasar a ${next}`}
                       </button>
                     ) : (
                       <span className="muted">{formatArgentinaTime(item.updated_at)}</span>

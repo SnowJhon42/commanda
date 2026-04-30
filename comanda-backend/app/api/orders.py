@@ -6,6 +6,7 @@ from app.api.deps import TableClientContext, get_current_table_client
 from app.db.models import (
     Order,
     OrderPaymentStatus,
+    OrderReviewStatus,
     OrderItem,
     OrderStatus,
     PaymentGate,
@@ -63,12 +64,8 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         .limit(1)
     )
     service_mode = payload.service_mode or ServiceMode.RESTAURANTE.value
-    payment_gate = (
-        PaymentGate.BEFORE_PREPARATION.value if service_mode == ServiceMode.BAR.value else PaymentGate.NONE.value
-    )
-    payment_status = (
-        OrderPaymentStatus.PENDING.value if service_mode == ServiceMode.BAR.value else OrderPaymentStatus.CONFIRMED.value
-    )
+    payment_gate = PaymentGate.BEFORE_PREPARATION.value
+    payment_status = OrderPaymentStatus.PENDING.value
     order = Order(
         tenant_id=payload.tenant_id,
         store_id=payload.store_id,
@@ -77,6 +74,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         guest_count=payload.guest_count,
         ticket_number=ticket_number,
         status_aggregated=OrderStatus.RECEIVED.value,
+        review_status=OrderReviewStatus.PENDING.value,
         service_mode=service_mode,
         payment_gate=payment_gate,
         payment_status=payment_status,
@@ -131,6 +129,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         order_id=order.id,
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
+        review_status=order.review_status,
         service_mode=order.service_mode,
         payment_gate=order.payment_gate,
         payment_status=order.payment_status,
@@ -164,6 +163,7 @@ def get_order(
         guest_count=order.guest_count,
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
+        review_status=order.review_status,
         service_mode=order.service_mode,
         payment_gate=order.payment_gate,
         payment_status=order.payment_status,

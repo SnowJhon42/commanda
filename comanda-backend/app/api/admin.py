@@ -14,6 +14,7 @@ from app.db.models import (
     Order,
     OrderItem,
     OrderPaymentStatus,
+    OrderReviewStatus,
     OrderStatus,
     PaymentGate,
     Product,
@@ -85,7 +86,9 @@ def _order_total_amount(order: Order) -> float:
 
 
 def _order_has_pending_payment(db: Session, order: Order) -> bool:
-    if order.service_mode == ServiceMode.BAR.value and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        return False
+    if order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
         return order.payment_status != OrderPaymentStatus.CONFIRMED.value
 
     total_amount = _order_total_amount(order)
@@ -118,7 +121,9 @@ def _order_has_pending_payment(db: Session, order: Order) -> bool:
 
 
 def _order_payment_confirmed(db: Session, order: Order) -> bool:
-    if order.service_mode == ServiceMode.BAR.value and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        return False
+    if order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
         return order.payment_status == OrderPaymentStatus.CONFIRMED.value
 
     total_amount = _order_total_amount(order)
@@ -136,6 +141,8 @@ def _order_payment_confirmed(db: Session, order: Order) -> bool:
 
 
 def _reported_payment_method_for_order(db: Session, order: Order) -> str | None:
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        return None
     bill_split = to_bill_split_out(db, get_latest_bill_split(db, order.id))
     if not bill_split:
         return None
@@ -638,7 +645,10 @@ def list_admin_orders(
     query = (
         select(Order, Table)
         .join(Table, Table.id == Order.table_id)
-        .where(Order.store_id == store_id)
+        .where(
+            Order.store_id == store_id,
+            Order.review_status != OrderReviewStatus.REJECTED.value,
+        )
         .options(joinedload(Order.items))
     )
     if status:
@@ -676,6 +686,7 @@ def list_admin_orders(
                 delivered_items=sum(item.qty for item in order.items if item.status == OrderStatus.DELIVERED.value),
                 total_amount=_order_total_amount(order),
                 status_aggregated=order.status_aggregated,
+                review_status=order.review_status,
                 has_pending_payment=has_pending_payment,
                 is_active_session=bool(order.table_session_id and order.table_session_id in active_session_ids),
                 sectors=[
@@ -749,6 +760,7 @@ def get_admin_order_items_detail(
         guest_count=order.guest_count,
         ticket_number=order.ticket_number,
         status_aggregated=order.status_aggregated,
+        review_status=order.review_status,
         total_amount=float(sum(float(item.unit_price) * item.qty for item in order.items)),
         delivered_items=sum(item.qty for item in order.items if item.status == OrderStatus.DELIVERED.value),
         total_items=sum(item.qty for item in order.items),
@@ -765,6 +777,7 @@ def get_admin_order_items_detail(
                 notes=item.notes,
                 sector=item.sector,
                 status=item.status,
+                review_status=order.review_status,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
             )

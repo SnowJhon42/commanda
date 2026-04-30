@@ -24,12 +24,14 @@ import {
   forceCloseTableSession,
   closeShift,
   confirmBarOrderPayment,
+  approveOrder,
   confirmSplitPart,
   forceConfirmOrderPayment,
   createEqualSplit,
   patchStoreClientVisibility,
   patchStorePrintMode,
   resolveCashRequest,
+  rejectOrder,
   moveTableSession,
   patchItemStatus,
   patchTableSessionStatus,
@@ -267,6 +269,8 @@ function SalonOrderModal({
   onForceCloseTable = () => {},
   onCreateSplit = () => {},
   onConfirmPart = () => {},
+  onApproveOrder = () => {},
+  onRejectOrder = () => {},
   onResolveCashRequest = () => {},
   availableTables = [],
   busyId = null,
@@ -354,6 +358,8 @@ function SalonOrderModal({
             closingTableCode={closingTableCode}
             onCreateSplit={onCreateSplit}
             onConfirmPart={onConfirmPart}
+            onApproveOrder={onApproveOrder}
+            onRejectOrder={onRejectOrder}
             onResolveCashRequest={onResolveCashRequest}
             billingBusy={billingBusy}
           />
@@ -912,6 +918,54 @@ export function App() {
     [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
   );
 
+  const approvePendingOrder = useCallback(
+    async (orderId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !orderId) return;
+      setError("");
+      setConfirmingBarPaymentKey(`approve:${orderId}`);
+      try {
+        await approveOrder({
+          token: session.access_token,
+          orderId,
+        });
+        await loadBoard();
+        await loadTableSessions();
+        if (selectedOrderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo aceptar el pedido.");
+      } finally {
+        setConfirmingBarPaymentKey("");
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
+  );
+
+  const rejectPendingOrder = useCallback(
+    async (orderId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !orderId) return;
+      setError("");
+      setConfirmingBarPaymentKey(`reject:${orderId}`);
+      try {
+        await rejectOrder({
+          token: session.access_token,
+          orderId,
+        });
+        if (selectedOrderId === orderId) {
+          setSelectedOrderId(null);
+        }
+        await loadBoard();
+        await loadTableSessions();
+      } catch (err) {
+        setError(err.message || "No se pudo rechazar el pedido.");
+      } finally {
+        setConfirmingBarPaymentKey("");
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadTableSessions]
+  );
+
   const createSplit = useCallback(async () => {
     if (!selectedOrderDetail) return;
     setError("");
@@ -1454,6 +1508,8 @@ export function App() {
           onRequestWaiterCalls={requestAdminWaiterCalls}
           onRequestTableSessionConsumption={requestTableSessionConsumption}
           onResolveWaiterCall={resolveWaiterCall}
+          onApproveOrder={approvePendingOrder}
+          onRejectOrder={rejectPendingOrder}
           onConfirmReportedPayments={confirmReportedPayments}
           validatingPaymentKey={validatingPaymentKey}
           onConfirmBarPayment={confirmBarPayment}
@@ -1486,6 +1542,8 @@ export function App() {
     requestAdminOrderDetail,
     requestAdminWaiterCalls,
     resolveWaiterCall,
+    approvePendingOrder,
+    rejectPendingOrder,
     confirmReportedPayments,
     confirmBarPayment,
     confirmingBarPaymentKey,
@@ -1994,6 +2052,8 @@ export function App() {
           onCreateSplit={createSplit}
           onConfirmPart={confirmPart}
           onResolveCashRequest={resolveCash}
+          onApproveOrder={approvePendingOrder}
+          onRejectOrder={rejectPendingOrder}
           availableTables={tablesRows}
           busyId={tableSessionBusyId}
           onMoveTableSession={moveActiveTableSession}
@@ -2017,6 +2077,8 @@ export function App() {
             onCreateSplit={createSplit}
             onConfirmPart={confirmPart}
             onResolveCashRequest={resolveCash}
+            onApproveOrder={approvePendingOrder}
+            onRejectOrder={rejectPendingOrder}
             billingBusy={billingBusy}
         />
       )}

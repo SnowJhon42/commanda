@@ -526,6 +526,7 @@ class CreateOrderResponse(BaseModel):
     order_id: int
     ticket_number: int
     status_aggregated: str
+    review_status: str = "APPROVED"
     service_mode: str = "RESTAURANTE"
     payment_gate: str = "NONE"
     payment_status: str = "CONFIRMED"
@@ -558,6 +559,7 @@ class OrderDetailResponse(BaseModel):
     guest_count: int
     ticket_number: int
     status_aggregated: str
+    review_status: str = "APPROVED"
     service_mode: str = "RESTAURANTE"
     payment_gate: str = "NONE"
     payment_status: str = "CONFIRMED"
@@ -602,6 +604,7 @@ class AdminOrderSummaryOut(BaseModel):
     delivered_items: int
     total_amount: float
     status_aggregated: str
+    review_status: str = "APPROVED"
     has_pending_payment: bool = False
     is_active_session: bool = False
     sectors: list[SectorStatusOut]
@@ -619,10 +622,17 @@ class AdminOrderSummaryOut(BaseModel):
 
 class ConfirmBarOrderPaymentResponse(BaseModel):
     order_id: int
+    review_status: str = "APPROVED"
     service_mode: str
     payment_gate: str
     payment_status: str
     confirmed_by_staff_id: int
+
+
+class ReviewOrderResponse(BaseModel):
+    order_id: int
+    review_status: str
+    reviewed_by_staff_id: int
 
 
 class CollectOrderPaymentResponse(BaseModel):
@@ -651,6 +661,7 @@ class StaffBoardItemOut(BaseModel):
     notes: str | None = None
     sector: str
     status: str
+    review_status: str = "APPROVED"
     service_mode: str = "RESTAURANTE"
     payment_gate: str = "NONE"
     payment_status: str = "CONFIRMED"
@@ -726,6 +737,7 @@ class AdminOrderItemsDetailResponse(BaseModel):
     guest_count: int
     ticket_number: int
     status_aggregated: str
+    review_status: str = "APPROVED"
     total_amount: float
     delivered_items: int
     total_items: int

@@ -15,6 +15,9 @@ from app.db.models import (
     CashRequestStatus,
     Order,
     OrderItem,
+    OrderPaymentStatus,
+    OrderReviewStatus,
+    PaymentGate,
     Sector,
     ServiceMode,
     ServiceShift,
@@ -81,6 +84,8 @@ def _latest_active_shift(db: Session, store_id: int) -> ServiceShift | None:
 
 
 def _order_payment_confirmed(db: Session, order: Order) -> bool:
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        return False
     total_amount = _order_total_amount(order)
     if total_amount <= Decimal("0.00"):
         return True
@@ -110,6 +115,7 @@ def _maybe_auto_close_restaurant_session(db: Session, order: Order) -> dict[str,
         .where(Order.table_session_id == table_session.id, Order.store_id == order.store_id)
         .options(joinedload(Order.items))
     ).unique().all()
+    related_orders = [related_order for related_order in related_orders if related_order.review_status != OrderReviewStatus.REJECTED.value]
     if not related_orders:
         return None
     if any(related_order.service_mode != ServiceMode.RESTAURANTE.value for related_order in related_orders):
@@ -289,6 +295,8 @@ def request_cash_payment(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     _require_table_order_access(order, table_client)
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        raise HTTPException(status_code=409, detail="El staff todavia no acepto este pedido.")
     if payload.client_id != table_client.client_id:
         raise HTTPException(status_code=403, detail="Cash request token does not match this client")
     if not order.table_session_id:
@@ -364,6 +372,7 @@ def request_waiter_help(
         .where(
             Order.table_session_id == table_session.id,
             Order.store_id == table_session.store_id,
+            Order.review_status != OrderReviewStatus.REJECTED.value,
         )
         .order_by(Order.id.desc())
         .limit(1)
@@ -482,6 +491,8 @@ def report_part_payment(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     _require_table_order_access(order, table_client)
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        raise HTTPException(status_code=409, detail="El staff todavia no acepto este pedido.")
     if split.status != BillSplitStatus.OPEN.value:
         raise HTTPException(status_code=409, detail="Bill split is closed")
 
@@ -530,6 +541,9 @@ def confirm_part_payment(
         split.closed_at = datetime.utcnow()
     db.add(split)
     order = db.scalar(select(Order).where(Order.id == split.order_id).options(joinedload(Order.table)))
+    if order and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+        order.payment_status = OrderPaymentStatus.CONFIRMED.value
+        db.add(order)
     close_payload = _maybe_auto_close_restaurant_session(db, order) if order else None
     db.commit()
 
@@ -552,6 +566,8 @@ def force_confirm_order_payment(
     order = db.scalar(select(Order).where(Order.id == order_id))
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    if order.review_status != OrderReviewStatus.APPROVED.value:
+        raise HTTPException(status_code=409, detail="El staff todavia no acepto este pedido.")
 
     split = get_latest_bill_split(db, order_id)
     if not split:
@@ -594,6 +610,9 @@ def force_confirm_order_payment(
     split.closed_at = datetime.utcnow()
     db.add(split)
     order = db.scalar(select(Order).where(Order.id == order_id))
+    if order and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+        order.payment_status = OrderPaymentStatus.CONFIRMED.value
+        db.add(order)
     close_payload = _maybe_auto_close_restaurant_session(db, order) if order else None
     if order:
         _publish_split_event(order, split, "forced_payment_confirmed")
