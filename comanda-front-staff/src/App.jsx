@@ -58,15 +58,24 @@ import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
 const ADMIN_VIEW_OPTIONS = ["BOARD", "SALON", "BAR", "FEEDBACK", "PROFILE", "MENU", "QR", "MESSAGING", "CLOSURE", "SUMMARIES"];
+const ADMIN_TABS_STORAGE_KEY = "comanda_staff_admin_tabs_v1";
 const ARG_TZ = "America/Argentina/Buenos_Aires";
+
+function normalizeAdminViewOrder(value) {
+  const movable = ADMIN_VIEW_OPTIONS.filter((mode) => mode !== "BOARD");
+  const incoming = Array.isArray(value) ? value.filter((mode) => movable.includes(mode)) : [];
+  const ordered = [...new Set(incoming)];
+  const missing = movable.filter((mode) => !ordered.includes(mode));
+  return ["BOARD", ...ordered, ...missing];
+}
 
 function adminViewLabel(mode) {
   if (mode === "BOARD") return "PEDIDOS";
   if (mode === "SALON") return "SALON";
-  if (mode === "BAR") return "BAR";
+  if (mode === "BAR") return "QR BAR";
   if (mode === "FEEDBACK") return "FEEDBACK CLIENTES";
   if (mode === "MENU") return "EDITOR DE MENÚ";
-  if (mode === "QR") return "QR MESAS";
+  if (mode === "QR") return "QR RESTAURANTE";
   if (mode === "PROFILE") return "MI LOCAL";
   if (mode === "MESSAGING") return "MENSAJES";
   if (mode === "CLOSURE") return "CIERRE";
@@ -378,6 +387,8 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState("");
   const [adminQueueFilter, setAdminQueueFilter] = useState("ACTIVE");
   const [adminView, setAdminView] = useState("BOARD");
+  const [adminViewOrder, setAdminViewOrder] = useState(() => normalizeAdminViewOrder(ADMIN_VIEW_OPTIONS));
+  const [draggingAdminView, setDraggingAdminView] = useState("");
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
@@ -1329,6 +1340,21 @@ export function App() {
     });
   }, []);
 
+  const moveAdminViewTab = useCallback((fromMode, toMode) => {
+    if (!fromMode || !toMode || fromMode === toMode) return;
+    if (fromMode === "BOARD" || toMode === "BOARD") return;
+    setAdminViewOrder((current) => {
+      const ordered = normalizeAdminViewOrder(current);
+      const fromIndex = ordered.indexOf(fromMode);
+      const toIndex = ordered.indexOf(toMode);
+      if (fromIndex < 0 || toIndex < 0) return ordered;
+      const next = [...ordered];
+      next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, fromMode);
+      return normalizeAdminViewOrder(next);
+    });
+  }, []);
+
   const board = useMemo(() => {
     const readOnlyReason =
       staffSector !== "ADMIN" && !activeShift
@@ -1459,20 +1485,86 @@ export function App() {
         return <StoreMessagingPage token={session?.access_token} storeId={session?.staff?.store_id} />;
       }
       if (adminView === "BAR") {
+        const barRows = visibleRows.filter(
+          (row) =>
+            row.service_mode === "BAR" ||
+            (row.items || []).some((item) => item.sector === "BAR")
+        );
+        const barTableSessionsRows = (tableSessionsRows || []).filter((row) => row.service_mode === "BAR");
         return (
-          <BarBoardPage
-            {...sharedProps}
-            rows={visibleRows.filter(
-              (row) =>
-                row.service_mode === "BAR" ||
-                (row.items || []).some((item) => item.sector === "BAR")
-            )}
-            actorSector="BAR"
-          />
+          <div style={{ display: "grid", gap: 18 }}>
+            <AdminBoardPage
+              rows={barRows}
+              loading={loading}
+              tableSessionsRows={barTableSessionsRows}
+              onRequestOrderDetail={requestAdminOrderDetail}
+              onAdvanceItem={advanceItem}
+              advancingKey={advancingKey}
+              actorSector={staffSector}
+              onCloseTableByCode={closeTableByCode}
+              onForceCloseTableByCode={forceCloseTableByCode}
+              closingTableCode={closingTableCode}
+              onRequestWaiterCalls={requestAdminWaiterCalls}
+              onRequestTableSessionConsumption={requestTableSessionConsumption}
+              onResolveWaiterCall={resolveWaiterCall}
+              onApproveOrder={approvePendingOrder}
+              onRejectOrder={rejectPendingOrder}
+              onConfirmReportedPayments={confirmReportedPayments}
+              validatingPaymentKey={validatingPaymentKey}
+              onConfirmBarPayment={confirmBarPayment}
+              confirmingBarPaymentKey={confirmingBarPaymentKey}
+              onMarkPrint={updateOrderPrintTracking}
+              printingKey={printingKey}
+              printMode={printMode}
+              recentOrderActivity={recentOrderActivity}
+              onAcknowledgeRecentOrderActivity={acknowledgeRecentOrderActivity}
+            />
+            <TableQrPage
+              storeId={session?.staff?.store_id}
+              initialServiceMode="BAR"
+              title="QR BAR"
+            />
+          </div>
         );
       }
       if (adminView === "QR") {
-        return <TableQrPage storeId={session?.staff?.store_id} initialServiceMode="RESTAURANTE" title="QR MESAS" />;
+        const restaurantRows = visibleRows.filter((row) => row.service_mode !== "BAR");
+        const restaurantTableSessionsRows = (tableSessionsRows || []).filter((row) => row.service_mode !== "BAR");
+        return (
+          <div style={{ display: "grid", gap: 18 }}>
+            <AdminBoardPage
+              rows={restaurantRows}
+              loading={loading}
+              tableSessionsRows={restaurantTableSessionsRows}
+              onRequestOrderDetail={requestAdminOrderDetail}
+              onAdvanceItem={advanceItem}
+              advancingKey={advancingKey}
+              actorSector={staffSector}
+              onCloseTableByCode={closeTableByCode}
+              onForceCloseTableByCode={forceCloseTableByCode}
+              closingTableCode={closingTableCode}
+              onRequestWaiterCalls={requestAdminWaiterCalls}
+              onRequestTableSessionConsumption={requestTableSessionConsumption}
+              onResolveWaiterCall={resolveWaiterCall}
+              onApproveOrder={approvePendingOrder}
+              onRejectOrder={rejectPendingOrder}
+              onConfirmReportedPayments={confirmReportedPayments}
+              validatingPaymentKey={validatingPaymentKey}
+              onConfirmBarPayment={confirmBarPayment}
+              confirmingBarPaymentKey={confirmingBarPaymentKey}
+              onMarkPrint={updateOrderPrintTracking}
+              printingKey={printingKey}
+              printMode={printMode}
+              recentOrderActivity={recentOrderActivity}
+              onAcknowledgeRecentOrderActivity={acknowledgeRecentOrderActivity}
+            />
+            <TableQrPage
+              storeId={session?.staff?.store_id}
+              initialServiceMode="RESTAURANTE"
+              title="QR RESTAURANTE"
+            />
+          </div>
+        );
       }
       if (adminView === "CLOSURE") {
         return (
@@ -1567,6 +1659,25 @@ export function App() {
     const timer = setInterval(() => setClockNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(ADMIN_TABS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      setAdminViewOrder(normalizeAdminViewOrder(parsed));
+    } catch {
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(ADMIN_TABS_STORAGE_KEY, JSON.stringify(normalizeAdminViewOrder(adminViewOrder)));
+    } catch {
+    }
+  }, [adminViewOrder]);
 
   useEffect(() => {
     if (!session) return;
@@ -1907,12 +2018,31 @@ export function App() {
       {staffSector === "ADMIN" && (
         <section className="panel toolbar">
           <div className="admin-view-tabs" role="tablist" aria-label="Vistas admin">
-            {ADMIN_VIEW_OPTIONS.map((mode) => (
+            {adminViewOrder.map((mode) => (
               <button
                 key={mode}
                 type="button"
                 className={adminView === mode ? "btn-primary admin-view-tab" : "btn-secondary admin-view-tab"}
                 onClick={() => setAdminView(mode)}
+                draggable={mode !== "BOARD"}
+                onDragStart={(event) => {
+                  if (mode === "BOARD") return;
+                  setDraggingAdminView(mode);
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", mode);
+                }}
+                onDragOver={(event) => {
+                  if (!draggingAdminView || mode === "BOARD" || draggingAdminView === mode) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const sourceMode = event.dataTransfer.getData("text/plain") || draggingAdminView;
+                  moveAdminViewTab(sourceMode, mode);
+                  setDraggingAdminView("");
+                }}
+                onDragEnd={() => setDraggingAdminView("")}
               >
                 {adminViewLabel(mode)}
               </button>
@@ -2018,7 +2148,7 @@ export function App() {
       )}
 
       {error && <p className="error-text">{error}</p>}
-        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "SALON" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "BOARD" || adminView === "SALON" || adminView === "BAR" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
           <TableSessionsPanel
             rows={tableSessionsRows}
             loading={tableSessionsLoading}

@@ -41,8 +41,9 @@ export function BarBoardPage({
       ) : (
         <div className="card-grid">
           {rows.map((row) => {
+            const rowItems = Array.isArray(row?.items) ? row.items : [];
             const meta = alertMetaByOrder[row.order_id] || {};
-            const rowPaymentPending = row.items.some((item) => isBarPaymentPending(item));
+            const rowPaymentPending = rowItems.some((item) => isBarPaymentPending(item));
             return (
             <article className="order-card" key={row.order_id}>
               <div className="order-head">
@@ -71,7 +72,9 @@ export function BarBoardPage({
                 </div>
               ) : null}
               <div className="sector-list">
-                {row.items.map((item) => {
+                {rowItems.length === 0 ? (
+                  <p className="muted">Esta mesa BAR no tiene items visibles en barra ahora.</p>
+                ) : rowItems.map((item) => {
                   const nextStatus = item.status === "RECEIVED" ? "IN_PROGRESS" : "DONE";
                   const key = `${item.item_id}:${nextStatus}`;
                   const updating = advancingKey === key;
