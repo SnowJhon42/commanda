@@ -286,6 +286,21 @@ export async function requestWaiterHelpBySession({ tableSessionId, clientId, pay
   }
 }
 
+export async function requestRestaurantCheckout({ tableSessionId, tableSessionToken }) {
+  try {
+    const res = await fetch(`${API_URL}/table/session/${tableSessionId}/request-checkout`, {
+      method: "POST",
+      headers: withTableSessionToken({}, tableSessionToken),
+    });
+    if (!res.ok) {
+      await toApiError(res, "No se pudo pedir la cuenta.");
+    }
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo pedir la cuenta.");
+  }
+}
+
 export function openOrderEvents(orderId, tableSessionToken) {
   return new EventSource(withSessionTokenQuery(`${API_URL}/events/orders/${orderId}/stream`, tableSessionToken));
 }

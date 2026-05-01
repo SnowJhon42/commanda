@@ -35,6 +35,7 @@ import {
   moveTableSession,
   patchItemStatus,
   patchTableSessionStatus,
+  enableRestaurantCheckout,
 } from "./api/staffApi";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminBoardPage } from "./pages/AdminBoardPage";
@@ -977,6 +978,30 @@ export function App() {
     [session, selectedOrderId, loadBoard, loadTableSessions]
   );
 
+  const enableCheckoutForTableSession = useCallback(
+    async (tableSessionId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !tableSessionId) return;
+      setError("");
+      setConfirmingBarPaymentKey(`checkout:${tableSessionId}`);
+      try {
+        await enableRestaurantCheckout({
+          token: session.access_token,
+          tableSessionId,
+        });
+        await loadBoard();
+        await loadTableSessions();
+        if (selectedOrderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo habilitar el cierre.");
+      } finally {
+        setConfirmingBarPaymentKey("");
+      }
+    },
+    [session, selectedOrderId, loadBoard, loadOrderDetail, loadTableSessions]
+  );
+
   const createSplit = useCallback(async () => {
     if (!selectedOrderDetail) return;
     setError("");
@@ -1509,6 +1534,7 @@ export function App() {
               onResolveWaiterCall={resolveWaiterCall}
               onApproveOrder={approvePendingOrder}
               onRejectOrder={rejectPendingOrder}
+              onEnableRestaurantCheckout={enableCheckoutForTableSession}
               onConfirmReportedPayments={confirmReportedPayments}
               validatingPaymentKey={validatingPaymentKey}
               onConfirmBarPayment={confirmBarPayment}
@@ -1548,6 +1574,7 @@ export function App() {
               onResolveWaiterCall={resolveWaiterCall}
               onApproveOrder={approvePendingOrder}
               onRejectOrder={rejectPendingOrder}
+              onEnableRestaurantCheckout={enableCheckoutForTableSession}
               onConfirmReportedPayments={confirmReportedPayments}
               validatingPaymentKey={validatingPaymentKey}
               onConfirmBarPayment={confirmBarPayment}
@@ -1602,6 +1629,7 @@ export function App() {
           onResolveWaiterCall={resolveWaiterCall}
           onApproveOrder={approvePendingOrder}
           onRejectOrder={rejectPendingOrder}
+          onEnableRestaurantCheckout={enableCheckoutForTableSession}
           onConfirmReportedPayments={confirmReportedPayments}
           validatingPaymentKey={validatingPaymentKey}
           onConfirmBarPayment={confirmBarPayment}
@@ -1914,6 +1942,8 @@ export function App() {
     stream.addEventListener("order.created", handleOrderCreated);
     stream.addEventListener("table.session.updated", handleTableSessionUpdated);
     stream.addEventListener("table.session.closed", scheduleRefresh);
+    stream.addEventListener("table.session.checkout_requested", scheduleRefresh);
+    stream.addEventListener("table.session.checkout_ready", scheduleRefresh);
     stream.addEventListener("bill.split.updated", scheduleRefresh);
     stream.addEventListener("bill.cash.requested", handleCashRequested);
     stream.addEventListener("bill.cash.resolved", handleCashResolved);

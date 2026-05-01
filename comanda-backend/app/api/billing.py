@@ -22,6 +22,7 @@ from app.db.models import (
     ServiceMode,
     ServiceShift,
     StaffAccount,
+    Store,
     Table,
     TableSessionCashRequest,
     TableSession,
@@ -122,12 +123,10 @@ def _maybe_auto_close_restaurant_session(db: Session, order: Order) -> dict[str,
         return None
     if any(not _order_payment_confirmed(db, related_order) for related_order in related_orders):
         return None
-    if any(not _order_fully_delivered(related_order) for related_order in related_orders):
-        return None
-
     table = db.scalar(select(Table).where(Table.id == table_session.table_id))
     active_shift = _latest_active_shift(db, table_session.store_id)
     table_session.status = TableSessionStatus.CLOSED.value
+    table_session.checkout_status = "NONE"
     table_session.closed_at = datetime.utcnow()
     table_session.closed_shift_id = active_shift.id if active_shift else None
     db.add(table_session)
@@ -153,6 +152,71 @@ def _cash_request_out(req: TableSessionCashRequest) -> TableSessionCashRequestOu
         resolved_at=req.resolved_at,
         resolved_by_staff_id=req.resolved_by_staff_id,
     )
+
+
+def _ensure_open_single_split(db: Session, order: Order) -> BillSplit:
+    existing = get_latest_bill_split(db, order.id)
+    if existing and existing.status == BillSplitStatus.OPEN.value:
+        return existing
+
+    total = _order_total_amount(order)
+    if total <= Decimal("0.00"):
+        raise HTTPException(status_code=400, detail="Order total must be greater than zero")
+
+    split = BillSplit(
+        order_id=order.id,
+        mode="EQUAL",
+        status=BillSplitStatus.OPEN.value,
+        total_amount=float(total),
+        created_at=datetime.utcnow(),
+    )
+    db.add(split)
+    db.flush()
+    db.add(
+        BillSplitPart(
+            bill_split_id=split.id,
+            label="Pago total",
+            amount=float(total),
+            payment_method="CASH",
+            payment_status=BillPartPaymentStatus.PENDING.value,
+            created_at=datetime.utcnow(),
+        )
+    )
+    db.flush()
+    return split
+
+
+def _confirm_cash_order_payment(
+    db: Session,
+    *,
+    order: Order,
+    current_staff: StaffAccount,
+) -> tuple[BillSplit, dict[str, int | str | None] | None]:
+    split = _ensure_open_single_split(db, order)
+    parts = db.scalars(select(BillSplitPart).where(BillSplitPart.bill_split_id == split.id)).all()
+    if not parts:
+        raise HTTPException(status_code=400, detail="Bill split has no parts")
+
+    now = datetime.utcnow()
+    for part in parts:
+        part.payment_method = "CASH"
+        if not part.reported_at:
+            part.reported_at = now
+        if not part.reported_by:
+            part.reported_by = "Cobro en efectivo"
+        part.payment_status = BillPartPaymentStatus.CONFIRMED.value
+        part.confirmed_by_staff_id = current_staff.id
+        part.confirmed_at = now
+        db.add(part)
+
+    split.status = BillSplitStatus.CLOSED.value
+    split.closed_at = now
+    db.add(split)
+    if order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+        order.payment_status = OrderPaymentStatus.CONFIRMED.value
+        db.add(order)
+    close_payload = _maybe_auto_close_restaurant_session(db, order)
+    return split, close_payload
 
 
 def _require_table_order_access(order: Order, table_client: TableClientContext) -> None:
@@ -302,15 +366,20 @@ def request_cash_payment(
     if not order.table_session_id:
         raise HTTPException(status_code=409, detail="Order is not linked to table session")
 
+    request_kind = payload.request_kind or CashRequestKind.CASH_PAYMENT.value
+
+    normalized_note = payload.note.strip() if payload.note else None
+
     # Waiter call is an operational alert and should be re-emittable each tap.
-    # Cash payment request remains deduplicated while pending.
-    if (payload.request_kind or CashRequestKind.CASH_PAYMENT.value) == CashRequestKind.CASH_PAYMENT.value:
+    # Payment handoff requests stay unique while pending for the same pedido + medio.
+    if request_kind != CashRequestKind.WAITER_CALL.value:
         existing = db.scalar(
             select(TableSessionCashRequest)
             .where(
                 TableSessionCashRequest.order_id == order_id,
                 TableSessionCashRequest.client_id == payload.client_id,
-                TableSessionCashRequest.request_kind == CashRequestKind.CASH_PAYMENT.value,
+                TableSessionCashRequest.request_kind == request_kind,
+                TableSessionCashRequest.note == normalized_note,
                 TableSessionCashRequest.status == CashRequestStatus.PENDING.value,
             )
             .order_by(TableSessionCashRequest.id.desc())
@@ -325,8 +394,8 @@ def request_cash_payment(
         store_id=order.store_id,
         client_id=payload.client_id,
         payer_label=payload.payer_label.strip(),
-        request_kind=payload.request_kind or CashRequestKind.CASH_PAYMENT.value,
-        note=payload.note.strip() if payload.note else None,
+        request_kind=request_kind,
+        note=normalized_note,
         status=CashRequestStatus.PENDING.value,
         created_at=datetime.utcnow(),
     )
@@ -452,6 +521,15 @@ def resolve_cash_payment_request(
     cash_request.resolved_by_staff_id = current_staff.id
     cash_request.resolved_at = datetime.utcnow()
     db.add(cash_request)
+
+    split = None
+    close_payload = None
+    order = None
+    if cash_request.order_id and cash_request.request_kind == CashRequestKind.CASH_PAYMENT.value:
+        order = db.scalar(select(Order).where(Order.id == cash_request.order_id).options(joinedload(Order.table)))
+        if order:
+            split, close_payload = _confirm_cash_order_payment(db, order=order, current_staff=current_staff)
+
     db.commit()
     db.refresh(cash_request)
 
@@ -471,6 +549,10 @@ def resolve_cash_payment_request(
             "request_kind": cash_request.request_kind,
         },
     )
+    if order and split:
+        _publish_split_event(order, split, "cash_payment_confirmed")
+    if close_payload:
+        event_bus.publish("table.session.closed", close_payload)
     return _cash_request_out(cash_request)
 
 

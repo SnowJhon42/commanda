@@ -87,13 +87,25 @@ function paymentMethodLabel(method) {
   return "pago";
 }
 
-function paymentFlowLabel(row) {
+function requestNoteLabel(request) {
+  const note = String(request?.note || "").trim();
+  return note || null;
+}
+
+function paymentFlowLabel(row, paymentRequest = null) {
+  if (paymentRequest?.request_kind === "CASH_PAYMENT") return "COBRO EN EFECTIVO";
+  if (paymentRequest?.request_kind === "TRANSFER_PAYMENT") return "TRANSFERENCIA";
+  if (paymentRequest?.request_kind === "POSNET_PAYMENT") {
+    return requestNoteLabel(paymentRequest)?.toUpperCase() || "POSNET";
+  }
   if (row?.reported_payment_method) return `PAGO ${paymentMethodLabel(row.reported_payment_method).toUpperCase()}`;
+  if (row?.service_mode !== "BAR") return null;
   if (!isPrepayPending(row)) return null;
   return "PAGO PENDIENTE";
 }
 
-function paymentFlowClass(row) {
+function paymentFlowClass(row, paymentRequest = null) {
+  if (paymentRequest?.request_kind) return "badge badge-progress";
   if (row?.reported_payment_method) return "badge badge-progress";
   if (!isPrepayPending(row)) return "badge";
   return "badge badge-received";
@@ -116,6 +128,17 @@ function paymentConfirmationLabel(row) {
   if (row?.status === "PAGO_REPORTADO") return "Confirmar pago";
   if (isPrepayPending(row)) return "Esperando aviso de pago";
   return "Confirmar pago";
+}
+
+function paymentRequestActionLabel(request) {
+  if (!request) return "Aceptar solicitud de pago";
+  if (request.request_kind === "CASH_PAYMENT") return "Aceptar pago en efectivo";
+  if (request.request_kind === "TRANSFER_PAYMENT") return "Habilitar transferencia";
+  if (request.request_kind === "POSNET_PAYMENT") {
+    const note = String(request.note || "").trim();
+    return note ? `Habilitar ${note}` : "Habilitar posnet";
+  }
+  return "Aceptar solicitud de pago";
 }
 
 function printButtonLabel({ target, status, sector }) {
@@ -286,6 +309,7 @@ export function AdminBoardPage({
   onResolveWaiterCall = async () => {},
   onApproveOrder = async () => {},
   onRejectOrder = async () => {},
+  onEnableRestaurantCheckout = async () => {},
   onConfirmReportedPayments = async () => {},
   validatingPaymentKey = "",
   onConfirmBarPayment = async () => {},
@@ -357,6 +381,9 @@ export function AdminBoardPage({
         const hasPendingPayment = effectiveOrders.some(
           (order) => order.review_status === "APPROVED" && Boolean(order.has_pending_payment)
         );
+        const hasReportedPayment = effectiveOrders.some(
+          (order) => order.review_status === "APPROVED" && Boolean(order.reported_payment_method)
+        );
         const hasConfirmedPayment =
           effectiveOrders.length > 0 &&
           effectiveOrders
@@ -364,6 +391,8 @@ export function AdminBoardPage({
             .every((order) => Boolean(order.payment_confirmed));
         const cashSignal = tableSession?.table_session_id ? cashSignals[tableSession.table_session_id] : null;
         const hasPendingCashPayment = Number(cashSignal?.pending || 0) > 0;
+        const latestPendingPaymentRequest = cashSignal?.latestPending || null;
+        const checkoutStatus = String(tableSession?.checkout_status || "NONE");
         const sectorList = [
           ...new Set(
             visibleOrders.flatMap((order) =>
@@ -385,6 +414,9 @@ export function AdminBoardPage({
         const sessionOpen = tableSession?.status !== "CLOSED";
         const hasItems = qty > 0;
         const allDelivered = hasItems && delivered >= qty;
+        const restaurantCheckoutActive =
+          leadOrder?.service_mode !== "BAR" &&
+          (checkoutStatus === "REQUESTED" || checkoutStatus === "READY" || hasPendingCashPayment || hasReportedPayment || hasConfirmedPayment);
         const status =
           hasPendingReview
             ? "PENDIENTE_REVISION"
@@ -392,16 +424,22 @@ export function AdminBoardPage({
             ? "SIN_PEDIDO"
             : !sessionOpen
             ? "CERRADA"
+            : leadOrder?.service_mode !== "BAR" && checkoutStatus === "REQUESTED"
+            ? "PAGO_SOLICITADO"
             : hasPendingCashPayment
             ? "PAGO_SOLICITADO"
-            : hasPendingPayment
+            : hasReportedPayment
             ? "PAGO_REPORTADO"
             : hasConfirmedPayment && allDelivered
             ? "LISTA_PARA_CERRAR"
             : hasConfirmedPayment
             ? "PAGO_CONFIRMADO"
-            : allDelivered
+            : hasPendingPayment && (leadOrder?.service_mode === "BAR" || checkoutStatus === "READY" || restaurantCheckoutActive)
             ? "ESPERANDO_PAGO"
+            : allDelivered
+            ? leadOrder?.service_mode === "BAR" || checkoutStatus === "READY" || restaurantCheckoutActive
+              ? "ESPERANDO_PAGO"
+              : "EN_SERVICIO"
             : "EN_SERVICIO";
         const printStatuses = visibleOrders.map((order) => order.print_status?.overall_status || "NONE");
         const printStatus =
@@ -434,6 +472,7 @@ export function AdminBoardPage({
           review_status: leadOrder?.review_status || "APPROVED",
           has_pending_payment: hasPendingPayment,
           has_pending_cash_payment: hasPendingCashPayment,
+          pending_payment_request: latestPendingPaymentRequest,
           all_delivered: allDelivered,
           payment_confirmed: hasConfirmedPayment,
           total,
@@ -449,6 +488,7 @@ export function AdminBoardPage({
           recent_activity_count: leadOrder?.order_id ? Number(recentOrderActivity[leadOrder.order_id]?.count || 0) : 0,
           lead_order_id: leadOrder?.order_id || null,
           service_mode: leadOrder?.service_mode || tableSession?.service_mode || "RESTAURANTE",
+          checkout_status: checkoutStatus,
           payment_gate: leadOrder?.payment_gate || "NONE",
           payment_status: leadOrder?.payment_status || "PENDING",
           reported_payment_method: leadOrder?.reported_payment_method || null,
@@ -479,7 +519,9 @@ export function AdminBoardPage({
           try {
             const requests = await onRequestWaiterCalls(row.table_session_id);
             const waiter = (requests || []).filter((request) => request.request_kind === "WAITER_CALL");
-            const cash = (requests || []).filter((request) => request.request_kind === "CASH_PAYMENT");
+            const cash = (requests || []).filter((request) =>
+              ["CASH_PAYMENT", "TRANSFER_PAYMENT", "POSNET_PAYMENT"].includes(request.request_kind)
+            );
             const pending = waiter.filter((request) => request.status === "PENDING").length;
             const pendingCash = cash.filter((request) => request.status === "PENDING");
             const resolvedCash = cash.filter((request) => request.status === "RESOLVED");
@@ -605,8 +647,13 @@ export function AdminBoardPage({
     if (!requestId || typeof onResolveWaiterCall !== "function") return;
     setAcceptingCashRequestId(requestId);
     try {
+      const pendingRequest = tableSessionId ? cashSignals[tableSessionId]?.latestPending : null;
       await onResolveWaiterCall(requestId);
-      if (orderId && typeof onConfirmReportedPayments === "function") {
+      if (
+        pendingRequest?.request_kind === "CASH_PAYMENT" &&
+        orderId &&
+        typeof onConfirmReportedPayments === "function"
+      ) {
         await onConfirmReportedPayments([orderId]);
       }
       setActiveModal((current) => (current?.kind === "CASH_REQUEST" ? null : current));
@@ -856,9 +903,11 @@ export function AdminBoardPage({
                       {(row.sectors || []).length === 0 ? (
                         <>
                           <span className={serviceModeClass(row.service_mode)}>{serviceModeLabel(row.service_mode)}</span>
-                          {paymentFlowLabel(row) ? (
-                            <span className={paymentFlowClass(row)}>{paymentFlowLabel(row)}</span>
-                          ) : null}
+                      {paymentFlowLabel(row, row.pending_payment_request) ? (
+                        <span className={paymentFlowClass(row, row.pending_payment_request)}>
+                          {paymentFlowLabel(row, row.pending_payment_request)}
+                        </span>
+                      ) : null}
                           <span className="muted">-</span>
                         </>
                       ) : (
@@ -934,6 +983,16 @@ export function AdminBoardPage({
                                 : "Rechazar pedido"}
                             </button>
                           </>
+                        ) : row.status === "PAGO_SOLICITADO" && row.service_mode !== "BAR" && row.checkout_status === "REQUESTED" ? (
+                          <button
+                            className="btn-primary"
+                            disabled={confirmingBarPaymentKey === `checkout:${row.table_session_id || ""}`}
+                            onClick={() => onEnableRestaurantCheckout(row.table_session_id)}
+                          >
+                            {confirmingBarPaymentKey === `checkout:${row.table_session_id || ""}`
+                              ? "Habilitando..."
+                              : "Habilitar cierre"}
+                          </button>
                         ) : row.status === "PAGO_SOLICITADO" ? (
                           <button
                             className="btn-primary"
@@ -950,7 +1009,7 @@ export function AdminBoardPage({
                           >
                             {acceptingCashRequestId === cashSignals[row.table_session_id]?.latestPending?.id
                               ? "Aceptando..."
-                              : "Aceptar pago en efectivo"}
+                              : paymentRequestActionLabel(cashSignals[row.table_session_id]?.latestPending)}
                           </button>
                         ) : row.status === "PAGO_REPORTADO" && row.reported_payment_method ? (
                           <button
@@ -988,7 +1047,11 @@ export function AdminBoardPage({
                         ) : row.status === "PAGO_CONFIRMADO" ? (
                           <span className="muted">Pago listo. Falta entrega para cerrar.</span>
                         ) : row.status === "ESPERANDO_PAGO" ? (
-                          <span className="muted">Todo entregado. Falta pago.</span>
+                          <span className="muted">
+                            {isPrepayPending(row)
+                              ? "Esperando que el cliente elija y avance con el pago."
+                              : "Todo entregado. Falta pago."}
+                          </span>
                         ) : (
                           <span className="muted">Servicio en curso</span>
                         )}

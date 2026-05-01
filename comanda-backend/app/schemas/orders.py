@@ -67,10 +67,12 @@ class TableSessionStateResponse(BaseModel):
     guest_count: int
     status: str
     service_mode: str = "RESTAURANTE"
+    checkout_status: str = "NONE"
     connected_clients: int
     active_order_id: int | None = None
     assistance_request_kind: str | None = None
     assistance_request_status: str | None = None
+    assistance_request_note: str | None = None
     assistance_message: str | None = None
 
 
@@ -102,6 +104,7 @@ class StaffTableSessionOut(BaseModel):
     guest_count: int
     status: str
     service_mode: str = "RESTAURANTE"
+    checkout_status: str = "NONE"
     connected_clients: int
     active_order_id: int | None = None
     active_order_created_at: datetime | None = None
@@ -205,6 +208,12 @@ class StoreProfileResponse(BaseModel):
     background_color: str = "ROJO"
     background_image_url: str | None = None
     show_watermark_logo: bool = False
+    payment_cash_enabled: bool = True
+    payment_transfer_enabled: bool = True
+    payment_card_enabled: bool = True
+    payment_mercado_pago_enabled: bool = True
+    payment_modo_enabled: bool = True
+    payment_transfer_instructions: str | None = None
 
 
 class StaffAccountOut(BaseModel):
@@ -271,6 +280,12 @@ class UpdateStoreProfileRequest(BaseModel):
     background_color: str = Field("ROJO", pattern="^(ROJO|VERDE|DORADO|AZUL|NEGRO)$")
     background_image_url: str | None = Field(default=None, max_length=2048)
     show_watermark_logo: bool = False
+    payment_cash_enabled: bool = True
+    payment_transfer_enabled: bool = True
+    payment_card_enabled: bool = True
+    payment_mercado_pago_enabled: bool = True
+    payment_modo_enabled: bool = True
+    payment_transfer_instructions: str | None = Field(default=None, max_length=2000)
 
 
 class StoreThemeSuggestionRequest(BaseModel):
@@ -416,6 +431,12 @@ class CloseTableSessionResponse(BaseModel):
     closed_at: datetime
 
 
+class RestaurantCheckoutResponse(BaseModel):
+    table_session_id: int
+    table_code: str
+    checkout_status: str
+
+
 class ForceCloseTableSessionResponse(BaseModel):
     table_session_id: int
     table_code: str
@@ -470,13 +491,13 @@ class CreateConsumptionBillSplitRequest(BaseModel):
 
 class ReportBillPartPaymentRequest(BaseModel):
     payer_label: str = Field(..., min_length=1, max_length=120)
-    payment_method: str = Field(..., pattern="^(CASH|MERCADO_PAGO|MODO|TRANSFER|OTHER)$")
+    payment_method: str = Field(..., pattern="^(CASH|CARD|MERCADO_PAGO|MODO|TRANSFER|OTHER)$")
 
 
 class RequestCashPaymentRequest(BaseModel):
     client_id: str = Field(..., min_length=1, max_length=120)
     payer_label: str = Field(..., min_length=1, max_length=120)
-    request_kind: str = Field(default="CASH_PAYMENT", pattern="^(WAITER_CALL|CASH_PAYMENT)$")
+    request_kind: str = Field(default="CASH_PAYMENT", pattern="^(WAITER_CALL|CASH_PAYMENT|TRANSFER_PAYMENT|POSNET_PAYMENT)$")
     note: str | None = Field(default=None, max_length=250)
 
 

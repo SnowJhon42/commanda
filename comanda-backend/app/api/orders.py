@@ -41,6 +41,12 @@ ACTIVE_TABLE_SESSION_STATUSES = (
 )
 
 
+def _order_flow_defaults(service_mode: str) -> tuple[str, str]:
+    if service_mode == ServiceMode.BAR.value:
+        return OrderReviewStatus.PENDING.value, PaymentGate.BEFORE_PREPARATION.value
+    return OrderReviewStatus.APPROVED.value, PaymentGate.NONE.value
+
+
 @router.post("/orders", response_model=CreateOrderResponse, status_code=201)
 def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> CreateOrderResponse:
     normalized_table_code = normalize_table_code(payload.table_code)
@@ -64,7 +70,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         .limit(1)
     )
     service_mode = payload.service_mode or ServiceMode.RESTAURANTE.value
-    payment_gate = PaymentGate.BEFORE_PREPARATION.value
+    review_status, payment_gate = _order_flow_defaults(service_mode)
     payment_status = OrderPaymentStatus.PENDING.value
     order = Order(
         tenant_id=payload.tenant_id,
@@ -74,7 +80,7 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
         guest_count=payload.guest_count,
         ticket_number=ticket_number,
         status_aggregated=OrderStatus.RECEIVED.value,
-        review_status=OrderReviewStatus.PENDING.value,
+        review_status=review_status,
         service_mode=service_mode,
         payment_gate=payment_gate,
         payment_status=payment_status,

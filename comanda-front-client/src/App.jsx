@@ -11,6 +11,7 @@ import {
   openTableSessionEvents,
   reportSplitPartPayment,
   requestCashPayment,
+  requestRestaurantCheckout as requestRestaurantCheckoutApi,
   requestWaiterHelpBySession,
   submitTableSessionFeedback,
   fetchTableSessionState,
@@ -46,12 +47,26 @@ const CLIENT_TABS = {
 
 const PAYMENT_METHODS = {
   CASH: "CASH",
+  CARD: "CARD",
   MERCADO_PAGO: "MERCADO_PAGO",
   MODO: "MODO",
   TRANSFER: "TRANSFER",
 };
 
 const PAYMENT_CONFIRMED_MESSAGE = "Cobro confirmado, el local ya tiene el pedido. Te vamos a ir avisando.";
+
+function paymentMethodLabel(method) {
+  if (method === PAYMENT_METHODS.CASH) return "Efectivo";
+  if (method === PAYMENT_METHODS.CARD) return "Tarjeta";
+  if (method === PAYMENT_METHODS.MERCADO_PAGO) return "Mercado Pago";
+  if (method === PAYMENT_METHODS.MODO) return "MODO";
+  if (method === PAYMENT_METHODS.TRANSFER) return "Transferencia";
+  return "Pago";
+}
+
+function isPosnetMethod(method) {
+  return [PAYMENT_METHODS.CARD, PAYMENT_METHODS.MERCADO_PAGO, PAYMENT_METHODS.MODO].includes(method);
+}
 
 const ACCENT_HEX = {
   ROJO: "#b3261e",
@@ -222,6 +237,7 @@ export function App() {
   const [mesaBillSplit, setMesaBillSplit] = useState(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [paymentFlowOrderId, setPaymentFlowOrderId] = useState(null);
+  const [restaurantCheckoutStatus, setRestaurantCheckoutStatus] = useState("NONE");
   const [barMesaClearedOrderId, setBarMesaClearedOrderId] = useState(null);
   const [tableSessionId, setTableSessionId] = useState(null);
   const [tableSessionToken, setTableSessionToken] = useState("");
@@ -234,6 +250,7 @@ export function App() {
   const [isAdjustGuestsOpen, setIsAdjustGuestsOpen] = useState(false);
   const [assistanceRequestKind, setAssistanceRequestKind] = useState("");
   const [assistanceRequestStatus, setAssistanceRequestStatus] = useState("");
+  const [assistanceRequestNote, setAssistanceRequestNote] = useState("");
   const previousTableSessionIdRef = useRef(null);
   const dismissedWaiterAlertSignatureRef = useRef("");
   const hasPendingToSend = cartItems.length > 0;
@@ -800,12 +817,16 @@ export function App() {
           setWaiterAlertMessage("");
           setAssistanceRequestKind("");
           setAssistanceRequestStatus("");
+          setAssistanceRequestNote("");
+          setRestaurantCheckoutStatus("NONE");
           setCartItems([]);
           return;
         }
         setConnectedClients(state.connected_clients || 1);
+        setRestaurantCheckoutStatus(String(state.checkout_status || "NONE"));
         const nextAssistanceKind = state.assistance_request_kind || "";
         const nextAssistanceStatus = state.assistance_request_status || "";
+        const nextAssistanceNote = state.assistance_request_note || "";
         const nextWaiterMessage = state.assistance_message || "";
         const nextWaiterSignature = assistanceSignature(
           nextAssistanceKind,
@@ -814,6 +835,7 @@ export function App() {
         );
         setAssistanceRequestKind(nextAssistanceKind);
         setAssistanceRequestStatus(nextAssistanceStatus);
+        setAssistanceRequestNote(nextAssistanceNote);
         if (!nextWaiterMessage) {
           dismissedWaiterAlertSignatureRef.current = "";
           setWaiterAlertMessage("");
@@ -830,6 +852,14 @@ export function App() {
             setWaiterMessage("");
           } else if (nextAssistanceStatus !== "PENDING") {
             setWaiterMessage("");
+          }
+        } else if (
+          nextAssistanceKind === "CASH_PAYMENT" ||
+          nextAssistanceKind === "TRANSFER_PAYMENT" ||
+          nextAssistanceKind === "POSNET_PAYMENT"
+        ) {
+          if (nextWaiterMessage) {
+            setMesaActionMessage(nextWaiterMessage);
           }
         }
         if (state.active_order_id) {
@@ -854,6 +884,8 @@ export function App() {
     stream.addEventListener("order.created", refreshState);
     stream.addEventListener("table.session.joined", refreshState);
     stream.addEventListener("table.session.closed", refreshState);
+    stream.addEventListener("table.session.checkout_requested", refreshState);
+    stream.addEventListener("table.session.checkout_ready", refreshState);
     stream.addEventListener("bill.cash.requested", refreshState);
     stream.addEventListener("bill.cash.resolved", refreshState);
 
@@ -963,16 +995,62 @@ export function App() {
     approvedOrderId > 0 &&
     orderReviewApproved &&
     activeOrderDetail?.payment_status !== "CONFIRMED";
-  const paymentFlowRequested =
+  const barPaymentFlowRequested =
+    serviceMode === SERVICE_MODES.BAR &&
     orderAwaitingPayment &&
     !barMesaCleared &&
     Number(paymentFlowOrderId || approvedOrderId) === approvedOrderId;
+  const restaurantPaymentFlowRequested =
+    serviceMode !== SERVICE_MODES.BAR &&
+    orderAwaitingPayment &&
+    restaurantCheckoutStatus === "READY" &&
+    Number(paymentFlowOrderId || 0) === approvedOrderId;
+  const paymentFlowRequested =
+    barPaymentFlowRequested || restaurantPaymentFlowRequested;
   const canShowPaymentOptions = paymentFlowRequested && !paymentConfirmedMessage && !(serviceMode === SERVICE_MODES.BAR && barMesaCleared);
   const canSplitBill =
     serviceMode !== SERVICE_MODES.BAR &&
     connectedClients > 1 &&
     !paymentConfirmedMessage &&
     orderReviewApproved;
+  const paymentOptions = {
+    cash: Boolean(menu?.payment_cash_enabled ?? true),
+    transfer: Boolean(menu?.payment_transfer_enabled ?? true),
+    card: Boolean(menu?.payment_card_enabled ?? true),
+    mercadoPago: Boolean(menu?.payment_mercado_pago_enabled ?? true),
+    modo: Boolean(menu?.payment_modo_enabled ?? true),
+    transferInstructions: String(menu?.payment_transfer_instructions || "").trim(),
+  };
+  const expectedPaymentRequestNote =
+    selectedPaymentMethod === PAYMENT_METHODS.TRANSFER
+      ? "Transferencia"
+      : selectedPaymentMethod && selectedPaymentMethod !== PAYMENT_METHODS.CASH
+      ? paymentMethodLabel(selectedPaymentMethod)
+      : "";
+  const expectedPaymentRequestKind =
+    selectedPaymentMethod === PAYMENT_METHODS.CASH
+      ? "CASH_PAYMENT"
+      : selectedPaymentMethod === PAYMENT_METHODS.TRANSFER
+      ? "TRANSFER_PAYMENT"
+      : selectedPaymentMethod && isPosnetMethod(selectedPaymentMethod)
+      ? "POSNET_PAYMENT"
+      : "";
+  const paymentMethodRequestPending =
+    Boolean(expectedPaymentRequestKind) &&
+    assistanceRequestKind === expectedPaymentRequestKind &&
+    (!expectedPaymentRequestNote || assistanceRequestNote === expectedPaymentRequestNote) &&
+    assistanceRequestStatus === "PENDING";
+  const paymentMethodRequestResolved =
+    Boolean(expectedPaymentRequestKind) &&
+    assistanceRequestKind === expectedPaymentRequestKind &&
+    (!expectedPaymentRequestNote || assistanceRequestNote === expectedPaymentRequestNote) &&
+    assistanceRequestStatus === "RESOLVED";
+  const canReportSelectedPayment =
+    canShowPaymentOptions &&
+    Boolean(selectedPaymentMethod) &&
+    selectedPaymentMethod !== PAYMENT_METHODS.CASH &&
+    paymentMethodRequestResolved &&
+    !paymentConfirmedMessage;
   const restaurantName = menu?.store_name || "Tu restaurante";
   const themePreset = menu?.theme_preset || "CLASSIC";
   const accentColor = menu?.accent_color || "ROJO";
@@ -985,10 +1063,19 @@ export function App() {
   };
 
   useEffect(() => {
+    if (serviceMode !== SERVICE_MODES.BAR) return;
     if (!orderAwaitingPayment || approvedOrderId <= 0) return;
     if (Number(paymentFlowOrderId || 0) === approvedOrderId) return;
     setPaymentFlowOrderId(approvedOrderId);
-  }, [orderAwaitingPayment, approvedOrderId, paymentFlowOrderId]);
+  }, [serviceMode, orderAwaitingPayment, approvedOrderId, paymentFlowOrderId]);
+
+  useEffect(() => {
+    if (serviceMode === SERVICE_MODES.BAR) return;
+    if (!orderAwaitingPayment || approvedOrderId <= 0) return;
+    if (restaurantCheckoutStatus !== "READY") return;
+    if (Number(paymentFlowOrderId || 0) === approvedOrderId) return;
+    setPaymentFlowOrderId(approvedOrderId);
+  }, [serviceMode, orderAwaitingPayment, approvedOrderId, paymentFlowOrderId, restaurantCheckoutStatus]);
 
   useEffect(() => {
     if (!orderReviewRejected) return;
@@ -1049,41 +1136,89 @@ export function App() {
       setPaymentFlowOrderId(approvedOrderId);
     }
     setSelectedPaymentMethod(method);
-    if (method !== PAYMENT_METHODS.CASH) {
-      const methodLabel =
-        method === PAYMENT_METHODS.MERCADO_PAGO
-          ? "Mercado Pago"
-          : method === PAYMENT_METHODS.MODO
-          ? "MODO"
-          : "Transferencia";
-      setMesaActionMessage(`Elegiste ${methodLabel}. Cuando termines, avisanos con "Avisar que ya pague".`);
-      return;
-    }
     if (!tableSessionId) {
       setMesaActionMessage("Primero registra la mesa.");
       return;
     }
     if (!approvedOrderId) {
-      setMesaActionMessage("Todavia no hay un pedido aprobado para cobrar en efectivo.");
+      setMesaActionMessage("Todavia no hay un pedido aprobado para cobrar.");
       return;
     }
     setMesaActionBusy(true);
-    setMesaActionMessage("Avisando al staff para acercarse con el cobro en efectivo...");
     const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
     try {
+      if (method === PAYMENT_METHODS.CASH) {
+        setMesaActionMessage("Avisando al staff para acercarse con el cobro en efectivo...");
+        await requestCashPayment({
+          orderId: approvedOrderId,
+          clientId,
+          payerLabel,
+          requestKind: "CASH_PAYMENT",
+          note: "Cobro en efectivo",
+          tableSessionToken,
+        });
+        setMesaActionMessage("Ya avisamos al staff para cobrar en efectivo.");
+        return;
+      }
+      if (method === PAYMENT_METHODS.TRANSFER) {
+        setMesaActionMessage("Esperando que el staff habilite la transferencia...");
+        await requestCashPayment({
+          orderId: approvedOrderId,
+          clientId,
+          payerLabel,
+          requestKind: "TRANSFER_PAYMENT",
+          note: "Transferencia",
+          tableSessionToken,
+        });
+        return;
+      }
+      const methodText = paymentMethodLabel(method);
+      setMesaActionMessage(`Esperando que el staff habilite ${methodText}.`);
       await requestCashPayment({
         orderId: approvedOrderId,
         clientId,
         payerLabel,
-        note: "Cobro en efectivo",
+        requestKind: "POSNET_PAYMENT",
+        note: methodText,
         tableSessionToken,
       });
-      setMesaActionMessage("Staff en camino para cobrar en efectivo. Cuando retiren el pago, ellos mismos lo van a confirmar.");
     } catch (error) {
-      setMesaActionMessage(error.message || "No se pudo avisar al staff para cobrar en efectivo.");
+      setMesaActionMessage(error.message || "No se pudo avisar al staff para este medio de pago.");
     } finally {
       setMesaActionBusy(false);
     }
+  };
+
+  const requestRestaurantCheckout = () => {
+    if (mesaActionBusy) return;
+    if (serviceMode === SERVICE_MODES.BAR) return;
+    if (!tableSessionId || !tableSessionToken) {
+      setMesaActionMessage("Primero registra la mesa.");
+      return;
+    }
+    if (committedItemsForMesa.length === 0) {
+      setMesaActionMessage("Todavia no hay consumo para cerrar.");
+      return;
+    }
+    const run = async () => {
+      setMesaActionBusy(true);
+      setSelectedPaymentMethod("");
+      setMesaPaymentStateMessage("");
+      setPaymentFlowOrderId(null);
+      try {
+        await requestRestaurantCheckoutApi({
+          tableSessionId,
+          tableSessionToken,
+        });
+        setRestaurantCheckoutStatus("REQUESTED");
+        setMesaActionMessage("Cuenta solicitada. Esperando que el staff habilite el cierre.");
+      } catch (error) {
+        setMesaActionMessage(error.message || "No se pudo pedir la cuenta.");
+      } finally {
+        setMesaActionBusy(false);
+      }
+    };
+    run();
   };
 
   const splitBillEqually = async () => {
@@ -1118,6 +1253,10 @@ export function App() {
     }
     if (!selectedPaymentMethod) {
       setMesaActionMessage("Elegi primero el medio de pago.");
+      return;
+    }
+    if (selectedPaymentMethod !== PAYMENT_METHODS.CASH && !paymentMethodRequestResolved) {
+      setMesaActionMessage("Espera a que el staff habilite este medio de pago antes de avisar el cobro.");
       return;
     }
     setMesaActionBusy(true);
@@ -1190,6 +1329,7 @@ export function App() {
     setHasWaiterAlert(false);
     setAssistanceRequestKind("");
     setAssistanceRequestStatus("");
+    setAssistanceRequestNote("");
     setTableSessionId(null);
     setTableSessionToken("");
     setSessionJoinedAt(null);
@@ -1362,6 +1502,7 @@ export function App() {
                 onGoToTracking={goToTracking}
                 onContinueOrdering={() => selectTab(CLIENT_TABS.MENU)}
                 onSplitBill={splitBillEqually}
+                onRequestPaymentFlow={requestRestaurantCheckout}
                 onSelectPaymentMethod={selectPaymentMethod}
                 onReportPayment={reportPaymentFromTable}
                 mesaActionBusy={mesaActionBusy}
@@ -1371,9 +1512,14 @@ export function App() {
                 mesaBillSplit={mesaBillSplit}
                 canSplitBill={canSplitBill}
                 canShowPaymentOptions={canShowPaymentOptions}
+                canReportSelectedPayment={canReportSelectedPayment}
                 selectedPaymentMethod={selectedPaymentMethod}
+                paymentOptions={paymentOptions}
+                paymentMethodRequestPending={paymentMethodRequestPending}
+                paymentMethodRequestResolved={paymentMethodRequestResolved}
                 paymentFlowRequested={paymentFlowRequested}
                 paymentConfirmed={paymentConfirmedMessage}
+                restaurantCheckoutStatus={restaurantCheckoutStatus}
                 showLiveTotal={showLiveTotalToClient}
                 showSessionContext={false}
                 barMesaCleared={barMesaCleared}

@@ -93,6 +93,7 @@ from app.schemas.orders import (
     StaffTablesResponse,
     CreateStaffTableRequest,
     CreateStaffTableResponse,
+    RestaurantCheckoutResponse,
     StaffTableSessionOut,
     StaffTableSessionsResponse,
     UpdateStorePrintSettingsRequest,
@@ -115,6 +116,9 @@ ACTIVE_TABLE_SESSION_STATUSES = (
     TableSessionStatus.MESA_OCUPADA.value,
     TableSessionStatus.CON_PEDIDO.value,
 )
+RESTAURANT_CHECKOUT_NONE = "NONE"
+RESTAURANT_CHECKOUT_REQUESTED = "REQUESTED"
+RESTAURANT_CHECKOUT_READY = "READY"
 PRINT_MODES = {"MANUAL", "AUTOMATIC"}
 DEFAULT_WHATSAPP_SHARE_TEMPLATE = "Estuve en {restaurant_name} y la pasé muy bien. Mirá la carta acá:\n{menu_url}"
 THEME_PRESETS = {"CLASSIC", "MODERN", "PREMIUM"}
@@ -139,6 +143,12 @@ def _store_profile_out(store: Store) -> StoreProfileResponse:
         background_color=store.background_color or "ROJO",
         background_image_url=store.background_image_url,
         show_watermark_logo=bool(store.show_watermark_logo),
+        payment_cash_enabled=bool(store.payment_cash_enabled),
+        payment_transfer_enabled=bool(store.payment_transfer_enabled),
+        payment_card_enabled=bool(store.payment_card_enabled),
+        payment_mercado_pago_enabled=bool(store.payment_mercado_pago_enabled),
+        payment_modo_enabled=bool(store.payment_modo_enabled),
+        payment_transfer_instructions=store.payment_transfer_instructions,
     )
 
 
@@ -1378,6 +1388,12 @@ def patch_store_profile_settings(
     store.background_color = background_color
     store.background_image_url = background_image_url
     store.show_watermark_logo = bool(payload.show_watermark_logo)
+    store.payment_cash_enabled = bool(payload.payment_cash_enabled)
+    store.payment_transfer_enabled = bool(payload.payment_transfer_enabled)
+    store.payment_card_enabled = bool(payload.payment_card_enabled)
+    store.payment_mercado_pago_enabled = bool(payload.payment_mercado_pago_enabled)
+    store.payment_modo_enabled = bool(payload.payment_modo_enabled)
+    store.payment_transfer_instructions = (payload.payment_transfer_instructions or "").strip() or None
     if payload.new_owner_password is not None and payload.new_owner_password.strip():
         store.owner_password_hash = hash_pin(payload.new_owner_password.strip())
     db.add(store)
@@ -1945,6 +1961,7 @@ def list_staff_table_sessions(
                 guest_count=table_session.guest_count,
                 status=table_session.status,
                 service_mode=(active_order.service_mode if active_order else (table_session.service_mode or "RESTAURANTE")),
+                checkout_status=table_session.checkout_status or RESTAURANT_CHECKOUT_NONE,
                 connected_clients=int(connected_clients or 0),
                 active_order_id=int(active_order.id) if active_order else None,
                 active_order_created_at=active_order.created_at if active_order else None,
@@ -1954,6 +1971,48 @@ def list_staff_table_sessions(
         )
 
     return StaffTableSessionsResponse(total=int(total), items=items)
+
+
+@router.post("/table-sessions/{table_session_id}/enable-checkout", response_model=RestaurantCheckoutResponse)
+def enable_restaurant_checkout(
+    table_session_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> RestaurantCheckoutResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
+    if not table_session:
+        raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.store_id != current_staff.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    if table_session.service_mode != ServiceMode.RESTAURANTE.value:
+        raise HTTPException(status_code=409, detail="Este paso solo aplica a restaurante.")
+    if table_session.status not in ACTIVE_TABLE_SESSION_STATUSES:
+        raise HTTPException(status_code=409, detail="La mesa ya esta cerrada.")
+    if (table_session.checkout_status or RESTAURANT_CHECKOUT_NONE) != RESTAURANT_CHECKOUT_REQUESTED:
+        raise HTTPException(status_code=409, detail="La cuenta todavia no fue solicitada por el cliente.")
+
+    table_session.checkout_status = RESTAURANT_CHECKOUT_READY
+    db.add(table_session)
+    db.commit()
+
+    table = db.scalar(select(Table).where(Table.id == table_session.table_id))
+    event_bus.publish(
+        "table.session.checkout_ready",
+        {
+            "table_session_id": table_session.id,
+            "store_id": table_session.store_id,
+            "table_code": table.code if table else "-",
+            "checkout_status": table_session.checkout_status,
+        },
+    )
+    return RestaurantCheckoutResponse(
+        table_session_id=table_session.id,
+        table_code=table.code if table else "-",
+        checkout_status=table_session.checkout_status,
+    )
 
 
 @router.patch("/table-sessions/{table_session_id}/status", response_model=ChangeTableSessionStatusResponse)
@@ -2470,6 +2529,7 @@ def close_table_session(
     _finalize_table_session_orders(db, table_session=table_session, staff_id=current_staff.id)
 
     table_session.status = TableSessionStatus.CLOSED.value
+    table_session.checkout_status = RESTAURANT_CHECKOUT_NONE
     table_session.closed_at = datetime.utcnow()
     active_shift = _latest_active_shift(db, current_staff.store_id)
     table_session.closed_shift_id = active_shift.id if active_shift else None
@@ -2535,6 +2595,7 @@ def force_close_table_session(
     if table_session:
         _finalize_table_session_orders(db, table_session=table_session, staff_id=current_staff.id)
         table_session.status = TableSessionStatus.CLOSED.value
+        table_session.checkout_status = RESTAURANT_CHECKOUT_NONE
         table_session.closed_at = datetime.utcnow()
         active_shift = _latest_active_shift(db, current_staff.store_id)
         table_session.closed_shift_id = active_shift.id if active_shift else None

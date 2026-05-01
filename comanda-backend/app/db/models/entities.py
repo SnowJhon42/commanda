@@ -54,6 +54,8 @@ class CashRequestStatus(str, Enum):
 class CashRequestKind(str, Enum):
     WAITER_CALL = "WAITER_CALL"
     CASH_PAYMENT = "CASH_PAYMENT"
+    TRANSFER_PAYMENT = "TRANSFER_PAYMENT"
+    POSNET_PAYMENT = "POSNET_PAYMENT"
 
 
 class ServiceMode(str, Enum):
@@ -115,6 +117,12 @@ class Store(Base):
     background_image_url: Mapped[str | None] = mapped_column(String(500))
     show_watermark_logo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     floor_plan_json: Mapped[str | None] = mapped_column(Text)
+    payment_cash_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payment_transfer_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payment_card_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payment_mercado_pago_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payment_modo_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payment_transfer_instructions: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -141,6 +149,7 @@ class TableSession(Base):
     guest_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default=TableSessionStatus.MESA_OCUPADA.value, nullable=False)
     service_mode: Mapped[str] = mapped_column(String(20), default=ServiceMode.RESTAURANTE.value, nullable=False)
+    checkout_status: Mapped[str] = mapped_column(String(20), default="NONE", nullable=False)
     closed_shift_id: Mapped[int | None] = mapped_column(ForeignKey("service_shifts.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)

@@ -49,6 +49,8 @@ function billBadgeClass(status) {
 function cashRequestKindLabel(kind) {
   if (kind === "WAITER_CALL") return "Llamado mozo";
   if (kind === "CASH_PAYMENT") return "Solicitud de pago";
+  if (kind === "TRANSFER_PAYMENT") return "Solicitud de transferencia";
+  if (kind === "POSNET_PAYMENT") return "Solicitud de posnet";
   return "Solicitud";
 }
 

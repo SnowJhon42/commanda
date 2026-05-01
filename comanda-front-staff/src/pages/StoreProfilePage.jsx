@@ -59,6 +59,12 @@ const EMPTY_PROFILE = {
   background_color: "ROJO",
   background_image_url: "",
   show_watermark_logo: false,
+  payment_cash_enabled: true,
+  payment_transfer_enabled: true,
+  payment_card_enabled: true,
+  payment_mercado_pago_enabled: true,
+  payment_modo_enabled: true,
+  payment_transfer_instructions: "",
 };
 
 const EMPTY_STAFF_FORM = {
@@ -79,6 +85,12 @@ function normalizeProfile(data) {
     background_color: data?.background_color || data?.accent_color || "ROJO",
     background_image_url: data?.background_image_url || "",
     show_watermark_logo: Boolean(data?.show_watermark_logo),
+    payment_cash_enabled: Boolean(data?.payment_cash_enabled ?? true),
+    payment_transfer_enabled: Boolean(data?.payment_transfer_enabled ?? true),
+    payment_card_enabled: Boolean(data?.payment_card_enabled ?? true),
+    payment_mercado_pago_enabled: Boolean(data?.payment_mercado_pago_enabled ?? true),
+    payment_modo_enabled: Boolean(data?.payment_modo_enabled ?? true),
+    payment_transfer_instructions: data?.payment_transfer_instructions || "",
   };
 }
 
@@ -250,6 +262,12 @@ export function StoreProfilePage({ token, storeId, sessionStaffId = null, staffD
           background_color: profile.background_color,
           background_image_url: profile.background_image_url.trim() || null,
           show_watermark_logo: profile.show_watermark_logo,
+          payment_cash_enabled: profile.payment_cash_enabled,
+          payment_transfer_enabled: profile.payment_transfer_enabled,
+          payment_card_enabled: profile.payment_card_enabled,
+          payment_mercado_pago_enabled: profile.payment_mercado_pago_enabled,
+          payment_modo_enabled: profile.payment_modo_enabled,
+          payment_transfer_instructions: profile.payment_transfer_instructions.trim() || null,
         },
       });
       setProfile(normalizeProfile(data));
@@ -647,6 +665,77 @@ export function StoreProfilePage({ token, storeId, sessionStaffId = null, staffD
                 onChange={(event) => updateProfile("show_watermark_logo", event.target.checked)}
               />
             </label>
+          </div>
+
+          <div className="menu-editor-card">
+            <div className="section-head">
+              <div>
+                <h4>Cobros y medios de pago</h4>
+                <p className="muted">Define qué opciones ve el cliente cuando el staff habilita el pago.</p>
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <label className="field inline-field">
+                <span>Efectivo</span>
+                <input
+                  type="checkbox"
+                  checked={profile.payment_cash_enabled}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("payment_cash_enabled", event.target.checked)}
+                />
+              </label>
+              <label className="field inline-field">
+                <span>Transferencia</span>
+                <input
+                  type="checkbox"
+                  checked={profile.payment_transfer_enabled}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("payment_transfer_enabled", event.target.checked)}
+                />
+              </label>
+              <label className="field inline-field">
+                <span>Tarjeta</span>
+                <input
+                  type="checkbox"
+                  checked={profile.payment_card_enabled}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("payment_card_enabled", event.target.checked)}
+                />
+              </label>
+              <label className="field inline-field">
+                <span>Mercado Pago</span>
+                <input
+                  type="checkbox"
+                  checked={profile.payment_mercado_pago_enabled}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("payment_mercado_pago_enabled", event.target.checked)}
+                />
+              </label>
+              <label className="field inline-field">
+                <span>MODO</span>
+                <input
+                  type="checkbox"
+                  checked={profile.payment_modo_enabled}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("payment_modo_enabled", event.target.checked)}
+                />
+              </label>
+            </div>
+
+            <label className="field">
+              Texto libre para transferencia
+              <textarea
+                rows="5"
+                value={profile.payment_transfer_instructions}
+                disabled={!unlocked}
+                onChange={(event) => updateProfile("payment_transfer_instructions", event.target.value)}
+                placeholder={"Banco / Alias / CBU / Titular / CUIT\nEj: Alias: comanda.centro\nTitular: Barra Centro SRL"}
+              />
+            </label>
+            <p className="muted">
+              Este texto se le muestra al cliente cuando el staff habilita la transferencia.
+            </p>
           </div>
 
           <div className="menu-editor-card menu-editor-card-accent store-owner-card">

@@ -182,6 +182,33 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
                 conn.execute(text("ALTER TABLE stores ADD COLUMN show_watermark_logo INTEGER NOT NULL DEFAULT 0"))
         if "floor_plan_json" not in store_columns:
             conn.execute(text("ALTER TABLE stores ADD COLUMN floor_plan_json TEXT NULL"))
+        if "payment_cash_enabled" not in store_columns:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_cash_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
+            else:
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_cash_enabled INTEGER NOT NULL DEFAULT 1"))
+        if "payment_transfer_enabled" not in store_columns:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_transfer_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
+            else:
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_transfer_enabled INTEGER NOT NULL DEFAULT 1"))
+        if "payment_card_enabled" not in store_columns:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_card_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
+            else:
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_card_enabled INTEGER NOT NULL DEFAULT 1"))
+        if "payment_mercado_pago_enabled" not in store_columns:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_mercado_pago_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
+            else:
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_mercado_pago_enabled INTEGER NOT NULL DEFAULT 1"))
+        if "payment_modo_enabled" not in store_columns:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_modo_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
+            else:
+                conn.execute(text("ALTER TABLE stores ADD COLUMN payment_modo_enabled INTEGER NOT NULL DEFAULT 1"))
+        if "payment_transfer_instructions" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN payment_transfer_instructions TEXT NULL"))
         default_owner_hash = hash_pin("1234")
         conn.execute(
             text("UPDATE stores SET owner_password_hash = :owner_hash WHERE owner_password_hash IS NULL"),
@@ -205,7 +232,10 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
             conn.execute(text("ALTER TABLE table_sessions ADD COLUMN closed_shift_id INTEGER NULL"))
         if "service_mode" not in table_session_columns:
             conn.execute(text("ALTER TABLE table_sessions ADD COLUMN service_mode TEXT NOT NULL DEFAULT 'RESTAURANTE'"))
+        if "checkout_status" not in table_session_columns:
+            conn.execute(text("ALTER TABLE table_sessions ADD COLUMN checkout_status TEXT NOT NULL DEFAULT 'NONE'"))
         conn.execute(text("UPDATE table_sessions SET service_mode = COALESCE(NULLIF(service_mode, ''), 'RESTAURANTE')"))
+        conn.execute(text("UPDATE table_sessions SET checkout_status = COALESCE(NULLIF(checkout_status, ''), 'NONE')"))
 
     if "orders" in existing_tables:
         order_columns = _table_columns(conn, "orders")
@@ -259,6 +289,8 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
               table_id INTEGER NOT NULL,
               guest_count INTEGER NOT NULL DEFAULT 1,
               status TEXT NOT NULL DEFAULT 'MESA_OCUPADA',
+              service_mode TEXT NOT NULL DEFAULT 'RESTAURANTE',
+              checkout_status TEXT NOT NULL DEFAULT 'NONE',
               created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               closed_at DATETIME NULL,
               FOREIGN KEY(store_id) REFERENCES stores(id),
@@ -537,6 +569,18 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE stores ADD COLUMN show_watermark_logo INTEGER NOT NULL DEFAULT 0"))
     if "floor_plan_json" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN floor_plan_json TEXT NULL"))
+    if "payment_cash_enabled" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN payment_cash_enabled INTEGER NOT NULL DEFAULT 1"))
+    if "payment_transfer_enabled" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN payment_transfer_enabled INTEGER NOT NULL DEFAULT 1"))
+    if "payment_card_enabled" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN payment_card_enabled INTEGER NOT NULL DEFAULT 1"))
+    if "payment_mercado_pago_enabled" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN payment_mercado_pago_enabled INTEGER NOT NULL DEFAULT 1"))
+    if "payment_modo_enabled" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN payment_modo_enabled INTEGER NOT NULL DEFAULT 1"))
+    if "payment_transfer_instructions" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN payment_transfer_instructions TEXT NULL"))
     conn.execute(
         text("UPDATE stores SET owner_password_hash = :owner_hash WHERE owner_password_hash IS NULL"),
         {"owner_hash": hash_pin("1234")},
@@ -626,6 +670,12 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
             "theme_preset",
             "accent_color",
             "show_watermark_logo",
+            "payment_cash_enabled",
+            "payment_transfer_enabled",
+            "payment_card_enabled",
+            "payment_mercado_pago_enabled",
+            "payment_modo_enabled",
+            "payment_transfer_instructions",
         } - _table_columns(conn, "stores")
         for column in sorted(missing):
             issues.append(f"stores missing column: {column}")

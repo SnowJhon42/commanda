@@ -170,6 +170,21 @@ export async function patchTableSessionStatus({ token, tableSessionId, toStatus 
   }
 }
 
+export async function enableRestaurantCheckout({ token, tableSessionId }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/table-sessions/${tableSessionId}/enable-checkout`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo habilitar el cierre de cuenta.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo habilitar el cierre de cuenta.");
+  }
+}
+
 export async function moveTableSession({ token, tableSessionId, targetTableCode }) {
   try {
     const res = await fetch(`${API_URL}/staff/table-sessions/${tableSessionId}/move`, {

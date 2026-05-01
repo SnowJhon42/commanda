@@ -66,6 +66,12 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
         background_color=store.background_color or "ROJO",
         background_image_url=store.background_image_url,
         show_watermark_logo=bool(store.show_watermark_logo),
+        payment_cash_enabled=bool(store.payment_cash_enabled),
+        payment_transfer_enabled=bool(store.payment_transfer_enabled),
+        payment_card_enabled=bool(store.payment_card_enabled),
+        payment_mercado_pago_enabled=bool(store.payment_mercado_pago_enabled),
+        payment_modo_enabled=bool(store.payment_modo_enabled),
+        payment_transfer_instructions=store.payment_transfer_instructions,
         categories=[CategoryOut(id=c.id, name=c.name, image_url=c.image_url, sort_order=c.sort_order) for c in categories],
         products=[
             ProductOut(

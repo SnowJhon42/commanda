@@ -60,6 +60,7 @@ export function CheckoutPage({
   onGoToTracking,
   onContinueOrdering,
   onSplitBill,
+  onRequestPaymentFlow,
   onSelectPaymentMethod,
   onReportPayment,
   mesaActionBusy = false,
@@ -69,9 +70,14 @@ export function CheckoutPage({
   mesaBillSplit = null,
   canSplitBill = false,
   canShowPaymentOptions = false,
+  canReportSelectedPayment = false,
   selectedPaymentMethod = "",
+  paymentOptions = null,
+  paymentMethodRequestPending = false,
+  paymentMethodRequestResolved = false,
   paymentFlowRequested = false,
   paymentConfirmed = false,
+  restaurantCheckoutStatus = "NONE",
   showLiveTotal = true,
   showSessionContext = true,
   barMesaCleared = false,
@@ -98,15 +104,36 @@ export function CheckoutPage({
     );
   const showBarPendingStateCard = isBarMode && !showSessionContext && showBarHoldAlert && !barPaymentFlowActive;
   const showBarInlineMessage = !isBarMode;
+  const showRestaurantPaymentCard =
+    !isBarMode &&
+    (canShowPaymentOptions ||
+      paymentConfirmed ||
+      Boolean(selectedPaymentMethod) ||
+      paymentMethodRequestPending ||
+      paymentMethodRequestResolved ||
+      Boolean(mesaPaymentStateMessage));
   const cashSelected = selectedPaymentMethod === "CASH";
+  const transferSelected = selectedPaymentMethod === "TRANSFER";
+  const posnetSelected = ["CARD", "MERCADO_PAGO", "MODO"].includes(selectedPaymentMethod);
+  const enabledPaymentOptions = {
+    cash: paymentOptions?.cash ?? true,
+    transfer: paymentOptions?.transfer ?? true,
+    card: paymentOptions?.card ?? true,
+    mercadoPago: paymentOptions?.mercadoPago ?? true,
+    modo: paymentOptions?.modo ?? true,
+  };
   const paymentStageTitle = paymentConfirmed
     ? "Pago confirmado"
     : reviewPending
     ? "Pedido en revision"
     : cashSelected && paymentFlowRequested
     ? "Cobro en efectivo en curso"
+    : transferSelected && paymentMethodRequestResolved
+    ? "Transferencia habilitada"
+    : posnetSelected && paymentMethodRequestResolved
+    ? "Posnet en camino"
     : paymentFlowRequested
-    ? "Elegi como queres pagar"
+    ? "¿Con que vas a pagar?"
     : "Esperando aprobacion del pedido";
   const paymentStageCopy = paymentConfirmed
     ? "Cobro confirmado, el local ya tiene el pedido. Te vamos a ir avisando."
@@ -114,8 +141,12 @@ export function CheckoutPage({
     ? "El staff esta revisando si puede tomar tu pedido completo. Cuando lo acepte, se habilita el pago."
     : cashSelected && paymentFlowRequested
     ? "Ya avisamos al staff para cobrar en efectivo. Cuando retiren el pago, ellos mismos lo van a confirmar desde caja."
+    : transferSelected && paymentMethodRequestResolved
+    ? "El staff ya habilito la transferencia. Segui los datos del local y despues avisanos cuando la hagas."
+    : posnetSelected && paymentMethodRequestResolved
+    ? "El staff ya habilito este medio. Enseguida se acerca alguien con el posnet para cobrarte."
     : paymentFlowRequested
-    ? "Resolvé el pago para que el pedido entre a produccion."
+    ? "Elegi el medio de pago para que el staff te habilite el paso siguiente."
     : "Esperando que el staff tome o rechace este pedido.";
 
   useEffect(() => {
@@ -419,12 +450,12 @@ export function CheckoutPage({
           {checkoutError && <p className="error-text">{checkoutError}</p>}
 
           <button className="btn-primary btn-full" disabled={submittingOrder}>
-            {submittingOrder ? "Enviando..." : isBarMode ? "Enviar pedido y pasar a pago" : "Enviar pedido"}
+            {submittingOrder ? "Enviando..." : "Enviar pedido"}
           </button>
         </form>
       ) : (
         <form className="checkout-form mesa-actions" onSubmit={submit}>
-          {!isBarMode && (
+          {showRestaurantPaymentCard && (
             <article className="table-payment-card">
               <span className="table-payment-kicker">CIERRE DE MESA</span>
               <h3>{paymentStageTitle}</h3>
@@ -496,6 +527,20 @@ export function CheckoutPage({
                   Conectados en la mesa: <strong>{connectedClients}</strong>
                 </p>
               )}
+              {!canShowPaymentOptions && !paymentConfirmed && orderReviewStatus === "APPROVED" && committedItems.length > 0 && (
+                restaurantCheckoutStatus === "REQUESTED" ? (
+                  <p className="muted">Cuenta solicitada. Esperando que el staff habilite el cierre.</p>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-primary btn-full"
+                    onClick={onRequestPaymentFlow}
+                    disabled={mesaActionBusy}
+                  >
+                    Pedir la cuenta
+                  </button>
+                )
+              )}
               {mesaBillSplit?.mode === "EQUAL" && (mesaBillSplit.parts || []).length > 1 && (
                 <p className="muted">
                   Cuenta dividida en <strong>{mesaBillSplit.parts.length}</strong> partes iguales.
@@ -508,42 +553,60 @@ export function CheckoutPage({
               <h3>{isBarMode ? "Paso 2: como queres pagar" : "Elegi el medio para cerrar la mesa"}</h3>
               {!isBarMode && (
                 <p className="muted">
-                  El pedido ya fue aceptado. Ahora resolvé el pago para que el staff lo valide y lo libere a sectores.
+                  El cierre ya fue iniciado. Ahora resolvé el pago para que el staff lo valide.
                 </p>
               )}
               <div className="order-actions">
-                <button
-                  type="button"
-                  className={selectedPaymentMethod === "CASH" ? "btn-primary" : "btn-secondary"}
-                  onClick={() => onSelectPaymentMethod?.("CASH")}
-                  disabled={mesaActionBusy}
-                >
-                  Efectivo en mesa
-                </button>
-                <button
-                  type="button"
-                  className={selectedPaymentMethod === "MERCADO_PAGO" ? "btn-primary" : "btn-secondary"}
-                  onClick={() => onSelectPaymentMethod?.("MERCADO_PAGO")}
-                  disabled={mesaActionBusy}
-                >
-                  Mercado Pago
-                </button>
-                <button
-                  type="button"
-                  className={selectedPaymentMethod === "MODO" ? "btn-primary" : "btn-secondary"}
-                  onClick={() => onSelectPaymentMethod?.("MODO")}
-                  disabled={mesaActionBusy}
-                >
-                  MODO
-                </button>
-                <button
-                  type="button"
-                  className={selectedPaymentMethod === "TRANSFER" ? "btn-primary" : "btn-secondary"}
-                  onClick={() => onSelectPaymentMethod?.("TRANSFER")}
-                  disabled={mesaActionBusy}
-                >
-                  Transferencia
-                </button>
+                {enabledPaymentOptions.cash && (
+                  <button
+                    type="button"
+                    className={selectedPaymentMethod === "CASH" ? "btn-primary" : "btn-secondary"}
+                    onClick={() => onSelectPaymentMethod?.("CASH")}
+                    disabled={mesaActionBusy}
+                  >
+                    Efectivo en mesa
+                  </button>
+                )}
+                {enabledPaymentOptions.mercadoPago && (
+                  <button
+                    type="button"
+                    className={selectedPaymentMethod === "MERCADO_PAGO" ? "btn-primary" : "btn-secondary"}
+                    onClick={() => onSelectPaymentMethod?.("MERCADO_PAGO")}
+                    disabled={mesaActionBusy}
+                  >
+                    Mercado Pago
+                  </button>
+                )}
+                {enabledPaymentOptions.modo && (
+                  <button
+                    type="button"
+                    className={selectedPaymentMethod === "MODO" ? "btn-primary" : "btn-secondary"}
+                    onClick={() => onSelectPaymentMethod?.("MODO")}
+                    disabled={mesaActionBusy}
+                  >
+                    MODO
+                  </button>
+                )}
+                {enabledPaymentOptions.card && (
+                  <button
+                    type="button"
+                    className={selectedPaymentMethod === "CARD" ? "btn-primary" : "btn-secondary"}
+                    onClick={() => onSelectPaymentMethod?.("CARD")}
+                    disabled={mesaActionBusy}
+                  >
+                    Tarjeta
+                  </button>
+                )}
+                {enabledPaymentOptions.transfer && (
+                  <button
+                    type="button"
+                    className={selectedPaymentMethod === "TRANSFER" ? "btn-primary" : "btn-secondary"}
+                    onClick={() => onSelectPaymentMethod?.("TRANSFER")}
+                    disabled={mesaActionBusy}
+                  >
+                    Transferencia
+                  </button>
+                )}
                 {canSplitBill && (
                   <button
                     type="button"
@@ -568,9 +631,24 @@ export function CheckoutPage({
                   </p>
                 </div>
               ) : selectedPaymentMethod ? (
-                <button type="button" className="btn-primary btn-full" onClick={onReportPayment} disabled={mesaActionBusy}>
-                  {mesaActionBusy ? "Procesando..." : "Avisar que ya pague"}
-                </button>
+                paymentMethodRequestResolved ? (
+                  <button type="button" className="btn-primary btn-full" onClick={onReportPayment} disabled={mesaActionBusy || !canReportSelectedPayment}>
+                    {mesaActionBusy
+                      ? "Procesando..."
+                      : transferSelected
+                      ? "Ya hice la transferencia"
+                      : "Ya me cobraron"}
+                  </button>
+                ) : (
+                  <div className="table-payment-waiting-box">
+                    <strong>Esperando respuesta del staff</strong>
+                    <p>
+                      {paymentMethodRequestPending
+                        ? "El staff tiene que habilitar este medio antes de seguir."
+                        : "Elegiste un medio. En cuanto el staff lo habilite, seguís desde aca."}
+                    </p>
+                  </div>
+                )
               ) : (
                 <p className="muted">Elegi primero el medio de pago para continuar.</p>
               )}

@@ -65,6 +65,12 @@ class MenuResponse(BaseModel):
     background_color: str = "ROJO"
     background_image_url: str | None = None
     show_watermark_logo: bool = False
+    payment_cash_enabled: bool = True
+    payment_transfer_enabled: bool = True
+    payment_card_enabled: bool = True
+    payment_mercado_pago_enabled: bool = True
+    payment_modo_enabled: bool = True
+    payment_transfer_instructions: str | None = None
     categories: list[CategoryOut]
     products: list[ProductOut]
 

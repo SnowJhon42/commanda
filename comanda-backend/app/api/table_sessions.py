@@ -19,6 +19,7 @@ from app.db.models import (
     ProductExtraOption,
     ProductVariant,
     ServiceMode,
+    Store,
     Table,
     TableSession,
     TableSessionCashRequest,
@@ -39,6 +40,7 @@ from app.schemas.orders import (
     TableSessionConsumptionResponse,
     TableSessionFeedbackRequest,
     TableSessionFeedbackResponse,
+    RestaurantCheckoutResponse,
     UpsertOrderByTableRequest,
 )
 from app.services.item_status import recompute_order_status_from_items
@@ -54,6 +56,15 @@ ACTIVE_TABLE_SESSION_STATUSES = (
     TableSessionStatus.MESA_OCUPADA.value,
     TableSessionStatus.CON_PEDIDO.value,
 )
+RESTAURANT_CHECKOUT_NONE = "NONE"
+RESTAURANT_CHECKOUT_REQUESTED = "REQUESTED"
+RESTAURANT_CHECKOUT_READY = "READY"
+
+
+def _order_flow_defaults(service_mode: str) -> tuple[str, str]:
+    if service_mode == ServiceMode.BAR.value:
+        return OrderReviewStatus.PENDING.value, PaymentGate.BEFORE_PREPARATION.value
+    return OrderReviewStatus.APPROVED.value, PaymentGate.NONE.value
 
 
 def _active_order_for_session(db: Session, *, table_session_id: int, store_id: int) -> Order | None:
@@ -105,6 +116,7 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
             guest_count=payload.guest_count,
             status=TableSessionStatus.MESA_OCUPADA.value,
             service_mode=service_mode,
+            checkout_status=RESTAURANT_CHECKOUT_NONE,
         )
         db.add(table_session)
         db.flush()
@@ -114,6 +126,7 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
         )
         table_session.guest_count = payload.guest_count
         table_session.service_mode = service_mode
+        table_session.checkout_status = RESTAURANT_CHECKOUT_NONE
         table_session.status = TableSessionStatus.CON_PEDIDO.value if active_order else TableSessionStatus.MESA_OCUPADA.value
         db.add(table_session)
     active_order = _active_order_for_session(db, table_session_id=table_session.id, store_id=payload.store_id)
@@ -138,6 +151,7 @@ def open_table_session(payload: OpenTableSessionRequest, db: Session = Depends(g
         guest_count=table_session.guest_count,
         status=table_session.status,
         service_mode=table_session.service_mode,
+        checkout_status=table_session.checkout_status or RESTAURANT_CHECKOUT_NONE,
         active_order_id=active_order.id if active_order else None,
     )
 
@@ -230,7 +244,12 @@ def get_table_session_state(
                 TableSessionCashRequest.table_session_id == table_session_id,
                 TableSessionCashRequest.client_id == table_client.client_id,
                 TableSessionCashRequest.request_kind.in_(
-                    [CashRequestKind.WAITER_CALL.value, CashRequestKind.CASH_PAYMENT.value]
+                    [
+                        CashRequestKind.WAITER_CALL.value,
+                        CashRequestKind.CASH_PAYMENT.value,
+                        CashRequestKind.TRANSFER_PAYMENT.value,
+                        CashRequestKind.POSNET_PAYMENT.value,
+                    ]
                 ),
             )
             .order_by(TableSessionCashRequest.created_at.desc(), TableSessionCashRequest.id.desc())
@@ -240,14 +259,37 @@ def get_table_session_state(
     assistance_message = None
     assistance_kind = None
     assistance_status = None
+    assistance_note = None
     if latest_assistance_request:
         assistance_kind = latest_assistance_request.request_kind
         assistance_status = latest_assistance_request.status
+        assistance_note = latest_assistance_request.note
         if latest_assistance_request.status == CashRequestStatus.RESOLVED.value:
             if latest_assistance_request.request_kind == CashRequestKind.CASH_PAYMENT.value:
                 assistance_message = "El staff ya registro tu pago en efectivo."
+            elif latest_assistance_request.request_kind == CashRequestKind.TRANSFER_PAYMENT.value:
+                store = db.scalar(select(Store).where(Store.id == table_session.store_id))
+                transfer_text = (store.payment_transfer_instructions or "").strip() if store else ""
+                assistance_message = (
+                    transfer_text
+                    or "El staff habilito la transferencia. Usa los datos indicados por el local y despues avisanos."
+                )
+            elif latest_assistance_request.request_kind == CashRequestKind.POSNET_PAYMENT.value:
+                note = (latest_assistance_request.note or "").strip()
+                assistance_message = (
+                    f"Ahi va un mozo con el posnet para cobrar por {note}."
+                    if note
+                    else "Ahi va un mozo con el posnet para cobrarte."
+                )
             elif latest_assistance_request.request_kind == CashRequestKind.WAITER_CALL.value:
                 assistance_message = "El mozo se esta acercando."
+        elif latest_assistance_request.status == CashRequestStatus.PENDING.value:
+            if latest_assistance_request.request_kind == CashRequestKind.CASH_PAYMENT.value:
+                assistance_message = "Ya avisamos al staff para cobrar en efectivo."
+            elif latest_assistance_request.request_kind == CashRequestKind.TRANSFER_PAYMENT.value:
+                assistance_message = "Esperando que el staff habilite la transferencia."
+            elif latest_assistance_request.request_kind == CashRequestKind.POSNET_PAYMENT.value:
+                assistance_message = "Esperando que el staff habilite ese medio de pago."
 
     return TableSessionStateResponse(
         table_session_id=table_session.id,
@@ -256,10 +298,12 @@ def get_table_session_state(
         guest_count=table_session.guest_count,
         status=table_session.status,
         service_mode=table_session.service_mode,
+        checkout_status=table_session.checkout_status or RESTAURANT_CHECKOUT_NONE,
         connected_clients=int(connected_clients),
         active_order_id=active_order.id if active_order else None,
         assistance_request_kind=assistance_kind,
         assistance_request_status=assistance_status,
+        assistance_request_note=assistance_note,
         assistance_message=assistance_message,
     )
 
@@ -330,6 +374,48 @@ def get_table_session_consumption(
             )
             for item in items
         ],
+    )
+
+
+@router.post("/table/session/{table_session_id}/request-checkout", response_model=RestaurantCheckoutResponse)
+def request_restaurant_checkout(
+    table_session_id: int,
+    table_client: TableClientContext = Depends(get_current_table_client),
+    db: Session = Depends(get_db),
+) -> RestaurantCheckoutResponse:
+    if table_client.table_session_id != table_session_id:
+        raise HTTPException(status_code=403, detail="Table session token does not match this session")
+    table_session = db.scalar(select(TableSession).where(TableSession.id == table_session_id))
+    if not table_session:
+        raise HTTPException(status_code=404, detail="Table session not found")
+    if table_session.store_id != table_client.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+    if table_session.service_mode != ServiceMode.RESTAURANTE.value:
+        raise HTTPException(status_code=409, detail="Este paso solo aplica a restaurante.")
+    if table_session.status not in ACTIVE_TABLE_SESSION_STATUSES:
+        raise HTTPException(status_code=409, detail="La mesa ya esta cerrada.")
+
+    active_order = _active_order_for_session(db, table_session_id=table_session.id, store_id=table_session.store_id)
+    if not active_order or active_order.review_status != OrderReviewStatus.APPROVED.value:
+        raise HTTPException(status_code=409, detail="Todavia no hay una cuenta lista para cerrar.")
+
+    table_session.checkout_status = RESTAURANT_CHECKOUT_REQUESTED
+    db.add(table_session)
+    db.commit()
+    table = db.scalar(select(Table).where(Table.id == table_session.table_id))
+    event_bus.publish(
+        "table.session.checkout_requested",
+        {
+            "table_session_id": table_session.id,
+            "store_id": table_session.store_id,
+            "table_code": table.code if table else "-",
+            "checkout_status": table_session.checkout_status,
+        },
+    )
+    return RestaurantCheckoutResponse(
+        table_session_id=table_session.id,
+        table_code=table.code if table else "-",
+        checkout_status=table_session.checkout_status,
     )
 
 
@@ -418,7 +504,7 @@ def upsert_order_by_table(
         db, table_session_id=table_session.id, store_id=payload.store_id
     )
     service_mode = payload.service_mode or ServiceMode.RESTAURANTE.value
-    payment_gate = PaymentGate.BEFORE_PREPARATION.value
+    review_status, payment_gate = _order_flow_defaults(service_mode)
     payment_status = OrderPaymentStatus.PENDING.value
     created_new = False
     if _should_create_new_session_order(order, service_mode):
@@ -434,7 +520,7 @@ def upsert_order_by_table(
             guest_count=payload.guest_count,
             ticket_number=ticket_number,
             status_aggregated=OrderStatus.RECEIVED.value,
-            review_status=OrderReviewStatus.PENDING.value,
+            review_status=review_status,
             service_mode=service_mode,
             payment_gate=payment_gate,
             payment_status=payment_status,
