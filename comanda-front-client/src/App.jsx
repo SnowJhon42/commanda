@@ -773,7 +773,11 @@ export function App() {
       setMesaPaymentStateMessage("");
       setSelectedPaymentMethod("");
       setPaymentFlowOrderId(null);
-      setMesaActionMessage("Pedido enviado. El staff lo esta revisando antes de habilitar el pago.");
+      setMesaActionMessage(
+        effectiveServiceMode === SERVICE_MODES.BAR
+          ? "Pedido enviado. El staff lo esta revisando antes de habilitar el pago."
+          : ""
+      );
       try {
         const consumption = await fetchTableSessionConsumption(resolvedTableSessionId, resolvedTableSessionToken);
         setTableSessionConsumption(consumption);
