@@ -103,6 +103,24 @@ def _order_fully_delivered(order: Order) -> bool:
     return bool(order.items) and all(item.status == "DELIVERED" for item in order.items)
 
 
+def _restaurant_checkout_orders(db: Session, anchor_order: Order) -> list[Order]:
+    if anchor_order.service_mode != ServiceMode.RESTAURANTE.value or not anchor_order.table_session_id:
+        return [anchor_order]
+
+    related_orders = db.scalars(
+        select(Order)
+        .where(
+            Order.table_session_id == anchor_order.table_session_id,
+            Order.store_id == anchor_order.store_id,
+            Order.service_mode == ServiceMode.RESTAURANTE.value,
+            Order.review_status == OrderReviewStatus.APPROVED.value,
+        )
+        .options(joinedload(Order.items))
+        .order_by(Order.created_at.asc(), Order.id.asc())
+    ).unique().all()
+    return related_orders or [anchor_order]
+
+
 def _maybe_auto_close_restaurant_session(db: Session, order: Order) -> dict[str, int | str | None] | None:
     if order.service_mode != ServiceMode.RESTAURANTE.value or not order.table_session_id:
         return None
@@ -136,6 +154,47 @@ def _maybe_auto_close_restaurant_session(db: Session, order: Order) -> dict[str,
         "table_code": table.code if table else order.table.code if order.table else None,
         "closed_at": table_session.closed_at.isoformat() if table_session.closed_at else None,
     }
+
+
+def _confirm_restaurant_session_payment(
+    db: Session,
+    *,
+    anchor_order: Order,
+    current_staff: StaffAccount,
+    payment_method: str | None = None,
+    reported_by: str | None = None,
+) -> tuple[list[tuple[Order, BillSplit]], dict[str, int | str | None] | None]:
+    if anchor_order.service_mode != ServiceMode.RESTAURANTE.value:
+        split, close_payload = _confirm_cash_order_payment(db, order=anchor_order, current_staff=current_staff)
+        return [(anchor_order, split)], close_payload
+
+    now = datetime.utcnow()
+    confirmed: list[tuple[Order, BillSplit]] = []
+    for related_order in _restaurant_checkout_orders(db, anchor_order):
+        split = _ensure_open_single_split(db, related_order)
+        parts = db.scalars(select(BillSplitPart).where(BillSplitPart.bill_split_id == split.id)).all()
+        if not parts:
+            continue
+        for part in parts:
+            if payment_method:
+                part.payment_method = payment_method
+            if not part.reported_at:
+                part.reported_at = now
+            if reported_by and not part.reported_by:
+                part.reported_by = reported_by
+            part.payment_status = BillPartPaymentStatus.CONFIRMED.value
+            part.confirmed_by_staff_id = current_staff.id
+            part.confirmed_at = now
+            db.add(part)
+        split.status = BillSplitStatus.CLOSED.value
+        split.closed_at = now
+        db.add(split)
+        related_order.payment_status = OrderPaymentStatus.CONFIRMED.value
+        db.add(related_order)
+        confirmed.append((related_order, split))
+
+    close_payload = _maybe_auto_close_restaurant_session(db, anchor_order)
+    return confirmed, close_payload
 
 
 def _cash_request_out(req: TableSessionCashRequest) -> TableSessionCashRequestOut:
@@ -525,10 +584,21 @@ def resolve_cash_payment_request(
     split = None
     close_payload = None
     order = None
+    confirmed_restaurant_orders: list[tuple[Order, BillSplit]] = []
     if cash_request.order_id and cash_request.request_kind == CashRequestKind.CASH_PAYMENT.value:
         order = db.scalar(select(Order).where(Order.id == cash_request.order_id).options(joinedload(Order.table)))
         if order:
-            split, close_payload = _confirm_cash_order_payment(db, order=order, current_staff=current_staff)
+            if order.service_mode == ServiceMode.RESTAURANTE.value:
+                confirmed_restaurant_orders, close_payload = _confirm_restaurant_session_payment(
+                    db,
+                    anchor_order=order,
+                    current_staff=current_staff,
+                    payment_method="CASH",
+                    reported_by="Cobro en efectivo",
+                )
+                split = confirmed_restaurant_orders[0][1] if confirmed_restaurant_orders else None
+            else:
+                split, close_payload = _confirm_cash_order_payment(db, order=order, current_staff=current_staff)
 
     db.commit()
     db.refresh(cash_request)
@@ -549,7 +619,10 @@ def resolve_cash_payment_request(
             "request_kind": cash_request.request_kind,
         },
     )
-    if order and split:
+    if confirmed_restaurant_orders:
+        for confirmed_order, confirmed_split in confirmed_restaurant_orders:
+            _publish_split_event(confirmed_order, confirmed_split, "cash_payment_confirmed")
+    elif order and split:
         _publish_split_event(order, split, "cash_payment_confirmed")
     if close_payload:
         event_bus.publish("table.session.closed", close_payload)
@@ -613,23 +686,37 @@ def confirm_part_payment(
     if part.payment_status != BillPartPaymentStatus.REPORTED.value:
         raise HTTPException(status_code=409, detail="Bill split part must be reported first")
 
-    part.payment_status = BillPartPaymentStatus.CONFIRMED.value
-    part.confirmed_by_staff_id = current_staff.id
-    part.confirmed_at = datetime.utcnow()
-    db.add(part)
-
-    maybe_close_bill_split(db, split)
-    if split.status == BillSplitStatus.CLOSED.value:
-        split.closed_at = datetime.utcnow()
-    db.add(split)
     order = db.scalar(select(Order).where(Order.id == split.order_id).options(joinedload(Order.table)))
-    if order and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
-        order.payment_status = OrderPaymentStatus.CONFIRMED.value
-        db.add(order)
-    close_payload = _maybe_auto_close_restaurant_session(db, order) if order else None
+    confirmed_restaurant_orders: list[tuple[Order, BillSplit]] = []
+    close_payload = None
+    if order and order.service_mode == ServiceMode.RESTAURANTE.value:
+        confirmed_restaurant_orders, close_payload = _confirm_restaurant_session_payment(
+            db,
+            anchor_order=order,
+            current_staff=current_staff,
+            payment_method=part.payment_method or "OTHER",
+            reported_by=part.reported_by,
+        )
+    else:
+        part.payment_status = BillPartPaymentStatus.CONFIRMED.value
+        part.confirmed_by_staff_id = current_staff.id
+        part.confirmed_at = datetime.utcnow()
+        db.add(part)
+
+        maybe_close_bill_split(db, split)
+        if split.status == BillSplitStatus.CLOSED.value:
+            split.closed_at = datetime.utcnow()
+        db.add(split)
+        if order and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+            order.payment_status = OrderPaymentStatus.CONFIRMED.value
+            db.add(order)
+        close_payload = _maybe_auto_close_restaurant_session(db, order) if order else None
     db.commit()
 
-    if order:
+    if confirmed_restaurant_orders:
+        for confirmed_order, confirmed_split in confirmed_restaurant_orders:
+            _publish_split_event(confirmed_order, confirmed_split, "payment_confirmed", part.id)
+    elif order:
         _publish_split_event(order, split, "payment_confirmed", part.id)
     if close_payload:
         event_bus.publish("table.session.closed", close_payload)
@@ -681,22 +768,36 @@ def force_confirm_order_payment(
     if not parts:
         raise HTTPException(status_code=400, detail="Bill split has no parts")
 
-    for part in parts:
-        if part.payment_status != BillPartPaymentStatus.CONFIRMED.value:
-            part.payment_status = BillPartPaymentStatus.CONFIRMED.value
-            part.confirmed_by_staff_id = current_staff.id
-            part.confirmed_at = datetime.utcnow()
-            db.add(part)
-
-    split.status = BillSplitStatus.CLOSED.value
-    split.closed_at = datetime.utcnow()
-    db.add(split)
     order = db.scalar(select(Order).where(Order.id == order_id))
-    if order and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
-        order.payment_status = OrderPaymentStatus.CONFIRMED.value
-        db.add(order)
-    close_payload = _maybe_auto_close_restaurant_session(db, order) if order else None
-    if order:
+    confirmed_restaurant_orders: list[tuple[Order, BillSplit]] = []
+    close_payload = None
+    if order and order.service_mode == ServiceMode.RESTAURANTE.value:
+        confirmed_restaurant_orders, close_payload = _confirm_restaurant_session_payment(
+            db,
+            anchor_order=order,
+            current_staff=current_staff,
+            payment_method="OTHER",
+            reported_by="Confirmado por staff",
+        )
+    else:
+        for part in parts:
+            if part.payment_status != BillPartPaymentStatus.CONFIRMED.value:
+                part.payment_status = BillPartPaymentStatus.CONFIRMED.value
+                part.confirmed_by_staff_id = current_staff.id
+                part.confirmed_at = datetime.utcnow()
+                db.add(part)
+
+        split.status = BillSplitStatus.CLOSED.value
+        split.closed_at = datetime.utcnow()
+        db.add(split)
+        if order and order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+            order.payment_status = OrderPaymentStatus.CONFIRMED.value
+            db.add(order)
+        close_payload = _maybe_auto_close_restaurant_session(db, order) if order else None
+    if confirmed_restaurant_orders:
+        for confirmed_order, confirmed_split in confirmed_restaurant_orders:
+            _publish_split_event(confirmed_order, confirmed_split, "forced_payment_confirmed")
+    elif order:
         _publish_split_event(order, split, "forced_payment_confirmed")
     db.commit()
     db.refresh(split)

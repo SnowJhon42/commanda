@@ -995,6 +995,10 @@ export function App() {
     mesaPaymentStateMessage === PAYMENT_CONFIRMED_MESSAGE ||
     barOrderPaymentConfirmed;
   const approvedOrderId = Number(activeOrderDetail?.id || activeOrderId || 0);
+  const restaurantCheckoutOrderId =
+    serviceMode !== SERVICE_MODES.BAR
+      ? Number(trackingOrderIds[0] || activeOrderId || 0)
+      : 0;
   const orderAwaitingPayment =
     approvedOrderId > 0 &&
     orderReviewApproved &&
@@ -1006,9 +1010,9 @@ export function App() {
     Number(paymentFlowOrderId || approvedOrderId) === approvedOrderId;
   const restaurantPaymentFlowRequested =
     serviceMode !== SERVICE_MODES.BAR &&
-    orderAwaitingPayment &&
     restaurantCheckoutStatus === "READY" &&
-    Number(paymentFlowOrderId || 0) === approvedOrderId;
+    restaurantCheckoutOrderId > 0 &&
+    Number(paymentFlowOrderId || restaurantCheckoutOrderId) === restaurantCheckoutOrderId;
   const paymentFlowRequested =
     barPaymentFlowRequested || restaurantPaymentFlowRequested;
   const canShowPaymentOptions = paymentFlowRequested && !paymentConfirmedMessage && !(serviceMode === SERVICE_MODES.BAR && barMesaCleared);
@@ -1075,11 +1079,11 @@ export function App() {
 
   useEffect(() => {
     if (serviceMode === SERVICE_MODES.BAR) return;
-    if (!orderAwaitingPayment || approvedOrderId <= 0) return;
+    if (restaurantCheckoutOrderId <= 0) return;
     if (restaurantCheckoutStatus !== "READY") return;
-    if (Number(paymentFlowOrderId || 0) === approvedOrderId) return;
-    setPaymentFlowOrderId(approvedOrderId);
-  }, [serviceMode, orderAwaitingPayment, approvedOrderId, paymentFlowOrderId, restaurantCheckoutStatus]);
+    if (Number(paymentFlowOrderId || 0) === restaurantCheckoutOrderId) return;
+    setPaymentFlowOrderId(restaurantCheckoutOrderId);
+  }, [serviceMode, restaurantCheckoutOrderId, paymentFlowOrderId, restaurantCheckoutStatus]);
 
   useEffect(() => {
     if (!orderReviewRejected) return;
@@ -1136,16 +1140,22 @@ export function App() {
 
   const selectPaymentMethod = async (method) => {
     if (mesaActionBusy) return;
-    if (approvedOrderId) {
-      setPaymentFlowOrderId(approvedOrderId);
+    const paymentTargetOrderId =
+      serviceMode === SERVICE_MODES.BAR ? approvedOrderId : restaurantCheckoutOrderId;
+    if (paymentTargetOrderId) {
+      setPaymentFlowOrderId(paymentTargetOrderId);
     }
     setSelectedPaymentMethod(method);
     if (!tableSessionId) {
       setMesaActionMessage("Primero registra la mesa.");
       return;
     }
-    if (!approvedOrderId) {
-      setMesaActionMessage("Todavia no hay un pedido aprobado para cobrar.");
+    if (!paymentTargetOrderId) {
+      setMesaActionMessage(
+        serviceMode === SERVICE_MODES.BAR
+          ? "Todavia no hay un pedido aprobado para cobrar."
+          : "Todavia no hay una cuenta de mesa lista para cobrar."
+      );
       return;
     }
     setMesaActionBusy(true);
@@ -1154,7 +1164,7 @@ export function App() {
       if (method === PAYMENT_METHODS.CASH) {
         setMesaActionMessage("Avisando al staff para acercarse con el cobro en efectivo...");
         await requestCashPayment({
-          orderId: approvedOrderId,
+          orderId: paymentTargetOrderId,
           clientId,
           payerLabel,
           requestKind: "CASH_PAYMENT",
@@ -1167,7 +1177,7 @@ export function App() {
       if (method === PAYMENT_METHODS.TRANSFER) {
         setMesaActionMessage("Esperando que el staff habilite la transferencia...");
         await requestCashPayment({
-          orderId: approvedOrderId,
+          orderId: paymentTargetOrderId,
           clientId,
           payerLabel,
           requestKind: "TRANSFER_PAYMENT",
@@ -1179,7 +1189,7 @@ export function App() {
       const methodText = paymentMethodLabel(method);
       setMesaActionMessage(`Esperando que el staff habilite ${methodText}.`);
       await requestCashPayment({
-        orderId: approvedOrderId,
+        orderId: paymentTargetOrderId,
         clientId,
         payerLabel,
         requestKind: "POSNET_PAYMENT",
@@ -1251,8 +1261,14 @@ export function App() {
 
   const reportPaymentFromTable = async () => {
     if (mesaActionBusy) return;
-    if (!approvedOrderId) {
-      setMesaActionMessage("Todavia no hay un pedido aprobado para pagar.");
+    const paymentTargetOrderId =
+      serviceMode === SERVICE_MODES.BAR ? approvedOrderId : restaurantCheckoutOrderId;
+    if (!paymentTargetOrderId) {
+      setMesaActionMessage(
+        serviceMode === SERVICE_MODES.BAR
+          ? "Todavia no hay un pedido aprobado para pagar."
+          : "Todavia no hay una cuenta de mesa lista para pagar."
+      );
       return;
     }
     if (!selectedPaymentMethod) {
@@ -1270,11 +1286,11 @@ export function App() {
       const payerLabel = tableCode ? `Mesa ${tableCode}` : `Cliente ${clientId.slice(-4) || "anon"}`;
       let activeSplit = null;
       try {
-        activeSplit = await fetchOrderSplit(approvedOrderId, tableSessionToken);
+        activeSplit = await fetchOrderSplit(paymentTargetOrderId, tableSessionToken);
       } catch {
       }
       if (!activeSplit) {
-        activeSplit = await createEqualSplit({ orderId: approvedOrderId, partsCount: 1, tableSessionToken });
+        activeSplit = await createEqualSplit({ orderId: paymentTargetOrderId, partsCount: 1, tableSessionToken });
       }
       latestHandledSplit = activeSplit;
 
@@ -1303,8 +1319,8 @@ export function App() {
 
       if (latestHandledSplit) {
         setMesaBillSplit(latestHandledSplit);
-        if (approvedOrderId) {
-          setPaymentFlowOrderId(approvedOrderId);
+        if (paymentTargetOrderId) {
+          setPaymentFlowOrderId(paymentTargetOrderId);
         }
       }
       setMesaActionMessage("Estamos verificando tu pago, aguarda hasta la confirmacion del staff.");
