@@ -1215,7 +1215,7 @@ export function App() {
           tableSessionToken,
         });
         setRestaurantCheckoutStatus("REQUESTED");
-        setMesaActionMessage("Cuenta solicitada. Esperando que el staff habilite el cierre.");
+        setMesaActionMessage("");
       } catch (error) {
         setMesaActionMessage(error.message || "No se pudo pedir la cuenta.");
       } finally {
