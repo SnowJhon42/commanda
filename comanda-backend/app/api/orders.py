@@ -39,6 +39,7 @@ ACTIVE_TABLE_SESSION_STATUSES = (
     TableSessionStatus.MESA_OCUPADA.value,
     TableSessionStatus.CON_PEDIDO.value,
 )
+RESTAURANT_CHECKOUT_NONE = "NONE"
 
 
 def _order_flow_defaults(service_mode: str) -> tuple[str, str]:
@@ -94,6 +95,8 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)) -> 
     if open_table_session:
         open_table_session.guest_count = max(int(open_table_session.guest_count or 1), int(payload.guest_count))
         open_table_session.status = TableSessionStatus.CON_PEDIDO.value
+        if service_mode != ServiceMode.BAR.value:
+            open_table_session.checkout_status = RESTAURANT_CHECKOUT_NONE
         db.add(open_table_session)
 
     db.commit()

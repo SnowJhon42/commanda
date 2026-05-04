@@ -395,8 +395,18 @@ def request_restaurant_checkout(
     if table_session.status not in ACTIVE_TABLE_SESSION_STATUSES:
         raise HTTPException(status_code=409, detail="La mesa ya esta cerrada.")
 
-    active_order = _active_order_for_session(db, table_session_id=table_session.id, store_id=table_session.store_id)
-    if not active_order or active_order.review_status != OrderReviewStatus.APPROVED.value:
+    checkout_order = db.scalar(
+        select(Order)
+        .where(
+            Order.table_session_id == table_session.id,
+            Order.store_id == table_session.store_id,
+            Order.service_mode == ServiceMode.RESTAURANTE.value,
+            Order.review_status == OrderReviewStatus.APPROVED.value,
+        )
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .limit(1)
+    )
+    if not checkout_order:
         raise HTTPException(status_code=409, detail="Todavia no hay una cuenta lista para cerrar.")
 
     table_session.checkout_status = RESTAURANT_CHECKOUT_REQUESTED
@@ -544,6 +554,8 @@ def upsert_order_by_table(
     )
     table_session.guest_count = max(int(table_session.guest_count or 1), int(payload.guest_count))
     table_session.status = TableSessionStatus.CON_PEDIDO.value
+    if service_mode != ServiceMode.BAR.value:
+        table_session.checkout_status = RESTAURANT_CHECKOUT_NONE
     db.add(table_session)
     order.status_aggregated = recompute_order_status_from_items(db, order.id)
     order.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
