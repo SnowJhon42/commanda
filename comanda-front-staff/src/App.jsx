@@ -490,10 +490,12 @@ export function App() {
     [tableSessionsRows]
   );
 
-  const loadBoard = useCallback(async () => {
+  const loadBoard = useCallback(async ({ silent = false } = {}) => {
     if (!session) return;
-    setLoading(true);
-    setError("");
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       if (session.staff.sector === "ADMIN") {
         const backendStatusFilter =
@@ -560,7 +562,9 @@ export function App() {
     } catch (err) {
       setError(err.message || "No se pudieron cargar datos del tablero.");
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [session, statusFilter, adminQueueFilter, adminView, playAlarm]);
 
@@ -1082,7 +1086,7 @@ export function App() {
       }
       await resolveCashRequest({ token: session.access_token, cashRequestId });
       await loadTableSessions();
-      await loadBoard();
+      await loadBoard({ silent: true });
       if (selectedOrderId) {
         await loadOrderDetail();
       }
