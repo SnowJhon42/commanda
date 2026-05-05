@@ -1822,6 +1822,7 @@ export function App() {
     const stream = openStaffEvents({
       storeId: session.staff.store_id,
       sector: session.staff.sector,
+      token: session.access_token,
     });
     let refreshTimer = null;
 

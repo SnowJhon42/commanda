@@ -10,12 +10,19 @@ from app.core.config import settings
 from app.db.models import Sector, StaffAccount
 from app.db.session import get_db
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/sector-login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/sector-login", auto_error=False)
 
 
-def get_current_staff(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> StaffAccount:
+def get_current_staff(
+    token: str | None = Depends(oauth2_scheme),
+    access_token_query: str | None = Query(default=None, alias="access_token"),
+    db: Session = Depends(get_db),
+) -> StaffAccount:
+    token_value = token or access_token_query
+    if not token_value:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(token_value, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         staff_id = payload.get("staff_id")
         if staff_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")

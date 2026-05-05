@@ -935,8 +935,9 @@ export async function patchStaffAccount({ token, storeId, staffId, ownerPassword
   }
 }
 
-export function openStaffEvents({ storeId, sector }) {
+export function openStaffEvents({ storeId, sector, token }) {
   const qs = new URLSearchParams({ store_id: String(storeId) });
   if (sector) qs.append("sector", sector);
+  if (token) qs.append("access_token", token);
   return new EventSource(`${API_URL}/events/items/stream?${qs.toString()}`);
 }
