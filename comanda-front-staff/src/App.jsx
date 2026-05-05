@@ -442,6 +442,7 @@ export function App() {
   const adminOrderSnapshotReadyRef = useRef(false);
   const attemptedAutoPrintRef = useRef(new Set());
   const autoPrintBusyRef = useRef(false);
+  const boardRefreshInFlightRef = useRef(false);
 
   const playAlarm = useCallback((kind) => {
     if (!soundEnabled || typeof window === "undefined") return;
@@ -1718,9 +1719,10 @@ export function App() {
     }
   }, [adminViewOrder]);
 
-  useEffect(() => {
-    if (!session) return;
-    const poll = async () => {
+  const runBoardRefresh = useCallback(async () => {
+    if (!session || boardRefreshInFlightRef.current) return;
+    boardRefreshInFlightRef.current = true;
+    try {
       if (session.staff.sector === "ADMIN" && adminStartupGate && adminStartupGate !== "READY") {
         await loadShiftState();
         return;
@@ -1764,6 +1766,27 @@ export function App() {
       if (selectedOrderId) {
         await loadOrderDetail();
       }
+    } finally {
+      boardRefreshInFlightRef.current = false;
+    }
+  }, [
+    session,
+    adminStartupGate,
+    adminView,
+    selectedOrderId,
+    loadBoard,
+    loadFeedback,
+    loadTableSessions,
+    loadOrderDetail,
+    loadShiftState,
+    loadShiftSummaries,
+    loadTables,
+  ]);
+
+  useEffect(() => {
+    if (!session) return;
+    const poll = async () => {
+      await runBoardRefresh();
     };
     poll();
     if (session.staff.sector === "ADMIN" && adminStartupGate && adminStartupGate !== "READY") {
@@ -1777,7 +1800,7 @@ export function App() {
     }
     const timer = setInterval(poll, 10000);
     return () => clearInterval(timer);
-  }, [session, adminView, adminStartupGate, selectedOrderId, loadBoard, loadFeedback, loadTableSessions, loadOrderDetail, loadStoreClientVisibility, loadStorePrintMode, loadShiftState, loadShiftSummaries, loadTables]);
+  }, [session, adminStartupGate, loadStoreClientVisibility, loadStorePrintMode, loadShiftState, loadShiftSummaries, loadTables, runBoardRefresh]);
 
   useEffect(() => {
     if (
@@ -1802,24 +1825,7 @@ export function App() {
       if (refreshTimer) return;
       refreshTimer = setTimeout(async () => {
         refreshTimer = null;
-        if (session.staff.sector === "ADMIN" && adminView === "FEEDBACK") {
-          await loadFeedback();
-        } else {
-          await loadBoard();
-        }
-        if (session.staff.sector === "ADMIN") {
-          await loadTables();
-        }
-        await loadTableSessions();
-        if (session.staff.sector === "ADMIN") {
-          await loadShiftState();
-          if (adminView === "SUMMARIES") {
-            await loadShiftSummaries();
-          }
-        }
-        if (selectedOrderId) {
-          await loadOrderDetail();
-        }
+        await runBoardRefresh();
       }, 1200);
     };
 
@@ -1964,7 +1970,7 @@ export function App() {
       stream.close();
       setLiveConnected(false);
     };
-  }, [session, adminView, adminStartupGate, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, loadTableSessions, loadShiftState, loadShiftSummaries, playAlarm, loadTables]);
+  }, [session, adminView, adminStartupGate, selectedOrderId, loadBoard, loadFeedback, loadOrderDetail, loadTableSessions, loadShiftState, loadShiftSummaries, playAlarm, loadTables, runBoardRefresh]);
 
   useEffect(() => {
     if (!session || session.staff.sector === "ADMIN") return;
