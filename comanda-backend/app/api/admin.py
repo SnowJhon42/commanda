@@ -7,6 +7,8 @@ from app.api.deps import get_current_staff
 from app.core.security import verify_pin
 from app.db.models import (
     BillPartPaymentStatus,
+    BillSplit,
+    BillSplitPart,
     BillSplitStatus,
     FulfillmentSector,
     ItemStatusEvent,
@@ -671,11 +673,84 @@ def list_admin_orders(
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     orders_with_table = db.execute(query.order_by(Order.created_at.desc()).limit(limit).offset(offset)).unique().all()
     now_utc = datetime.now(tz=timezone.utc)
+    order_ids = [int(order.id) for order, _table in orders_with_table]
+
+    latest_split_rows = db.execute(
+        select(BillSplit.order_id, func.max(BillSplit.id).label("bill_split_id"))
+        .where(BillSplit.order_id.in_(order_ids))
+        .group_by(BillSplit.order_id)
+    ).all() if order_ids else []
+    latest_split_id_by_order = {int(order_id): int(bill_split_id) for order_id, bill_split_id in latest_split_rows if bill_split_id is not None}
+    latest_split_ids = list(latest_split_id_by_order.values())
+
+    split_by_id = {
+        int(split.id): split
+        for split in (
+            db.scalars(select(BillSplit).where(BillSplit.id.in_(latest_split_ids))).all() if latest_split_ids else []
+        )
+    }
+    parts_by_split_id: dict[int, list[BillSplitPart]] = {}
+    if latest_split_ids:
+        parts = db.scalars(
+            select(BillSplitPart)
+            .where(BillSplitPart.bill_split_id.in_(latest_split_ids))
+            .order_by(BillSplitPart.bill_split_id.asc(), BillSplitPart.id.asc())
+        ).all()
+        for part in parts:
+            parts_by_split_id.setdefault(int(part.bill_split_id), []).append(part)
+
+    cash_pending_rows = db.execute(
+        select(
+            TableSessionCashRequest.order_id,
+            func.count().label("pending_count"),
+        )
+        .where(
+            TableSessionCashRequest.order_id.in_(order_ids),
+            TableSessionCashRequest.request_kind == "CASH_PAYMENT",
+            TableSessionCashRequest.status == "PENDING",
+        )
+        .group_by(TableSessionCashRequest.order_id)
+    ).all() if order_ids else []
+    cash_pending_by_order = {int(order_id): int(pending_count or 0) for order_id, pending_count in cash_pending_rows}
 
     items: list[AdminOrderSummaryOut] = []
     for order, table in orders_with_table:
-        has_pending_payment = _order_has_pending_payment(db, order)
-        bill_split = to_bill_split_out(db, get_latest_bill_split(db, order.id))
+        total_amount = _order_total_amount(order)
+        latest_split = split_by_id.get(latest_split_id_by_order.get(int(order.id), -1))
+        split_parts = parts_by_split_id.get(int(latest_split.id), []) if latest_split else []
+        cash_pending = cash_pending_by_order.get(int(order.id), 0)
+
+        if order.review_status != OrderReviewStatus.APPROVED.value:
+            has_pending_payment = False
+            payment_confirmed = False
+            reported_payment_method = None
+        elif order.payment_gate == PaymentGate.BEFORE_PREPARATION.value:
+            payment_confirmed = order.payment_status == OrderPaymentStatus.CONFIRMED.value
+            has_pending_payment = not payment_confirmed
+            reported_payment_method = None
+        elif total_amount <= 0:
+            payment_confirmed = True
+            has_pending_payment = False
+            reported_payment_method = None
+        else:
+            split_closed = bool(latest_split and latest_split.status == BillSplitStatus.CLOSED.value)
+            all_confirmed = bool(split_parts) and all(part.payment_status == BillPartPaymentStatus.CONFIRMED.value for part in split_parts)
+            payment_confirmed = split_closed and all_confirmed
+            if cash_pending > 0:
+                has_pending_payment = True
+            elif not latest_split:
+                has_pending_payment = False
+            elif latest_split.status != BillSplitStatus.CLOSED.value:
+                has_pending_payment = True
+            else:
+                has_pending_payment = any(part.payment_status != BillPartPaymentStatus.CONFIRMED.value for part in split_parts)
+
+            reported_parts = [part for part in split_parts if part.payment_status == BillPartPaymentStatus.REPORTED.value]
+            if reported_parts:
+                reported_parts.sort(key=lambda part: part.reported_at or datetime.min, reverse=True)
+                reported_payment_method = reported_parts[0].payment_method or None
+            else:
+                reported_payment_method = None
 
         items.append(
             AdminOrderSummaryOut(
@@ -684,7 +759,7 @@ def list_admin_orders(
                 guest_count=order.guest_count,
                 total_items=sum(item.qty for item in order.items),
                 delivered_items=sum(item.qty for item in order.items if item.status == OrderStatus.DELIVERED.value),
-                total_amount=_order_total_amount(order),
+                total_amount=total_amount,
                 status_aggregated=order.status_aggregated,
                 review_status=order.review_status,
                 has_pending_payment=has_pending_payment,
@@ -699,12 +774,12 @@ def list_admin_orders(
                 ),
                 created_at=order.created_at,
                 updated_at=order.updated_at,
-                bill_split_closed=bool(bill_split and bill_split.status == BillSplitStatus.CLOSED.value),
-                payment_confirmed=_order_payment_confirmed(db, order),
+                bill_split_closed=bool(latest_split and latest_split.status == BillSplitStatus.CLOSED.value),
+                payment_confirmed=payment_confirmed,
                 service_mode=order.service_mode,
                 payment_gate=order.payment_gate,
                 payment_status=order.payment_status,
-                reported_payment_method=_reported_payment_method_for_order(db, order),
+                reported_payment_method=reported_payment_method,
                 print_status=build_order_print_status(order),
             )
         )
