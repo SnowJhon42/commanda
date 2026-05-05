@@ -374,9 +374,11 @@ export function AdminBoardPage({
             ? pendingOrders
             : effectiveOrders;
         const leadOrder = visibleOrders[0] || effectiveOrders[0] || null;
-        const qty = visibleOrders.reduce((sum, order) => sum + Number(order.total_items || 0), 0);
-        const delivered = visibleOrders.reduce((sum, order) => sum + Number(order.delivered_items || 0), 0);
-        const total = visibleOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+        const rowServiceMode = leadOrder?.service_mode || tableSession?.service_mode || "RESTAURANTE";
+        const aggregationOrders = rowServiceMode === "BAR" ? visibleOrders : effectiveOrders;
+        const qty = aggregationOrders.reduce((sum, order) => sum + Number(order.total_items || 0), 0);
+        const delivered = aggregationOrders.reduce((sum, order) => sum + Number(order.delivered_items || 0), 0);
+        const total = aggregationOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
         const hasPendingReview = effectiveOrders.some((order) => order.review_status === "PENDING");
         const hasPendingPayment = effectiveOrders.some(
           (order) => order.review_status === "APPROVED" && Boolean(order.has_pending_payment)
@@ -395,7 +397,7 @@ export function AdminBoardPage({
         const checkoutStatus = String(tableSession?.checkout_status || "NONE");
         const sectorList = [
           ...new Set(
-            visibleOrders.flatMap((order) =>
+            aggregationOrders.flatMap((order) =>
               (
                 order.review_status !== "APPROVED" ||
                 (
@@ -415,7 +417,7 @@ export function AdminBoardPage({
         const hasItems = qty > 0;
         const allDelivered = hasItems && delivered >= qty;
         const restaurantCheckoutActive =
-          leadOrder?.service_mode !== "BAR" &&
+          rowServiceMode !== "BAR" &&
           (checkoutStatus === "REQUESTED" || checkoutStatus === "READY" || hasPendingCashPayment || hasReportedPayment || hasConfirmedPayment);
         const status =
           hasPendingReview
@@ -424,7 +426,7 @@ export function AdminBoardPage({
             ? "SIN_PEDIDO"
             : !sessionOpen
             ? "CERRADA"
-            : leadOrder?.service_mode !== "BAR" && checkoutStatus === "REQUESTED"
+            : rowServiceMode !== "BAR" && checkoutStatus === "REQUESTED"
             ? "PAGO_SOLICITADO"
             : hasPendingCashPayment
             ? "PAGO_SOLICITADO"
@@ -434,16 +436,16 @@ export function AdminBoardPage({
             ? "LISTA_PARA_CERRAR"
             : hasConfirmedPayment
             ? "PAGO_CONFIRMADO"
-            : hasPendingPayment && (leadOrder?.service_mode === "BAR" || checkoutStatus === "READY" || restaurantCheckoutActive)
+            : hasPendingPayment && (rowServiceMode === "BAR" || checkoutStatus === "READY" || restaurantCheckoutActive)
             ? "ESPERANDO_PAGO"
             : allDelivered
-            ? leadOrder?.service_mode === "BAR" || checkoutStatus === "READY" || restaurantCheckoutActive
+            ? rowServiceMode === "BAR" || checkoutStatus === "READY" || restaurantCheckoutActive
               ? "ESPERANDO_PAGO"
               : "EN_SERVICIO"
             : "EN_SERVICIO";
-        const printStatuses = visibleOrders.map((order) => order.print_status?.overall_status || "NONE");
+        const printStatuses = aggregationOrders.map((order) => order.print_status?.overall_status || "NONE");
         const printStatus =
-          visibleOrders.length === 0
+          aggregationOrders.length === 0
             ? "NONE"
             : printStatuses.every((value) => value === "TOTAL")
             ? "TOTAL"
@@ -487,7 +489,7 @@ export function AdminBoardPage({
           recent_activity_at: leadOrder?.order_id ? Number(recentOrderActivity[leadOrder.order_id]?.at || 0) : 0,
           recent_activity_count: leadOrder?.order_id ? Number(recentOrderActivity[leadOrder.order_id]?.count || 0) : 0,
           lead_order_id: leadOrder?.order_id || null,
-          service_mode: leadOrder?.service_mode || tableSession?.service_mode || "RESTAURANTE",
+          service_mode: rowServiceMode,
           checkout_status: checkoutStatus,
           payment_gate: leadOrder?.payment_gate || "NONE",
           payment_status: leadOrder?.payment_status || "PENDING",
@@ -584,7 +586,9 @@ export function AdminBoardPage({
         row.lead_order_id && typeof onRequestOrderDetail === "function"
           ? onRequestOrderDetail(row.lead_order_id)
           : Promise.resolve(null),
-        kind === "TABLE" && row.table_session_id && typeof onRequestTableSessionConsumption === "function"
+        (kind === "TABLE" || kind === "SECTOR") &&
+        row.table_session_id &&
+        typeof onRequestTableSessionConsumption === "function"
           ? onRequestTableSessionConsumption(row.table_session_id)
           : Promise.resolve(null),
       ]);
@@ -704,7 +708,7 @@ export function AdminBoardPage({
     activeModal?.kind === "TABLE"
       ? modalSessionConsumption?.items || modalDetail?.items || []
       : activeModal?.kind === "SECTOR"
-      ? itemsInProcess(modalDetail?.items || []).filter((item) => item.sector === activeModal.sector)
+      ? (modalSessionConsumption?.items || modalDetail?.items || []).filter((item) => item.sector === activeModal.sector)
       : itemsInProcess(modalDetail?.items || []);
   const modalConsumptionTotal =
     activeModal?.kind === "TABLE"
