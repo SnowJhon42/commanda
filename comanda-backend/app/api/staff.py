@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -783,6 +784,88 @@ def _as_utc(reference_dt: datetime | None) -> datetime | None:
     if not reference_dt:
         return None
     return reference_dt.replace(tzinfo=timezone.utc) if reference_dt.tzinfo is None else reference_dt
+
+
+def _latest_active_sessions_by_table(
+    db: Session,
+    *,
+    store_id: int,
+    table_ids: list[int],
+) -> dict[int, TableSession]:
+    if not table_ids:
+        return {}
+
+    sessions = db.scalars(
+        select(TableSession)
+        .where(
+            TableSession.store_id == store_id,
+            TableSession.table_id.in_(table_ids),
+            TableSession.status.in_(ACTIVE_TABLE_SESSION_STATUSES),
+        )
+        .order_by(TableSession.table_id.asc(), TableSession.created_at.desc(), TableSession.id.desc())
+    ).all()
+
+    latest_by_table: dict[int, TableSession] = {}
+    for table_session in sessions:
+        if table_session.table_id not in latest_by_table:
+            latest_by_table[table_session.table_id] = table_session
+    return latest_by_table
+
+
+def _active_order_maps_by_session(
+    db: Session,
+    *,
+    store_id: int,
+    table_session_ids: list[int],
+) -> tuple[dict[int, Order], dict[int, int]]:
+    if not table_session_ids:
+        return {}, {}
+
+    orders = db.scalars(
+        select(Order)
+        .where(
+            Order.table_session_id.in_(table_session_ids),
+            Order.store_id == store_id,
+            Order.status_aggregated != OrderStatus.DELIVERED.value,
+            Order.review_status != OrderReviewStatus.REJECTED.value,
+        )
+        .order_by(Order.table_session_id.asc(), Order.created_at.desc(), Order.id.desc())
+    ).all()
+
+    latest_by_session: dict[int, Order] = {}
+    count_by_session: dict[int, int] = defaultdict(int)
+    for order in orders:
+        if order.table_session_id is None:
+            continue
+        session_id = int(order.table_session_id)
+        if session_id not in latest_by_session:
+            latest_by_session[session_id] = order
+        count_by_session[session_id] += 1
+    return latest_by_session, dict(count_by_session)
+
+
+def _table_session_client_stats(
+    db: Session,
+    *,
+    table_session_ids: list[int],
+) -> dict[int, tuple[int, datetime | None]]:
+    if not table_session_ids:
+        return {}
+
+    rows = db.execute(
+        select(
+            TableSessionClient.table_session_id,
+            func.count().label("connected_clients"),
+            func.max(TableSessionClient.last_seen_at).label("latest_client_seen_at"),
+        )
+        .where(TableSessionClient.table_session_id.in_(table_session_ids))
+        .group_by(TableSessionClient.table_session_id)
+    ).all()
+
+    return {
+        int(table_session_id): (int(connected_clients or 0), latest_client_seen_at)
+        for table_session_id, connected_clients, latest_client_seen_at in rows
+    }
 
 
 def _finalize_table_session_orders(db: Session, *, table_session: TableSession, staff_id: int) -> list[Order]:
@@ -1834,45 +1917,29 @@ def list_staff_tables(
         .order_by(Table.code.asc(), Table.id.asc())
     ).all()
 
+    table_ids = [int(table.id) for table in tables]
+    latest_sessions_by_table = _latest_active_sessions_by_table(db, store_id=store_id, table_ids=table_ids)
+    active_session_ids = [int(table_session.id) for table_session in latest_sessions_by_table.values()]
+    latest_orders_by_session, _active_order_counts = _active_order_maps_by_session(
+        db,
+        store_id=store_id,
+        table_session_ids=active_session_ids,
+    )
+    client_stats_by_session = _table_session_client_stats(db, table_session_ids=active_session_ids)
+
     items: list[StaffTableOut] = []
     now_utc = datetime.now(tz=timezone.utc)
     for table in tables:
-        table_session = db.scalar(
-            select(TableSession)
-            .where(
-                TableSession.store_id == store_id,
-                TableSession.table_id == table.id,
-                TableSession.status.in_(ACTIVE_TABLE_SESSION_STATUSES),
-            )
-            .order_by(TableSession.created_at.desc(), TableSession.id.desc())
-            .limit(1)
-        )
+        table_session = latest_sessions_by_table.get(int(table.id))
         active_order = None
         connected_clients = 0
+        latest_client_seen_at = None
         elapsed_minutes = 0
         current_status = "LIBRE"
 
         if table_session:
-            active_order = db.scalar(
-                select(Order)
-                .where(
-                    Order.table_session_id == table_session.id,
-                    Order.store_id == store_id,
-                    Order.status_aggregated != OrderStatus.DELIVERED.value,
-                    Order.review_status != OrderReviewStatus.REJECTED.value,
-                )
-                .order_by(Order.created_at.desc(), Order.id.desc())
-                .limit(1)
-            )
-            connected_clients = int(
-                db.scalar(
-                    select(func.count()).select_from(TableSessionClient).where(TableSessionClient.table_session_id == table_session.id)
-                )
-                or 0
-            )
-            latest_client_seen_at = db.scalar(
-                select(func.max(TableSessionClient.last_seen_at)).where(TableSessionClient.table_session_id == table_session.id)
-            )
+            active_order = latest_orders_by_session.get(int(table_session.id))
+            connected_clients, latest_client_seen_at = client_stats_by_session.get(int(table_session.id), (0, None))
             elapsed_reference = max(
                 [
                     candidate
@@ -1959,67 +2026,37 @@ def list_staff_table_sessions(
         raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
 
     safe_limit = min(max(limit, 1), 300)
-    active_order_exists = (
-        select(func.count())
-        .select_from(Order)
-        .where(
-            Order.table_session_id == TableSession.id,
-            Order.store_id == store_id,
-            Order.status_aggregated != OrderStatus.DELIVERED.value,
-            Order.review_status != OrderReviewStatus.REJECTED.value,
-        )
-        .correlate(TableSession)
-        .scalar_subquery()
-    )
-    connected_clients_subq = (
-        select(func.count())
-        .select_from(TableSessionClient)
-        .where(TableSessionClient.table_session_id == TableSession.id)
-        .correlate(TableSession)
-        .scalar_subquery()
-    )
-
-    base_query = (
-        select(
-            TableSession,
-            Table,
-            active_order_exists.label("active_order_count"),
-            connected_clients_subq.label("connected_clients"),
-        )
+    rows = db.execute(
+        select(TableSession, Table)
         .join(Table, Table.id == TableSession.table_id)
         .where(
             TableSession.store_id == store_id,
             TableSession.status.in_(ACTIVE_TABLE_SESSION_STATUSES),
         )
-    )
-    if only_without_order:
-        base_query = base_query.where(active_order_exists == 0)
-
-    total = db.scalar(select(func.count()).select_from(base_query.subquery())) or 0
-    rows = db.execute(
-        base_query
         .order_by(TableSession.created_at.desc(), TableSession.id.desc())
-        .limit(safe_limit)
-        .offset(offset)
     ).all()
+
+    table_session_ids = [int(table_session.id) for table_session, _table in rows]
+    latest_orders_by_session, active_order_counts = _active_order_maps_by_session(
+        db,
+        store_id=store_id,
+        table_session_ids=table_session_ids,
+    )
+    client_stats_by_session = _table_session_client_stats(db, table_session_ids=table_session_ids)
+
+    filtered_rows = [
+        (table_session, table)
+        for table_session, table in rows
+        if not only_without_order or active_order_counts.get(int(table_session.id), 0) == 0
+    ]
+    total = len(filtered_rows)
+    paged_rows = filtered_rows[offset : offset + safe_limit]
 
     items = []
     now_utc = datetime.now(tz=timezone.utc)
-    for table_session, table, _active_count, connected_clients in rows:
-        active_order = db.scalar(
-            select(Order)
-            .where(
-                Order.table_session_id == table_session.id,
-                Order.store_id == store_id,
-                Order.status_aggregated != OrderStatus.DELIVERED.value,
-                Order.review_status != OrderReviewStatus.REJECTED.value,
-            )
-            .order_by(Order.created_at.desc(), Order.id.desc())
-            .limit(1)
-        )
-        latest_client_seen_at = db.scalar(
-            select(func.max(TableSessionClient.last_seen_at)).where(TableSessionClient.table_session_id == table_session.id)
-        )
+    for table_session, table in paged_rows:
+        active_order = latest_orders_by_session.get(int(table_session.id))
+        connected_clients, latest_client_seen_at = client_stats_by_session.get(int(table_session.id), (0, None))
         elapsed_reference = max(
             [candidate for candidate in [_as_utc(active_order.created_at) if active_order else None, _as_utc(latest_client_seen_at), _as_utc(table_session.created_at)] if candidate is not None],
             default=None,
