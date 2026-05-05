@@ -63,6 +63,8 @@ from app.schemas.orders import (
     CashSessionOut,
     CashSessionResponse,
     ForceCloseTableSessionResponse,
+    HistoricalSectorAverageOut,
+    HistoricalServiceTimesOut,
     ItemStatusEventOut,
     MarkOrderPrintRequest,
     MarkOrderPrintResponse,
@@ -533,6 +535,7 @@ def _empty_shift_summary() -> ShiftSummaryOut:
         cash_session=None,
         top_products=[],
         top_beverages=[],
+        historical_service_times=HistoricalServiceTimesOut(),
     )
 
 
@@ -549,6 +552,71 @@ def _latest_active_shift(db: Session, store_id: int) -> ServiceShift | None:
     )
 
 
+def _build_historical_service_times(db: Session, *, store_id: int) -> HistoricalServiceTimesOut:
+    closed_sessions = db.scalars(
+        select(TableSession)
+        .where(TableSession.store_id == store_id, TableSession.closed_at.is_not(None))
+        .order_by(TableSession.closed_at.desc(), TableSession.id.desc())
+    ).all()
+    if not closed_sessions:
+        return HistoricalServiceTimesOut()
+
+    session_ids = [session.id for session in closed_sessions]
+    orders = db.scalars(
+        select(Order)
+        .where(Order.store_id == store_id, Order.table_session_id.in_(session_ids))
+        .options(joinedload(Order.items))
+    ).unique().all()
+
+    orders_by_session: dict[int, list[Order]] = {}
+    for order in orders:
+        if order.table_session_id is None:
+            continue
+        orders_by_session.setdefault(order.table_session_id, []).append(order)
+
+    total_table_duration = 0
+    sector_durations: dict[str, list[int]] = {}
+    now_utc = datetime.now(tz=timezone.utc)
+
+    for table_session in closed_sessions:
+        total_table_duration += _minutes_since(table_session.created_at, _as_utc(table_session.closed_at) or now_utc)
+        for order in orders_by_session.get(table_session.id, []):
+            sector_items: dict[str, list[OrderItem]] = {}
+            for item in order.items:
+                sector_items.setdefault(item.sector, []).append(item)
+
+            for sector, items in sector_items.items():
+                completed_items = [
+                    item for item in items if item.status in {OrderStatus.DONE.value, OrderStatus.DELIVERED.value}
+                ]
+                if len(completed_items) != len(items):
+                    continue
+                start_candidates = [_as_utc(item.created_at) for item in items if _as_utc(item.created_at) is not None]
+                end_candidates = [
+                    _as_utc(item.updated_at) for item in completed_items if _as_utc(item.updated_at) is not None
+                ]
+                if not start_candidates or not end_candidates:
+                    continue
+                duration_minutes = _minutes_since(min(start_candidates), max(end_candidates) or now_utc)
+                sector_durations.setdefault(sector, []).append(duration_minutes)
+
+    sector_averages = [
+        HistoricalSectorAverageOut(
+            sector=sector,
+            cases_count=len(durations),
+            avg_duration_minutes=int(round(sum(durations) / len(durations))) if durations else 0,
+        )
+        for sector, durations in sorted(sector_durations.items())
+        if durations
+    ]
+
+    return HistoricalServiceTimesOut(
+        avg_table_duration_minutes=int(round(total_table_duration / len(closed_sessions))) if closed_sessions else 0,
+        closed_tables_count=len(closed_sessions),
+        sector_averages=sector_averages,
+    )
+
+
 def _shift_for_open_cash_session(db: Session, store_id: int) -> ServiceShift | None:
     cash_session = _current_cash_session(db, store_id)
     if not cash_session or not cash_session.service_shift_id:
@@ -557,6 +625,7 @@ def _shift_for_open_cash_session(db: Session, store_id: int) -> ServiceShift | N
 
 
 def _build_shift_summary(db: Session, *, shift: ServiceShift) -> ShiftSummaryOut:
+    historical_service_times = _build_historical_service_times(db, store_id=shift.store_id)
     cash_session = db.scalar(
         select(CashSession)
         .where(CashSession.service_shift_id == shift.id)
@@ -621,6 +690,7 @@ def _build_shift_summary(db: Session, *, shift: ServiceShift) -> ShiftSummaryOut
         empty.pending_orders = pending_payment_orders
         empty.pending_orders_count = len(pending_payment_orders)
         empty.cash_session = _serialize_cash_session_out(db, cash_session) if cash_session else None
+        empty.historical_service_times = historical_service_times
         return empty
 
     session_ids = [session.id for session in closed_sessions]
@@ -684,6 +754,7 @@ def _build_shift_summary(db: Session, *, shift: ServiceShift) -> ShiftSummaryOut
         cash_session=_serialize_cash_session_out(db, cash_session) if cash_session else None,
         top_products=[],
         top_beverages=[],
+        historical_service_times=historical_service_times,
     )
 
 

@@ -16,6 +16,13 @@ function paymentMethodLabel(value) {
   return value || "Otro";
 }
 
+function sectorLabel(value) {
+  if (value === "KITCHEN") return "Cocina";
+  if (value === "BAR") return "Barra";
+  if (value === "WAITER") return "Mozo";
+  return value || "-";
+}
+
 function elapsedLabel(minutesValue) {
   const minutes = Number(minutesValue || 0);
   if (!Number.isFinite(minutes) || minutes <= 0) return "--";
@@ -41,6 +48,11 @@ export function ShiftClosurePage({
     pendingOrders: [],
     pendingOrdersCount: 0,
     cashSession: null,
+    historicalServiceTimes: {
+      avgTableDurationMinutes: 0,
+      closedTablesCount: 0,
+      sectorAverages: [],
+    },
   },
   cashBusy = false,
   collectingPaymentKey = "",
@@ -313,6 +325,38 @@ export function ShiftClosurePage({
                 <span>Pedidos pendientes</span>
                 <strong>{shiftSummary.pendingOrdersCount || 0}</strong>
               </article>
+            </div>
+
+            <div className="shift-placeholder-block" style={{ marginTop: 18 }}>
+              <div>
+                <h5>Tiempos históricos del local</h5>
+                <div className="shift-stats-grid" style={{ marginTop: 12 }}>
+                  <article className="shift-stat-box">
+                    <span>Tiempo promedio mesa</span>
+                    <strong>{elapsedLabel(shiftSummary.historicalServiceTimes?.avgTableDurationMinutes)}</strong>
+                  </article>
+                  <article className="shift-stat-box">
+                    <span>Mesas analizadas</span>
+                    <strong>{shiftSummary.historicalServiceTimes?.closedTablesCount || 0}</strong>
+                  </article>
+                </div>
+              </div>
+              <div>
+                <h5>Promedio por sector</h5>
+                {shiftSummary.historicalServiceTimes?.sectorAverages?.length ? (
+                  <div className="shift-closed-table-list">
+                    {shiftSummary.historicalServiceTimes.sectorAverages.map((entry) => (
+                      <div key={entry.sector} className="shift-closed-table-row">
+                        <strong>{sectorLabel(entry.sector)}</strong>
+                        <span>{entry.casesCount} casos</span>
+                        <span>{elapsedLabel(entry.avgDurationMinutes)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">Todavía no hay sectores cerrados suficientes para calcular promedios.</p>
+                )}
+              </div>
             </div>
 
             <div className="shift-placeholder-block">

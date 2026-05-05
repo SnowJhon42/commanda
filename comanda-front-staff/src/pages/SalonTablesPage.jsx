@@ -424,20 +424,8 @@ export function SalonTablesPage({
     };
   }, [handlePointerMove, stopInteraction]);
 
-  const handleCanvasWheel = (event) => {
-    event.preventDefault();
-    if (!canvasRef.current) return;
-    const screenPoint = getScreenPoint(canvasRef.current, event);
-    setViewport((current) => {
-      const nextZoom = clamp(current.zoom + (event.deltaY < 0 ? 0.12 : -0.12), MIN_ZOOM, MAX_ZOOM);
-      if (nextZoom === current.zoom) return current;
-      const worldBefore = screenToWorld(screenPoint, current);
-      return {
-        zoom: nextZoom,
-        panX: screenPoint.x - worldBefore.x * nextZoom,
-        panY: screenPoint.y - worldBefore.y * nextZoom,
-      };
-    });
+  const handleCanvasWheel = () => {
+    return;
   };
 
   const handleCanvasPointerDown = (event) => {

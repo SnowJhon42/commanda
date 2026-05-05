@@ -343,6 +343,18 @@ class ShiftPaymentMethodSummaryOut(BaseModel):
     payments_count: int
 
 
+class HistoricalSectorAverageOut(BaseModel):
+    sector: str
+    cases_count: int
+    avg_duration_minutes: int
+
+
+class HistoricalServiceTimesOut(BaseModel):
+    avg_table_duration_minutes: int = 0
+    closed_tables_count: int = 0
+    sector_averages: list[HistoricalSectorAverageOut] = []
+
+
 class ShiftPendingOrderOut(BaseModel):
     order_id: int
     table_code: str
@@ -386,6 +398,7 @@ class ShiftSummaryOut(BaseModel):
     cash_session: CashSessionOut | None = None
     top_products: list[dict] = []
     top_beverages: list[dict] = []
+    historical_service_times: HistoricalServiceTimesOut = HistoricalServiceTimesOut()
 
 
 class StaffShiftOut(BaseModel):

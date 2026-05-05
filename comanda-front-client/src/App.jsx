@@ -357,6 +357,26 @@ export function App() {
     loadMenu();
   }, [storeId]);
 
+  useEffect(() => {
+    if (!closedSession || !storeId) return;
+    let cancelled = false;
+
+    const refreshMenuForClosedSession = async () => {
+      try {
+        const payload = await fetchMenu(storeId);
+        if (!cancelled) {
+          setMenu(payload);
+        }
+      } catch {
+      }
+    };
+
+    refreshMenuForClosedSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [closedSession, storeId]);
+
   const cartTotal = useMemo(
     () => cartItems.reduce((acc, item) => acc + item.unit_price * item.qty, 0),
     [cartItems]

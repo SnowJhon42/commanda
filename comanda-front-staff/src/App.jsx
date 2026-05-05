@@ -133,6 +133,17 @@ function toShiftSummary(summary) {
     paymentTotals,
     pendingOrders,
     pendingOrdersCount: Number(summary?.pending_orders_count || pendingOrders.length || 0),
+    historicalServiceTimes: {
+      avgTableDurationMinutes: Number(summary?.historical_service_times?.avg_table_duration_minutes || 0),
+      closedTablesCount: Number(summary?.historical_service_times?.closed_tables_count || 0),
+      sectorAverages: Array.isArray(summary?.historical_service_times?.sector_averages)
+        ? summary.historical_service_times.sector_averages.map((entry) => ({
+            sector: entry.sector,
+            casesCount: Number(entry.cases_count || 0),
+            avgDurationMinutes: Number(entry.avg_duration_minutes || 0),
+          }))
+        : [],
+    },
     cashSession: summary?.cash_session
         ? {
             id: summary.cash_session.id,
