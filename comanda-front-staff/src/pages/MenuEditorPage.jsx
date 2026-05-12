@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  createAdminMenuCategory,
   createAdminProductExtraOption,
   createAdminProduct,
   commitMenuImport,
@@ -64,6 +65,7 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
   const [imageUploading, setImageUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [extraForm, setExtraForm] = useState({ name: "", extra_price: "0" });
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -73,6 +75,7 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
   const [importSource, setImportSource] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importImageUploadingId, setImportImageUploadingId] = useState("");
+  const [creatingCategory, setCreatingCategory] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!unlocked || !ownerPassword.trim()) {
@@ -356,6 +359,33 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
     [ownerPassword, token, loadData, editingId, resetForm]
   );
 
+  const handleCreateCategory = useCallback(async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      setError("Ingresá un nombre para la categoría.");
+      return;
+    }
+
+    setCreatingCategory(true);
+    setError("");
+    setMessage("");
+    try {
+      const created = await createAdminMenuCategory({
+        token,
+        ownerPassword,
+        payload: { name },
+      });
+      await loadData();
+      setForm((prev) => ({ ...prev, category_id: String(created.id) }));
+      setNewCategoryName("");
+      setMessage(`Categoría "${created.name}" lista para usar.`);
+    } catch (err) {
+      setError(err.message || "No se pudo crear la categoría.");
+    } finally {
+      setCreatingCategory(false);
+    }
+  }, [loadData, newCategoryName, ownerPassword, token]);
+
   const createExtraOption = useCallback(async () => {
     const name = extraForm.name.trim();
     if (!name) {
@@ -635,6 +665,26 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
                     ))}
                   </select>
                 </label>
+                <div className="field field-span-2">
+                  <span>Nueva categoría</span>
+                  <div className="menu-category-inline">
+                    <input
+                      type="text"
+                      value={newCategoryName}
+                      onChange={(event) => setNewCategoryName(event.target.value)}
+                      placeholder="Pizzas, Cafetería, Especiales..."
+                    />
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      onClick={handleCreateCategory}
+                      disabled={creatingCategory || loading}
+                    >
+                      {creatingCategory ? "Creando..." : "Crear categoría"}
+                    </button>
+                  </div>
+                  <small className="muted">La creamos y queda seleccionada automáticamente en este producto.</small>
+                </div>
                 <label className="field field-inline-check">
                   <span>Visible para cliente</span>
                   <input

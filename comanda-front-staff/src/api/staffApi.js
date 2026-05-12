@@ -17,6 +17,16 @@ async function toApiError(res, fallbackMessage) {
   throw error;
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function withOwnerPassword(headers = {}, ownerPassword) {
   const trimmed = String(ownerPassword || "").trim();
   if (!trimmed) return headers;
@@ -24,6 +34,9 @@ function withOwnerPassword(headers = {}, ownerPassword) {
 }
 
 function toNetworkError(error, fallbackMessage) {
+  if (error?.name === "AbortError") {
+    return new Error(`El backend no respondio a tiempo (${API_URL}).`);
+  }
   if (error?.name === "TypeError") {
     return new Error(
       `No se pudo conectar con el backend (${API_URL}). Verifica que este levantado y responda en /health.`
@@ -35,7 +48,7 @@ function toNetworkError(error, fallbackMessage) {
 
 export async function sectorLogin(payload) {
   try {
-    const res = await fetch(`${API_URL}/auth/sector-login`, {
+    const res = await fetchWithTimeout(`${API_URL}/auth/sector-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -435,7 +448,7 @@ export async function suggestStoreProfileTheme({ token, payload }) {
 export async function fetchActiveShift({ token, storeId }) {
   try {
     const qs = new URLSearchParams({ store_id: String(storeId) });
-    const res = await fetch(`${API_URL}/staff/shifts/active?${qs.toString()}`, {
+    const res = await fetchWithTimeout(`${API_URL}/staff/shifts/active?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) await toApiError(res, "No se pudo cargar el turno activo.");

@@ -1,4 +1,5 @@
-﻿import "./globals.css";
+import "./globals.css";
+import "../src/styles.css";
 import { App } from "../src/App";
 
 export default function Page() {
