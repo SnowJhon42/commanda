@@ -19,7 +19,7 @@ $clientPidFile = Join-Path $logsDir "front-client.pid"
 $staffPidFile = Join-Path $logsDir "front-staff.pid"
 
 $services = @(
-  @{ Name = "Backend"; Port = 8001; Url = "http://localhost:8001/health"; PidFile = $backendPidFile; OutLog = "backend.out.log"; ErrLog = "backend.err.log" },
+  @{ Name = "Backend"; Port = 8001; Url = "http://127.0.0.1:8001/health"; PidFile = $backendPidFile; OutLog = "backend.out.log"; ErrLog = "backend.err.log" },
   @{ Name = "Client"; Port = 5173; Url = "http://localhost:5173"; PidFile = $clientPidFile; OutLog = "front-client.out.log"; ErrLog = "front-client.err.log" },
   @{ Name = "Staff"; Port = 5174; Url = "http://localhost:5174"; PidFile = $staffPidFile; OutLog = "front-staff.out.log"; ErrLog = "front-staff.err.log" }
 )
@@ -72,9 +72,16 @@ function Read-PidFile {
 function Ensure-EnvFile {
   param([string]$ProjectPath)
   $envFile = Join-Path $ProjectPath ".env.local"
-  if (-not (Test-Path $envFile)) {
-    "NEXT_PUBLIC_API_URL=http://localhost:8001" | Set-Content -Path $envFile -Encoding ASCII
-  }
+  @(
+    "NEXT_PUBLIC_API_URL=/api-proxy"
+    "BACKEND_PROXY_TARGET=http://127.0.0.1:8001"
+  ) | Set-Content -Path $envFile -Encoding ASCII
+}
+
+function Set-LocalBackendEnv {
+  $localDbPath = (Join-Path $backendPath "comanda_dev.db").Replace("\", "/")
+  Set-Item -Path "Env:ENVIRONMENT" -Value "dev"
+  Set-Item -Path "Env:DATABASE_URL" -Value "sqlite:///$localDbPath"
 }
 
 function Load-BackendEnv {
@@ -106,6 +113,33 @@ function Get-ListeningPidsForPort {
     }
   }
   return $pids | Select-Object -Unique
+}
+
+function Get-PrimaryListeningPidForPort {
+  param(
+    [int]$Port,
+    [int[]]$ExcludePids = @()
+  )
+
+  $excludeMap = @{}
+  foreach ($excludePid in $ExcludePids) {
+    if ($excludePid) {
+      $excludeMap[[int]$excludePid] = $true
+    }
+  }
+
+  $deadline = (Get-Date).AddSeconds(12)
+  do {
+    $pids = @(Get-ListeningPidsForPort -Port $Port)
+    foreach ($pidValue in $pids) {
+      if (-not $excludeMap.ContainsKey([int]$pidValue)) {
+        return [int]$pidValue
+      }
+    }
+    Start-Sleep -Milliseconds 350
+  } while ((Get-Date) -lt $deadline)
+
+  return $null
 }
 
 function Stop-FromPidFile {
@@ -254,7 +288,7 @@ function Action-Down {
 
 function Action-Status {
   Assert-WorkspaceSupported
-  $ok1 = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
+  $ok1 = Check-Url -Name "Backend" -Url "http://127.0.0.1:8001/health"
   $ok2 = Check-Url -Name "Client" -Url "http://localhost:5173"
   $ok3 = Check-Url -Name "Staff" -Url "http://localhost:5174"
   if (-not ($ok1 -and $ok2 -and $ok3)) {
@@ -270,7 +304,7 @@ function Action-BackendDown {
 
 function Action-BackendStatus {
   Assert-WorkspaceSupported
-  $ok = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
+  $ok = Check-Url -Name "Backend" -Url "http://127.0.0.1:8001/health"
   if (-not $ok) {
     exit 1
   }
@@ -285,18 +319,29 @@ function Build-NodePath {
   return ($paths -join ";")
 }
 
+function Start-BackendProcess {
+  $launcherScript = Join-Path $PSScriptRoot "backend_foreground_local.ps1"
+  $backendProc = Start-Process -FilePath "powershell.exe" -ArgumentList @(
+    "-ExecutionPolicy", "Bypass",
+    "-File", $launcherScript
+  ) -WorkingDirectory $backendPath -PassThru
+  Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
+  return $backendProc
+}
+
 function Action-BackendUp {
   Assert-WorkspaceSupported
   Action-BackendDown
-  $pythonCommand = Resolve-PythonCommand
-  Load-BackendEnv
-  $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8001" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
-  Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
+  $backendProc = Start-BackendProcess
 
   $backendUp = Wait-Services -Checks @(
-    @{ Name = "Backend"; Url = "http://localhost:8001/health"; ProcessId = $backendProc.Id }
+    @{ Name = "Backend"; Url = "http://127.0.0.1:8001/health" }
   ) -MaxSeconds 40
-  $null = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
+  $backendListenerPid = Get-PrimaryListeningPidForPort -Port 8001
+  if ($backendListenerPid) {
+    Write-PidFile -Path $backendPidFile -ProcessId $backendListenerPid
+  }
+  $null = Check-Url -Name "Backend" -Url "http://127.0.0.1:8001/health"
   if (-not $backendUp) {
     exit 1
   }
@@ -319,27 +364,38 @@ function Action-Up {
   Assert-WorkspaceSupported
   Action-Down
 
-  $pythonCommand = Resolve-PythonCommand
-  Load-BackendEnv
   Ensure-EnvFile -ProjectPath $clientPath
   Ensure-EnvFile -ProjectPath $staffPath
   Ensure-NodeModules -ProjectPath $clientPath -Label "Client"
   Ensure-NodeModules -ProjectPath $staffPath -Label "Staff"
 
-  $backendProc = Start-Process -FilePath $pythonCommand -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8001" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
+  $backendProc = Start-BackendProcess
   $clientProc = Start-Front -ProjectPath $clientPath -Label "Client" -Port 5173 -LogPrefix "front-client" -PidFile $clientPidFile
   $staffProc = Start-Front -ProjectPath $staffPath -Label "Staff" -Port 5174 -LogPrefix "front-staff" -PidFile $staffPidFile
 
-  Write-PidFile -Path $backendPidFile -ProcessId $backendProc.Id
-
   $allUp = Wait-Services -Checks @(
-    @{ Name = "Backend"; Url = "http://localhost:8001/health"; ProcessId = $backendProc.Id },
-    @{ Name = "Client"; Url = "http://localhost:5173"; ProcessId = $clientProc.Id },
-    @{ Name = "Staff"; Url = "http://localhost:5174"; ProcessId = $staffProc.Id }
+    @{ Name = "Backend"; Url = "http://127.0.0.1:8001/health" },
+    @{ Name = "Client"; Url = "http://localhost:5173" },
+    @{ Name = "Staff"; Url = "http://localhost:5174" }
   ) -MaxSeconds 45
 
+  $backendListenerPid = Get-PrimaryListeningPidForPort -Port 8001
+  if ($backendListenerPid) {
+    Write-PidFile -Path $backendPidFile -ProcessId $backendListenerPid
+  }
+
+  $clientListenerPid = Get-PrimaryListeningPidForPort -Port 5173 -ExcludePids @($backendListenerPid)
+  if ($clientListenerPid) {
+    Write-PidFile -Path $clientPidFile -ProcessId $clientListenerPid
+  }
+
+  $staffListenerPid = Get-PrimaryListeningPidForPort -Port 5174 -ExcludePids @($backendListenerPid, $clientListenerPid)
+  if ($staffListenerPid) {
+    Write-PidFile -Path $staffPidFile -ProcessId $staffListenerPid
+  }
+
   Write-Host "Servicios iniciados."
-  $null = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
+  $null = Check-Url -Name "Backend" -Url "http://127.0.0.1:8001/health"
   $null = Check-Url -Name "Client" -Url "http://localhost:5173"
   $null = Check-Url -Name "Staff" -Url "http://localhost:5174"
   Write-Host "Logs en: $logsDir"
@@ -490,7 +546,7 @@ print("same=yes" if backend_products == root_products else "same=no")
   }
 
   Write-Host "[doctor] Endpoints actuales"
-  $null = Check-Url -Name "Backend" -Url "http://localhost:8001/health"
+  $null = Check-Url -Name "Backend" -Url "http://127.0.0.1:8001/health"
   $null = Check-Url -Name "Client" -Url "http://localhost:5173"
   $null = Check-Url -Name "Staff" -Url "http://localhost:5174"
 

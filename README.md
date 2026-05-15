@@ -16,6 +16,7 @@ Documentacion tecnica:
 - `docs/ONLINE_STACK.md`
 - `docs/RELEASE_CHECKLIST.md`
 - `docs/PRIVATE_OPERATIONS.md`
+- `docs/DB_SOURCE_OF_TRUTH.md`
 
 ## Operacion Local Unificada
 
@@ -36,12 +37,14 @@ Desde `C:\Users\agust\Desktop\COMANDA_LOCAL`:
 powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 -Action up
 ```
 
+Este es el unico orquestador canonico del stack local. Debe ser el mismo comando usado para levantar, apagar, reiniciar y diagnosticar.
+
 Acciones disponibles:
 
 - `up` (alias: `start`): levanta backend + front client + front staff
 - `down` (alias: `stop`): baja todos los servicios y libera puertos
 - `restart`: reinicia todo el stack
-- `status`: chequea salud de `8000`, `5173`, `5174`
+- `status`: chequea salud de `8001`, `5173`, `5174`
 - `logs`: muestra tail de logs de los 3 servicios
 - `doctor`: valida prerequisitos, DB seed minima y estado general
 - `backend-up`: levanta solo backend
@@ -57,20 +60,21 @@ Atajos:
 - `.\scripts\restart_all_local.ps1`
 - `.\scripts\logs_all_local.ps1`
 - `.\scripts\doctor_all_local.ps1`
+- `start-local-stable.bat` y `.\scripts\start_local_stable.ps1` ahora delegan en `comanda_local.ps1`; no levantan procesos por separado.
 
 URLs locales:
 
-- Backend health: `http://localhost:8000/health`
+- Backend health: `http://localhost:8001/health`
 - Cliente Next.js: `http://localhost:5173`
 - Staff Next.js: `http://localhost:5174`
 
 Si Staff muestra "No se pudo conectar con el backend":
 
-1. Verificar API: abrir `http://localhost:8000/health` (debe responder `{"status":"ok"}`).
-2. Si esta caida, levantar backend desde raiz:
+1. Verificar API: abrir `http://localhost:8001/health` (debe responder `{"status":"ok"}`).
+2. Si esta caida, reiniciar con el script oficial desde raiz:
 
 ```powershell
-npm.cmd run dev:backend
+powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 -Action backend-restart
 ```
 
 DB local canonica para backend:
@@ -83,12 +87,24 @@ Chequeo recomendado para evitar confusion de DB:
 powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 -Action doctor
 ```
 
-Recuperacion rapida solo de backend (puerto 8000):
+Recuperacion rapida solo de backend (puerto 8001):
 
 ```powershell
-npm.cmd run backend:restart
-npm.cmd run backend:status
+powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 -Action backend-restart
+powershell -ExecutionPolicy Bypass -File .\scripts\comanda_local.ps1 -Action backend-status
 ```
+
+Si el backend no queda vivo en segundo plano en tu maquina, usar arranque estable en primer plano:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\backend_foreground_local.ps1
+```
+
+Dejar esa ventana abierta y luego abrir:
+
+- `http://localhost:8001/health`
+- `http://localhost:5173`
+- `http://localhost:5174`
 
 Si `npm.cmd run dev:staff` falla con `spawn EPERM`, usar fallback estatico:
 
@@ -97,6 +113,12 @@ npm.cmd run staff:static
 ```
 
 Luego abrir `http://localhost:5174`.
+
+Evitar mezclar estos caminos en la misma sesion:
+
+- `npm run dev:backend` ya delega en el backend oficial de `comanda_local.ps1`
+- `scripts/run_public_demo.ps1` es solo para demo publica y puede apuntar temporalmente los fronts a una URL publica
+- al terminar una demo publica, ejecutar `scripts/stop_public_demo.ps1` para restaurar `NEXT_PUBLIC_API_URL=/api-proxy`
 
 ## Backup Seguro a OneDrive
 
@@ -123,7 +145,8 @@ El backup genera un snapshot en `C:\Users\agust\OneDrive\COMANDA_BACKUP` y exclu
 
 Cada frontend usa:
 
-- `NEXT_PUBLIC_API_URL=http://localhost:8000`
+- `NEXT_PUBLIC_API_URL=/api-proxy`
+- `BACKEND_PROXY_TARGET=http://127.0.0.1:8001`
 
 Archivos:
 
@@ -157,3 +180,8 @@ Fuente de verdad del entorno online:
 
 - `docs/ONLINE_STACK.md`
 - Owner: `Santiago (Infra-Ops-Agent)`
+
+Fuente de verdad del entorno local y DB:
+
+- `docs/LOCALHOST_RUNBOOK.md`
+- `docs/DB_SOURCE_OF_TRUTH.md`

@@ -75,6 +75,9 @@ New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 $backendPath = Join-Path $root "comanda-backend"
 $clientPath = Join-Path $root "comanda-front-client"
 $staffPath = Join-Path $root "comanda-front-staff"
+$clientEnvPath = Join-Path $clientPath ".env.local"
+$staffEnvPath = Join-Path $staffPath ".env.local"
+$localApiUrl = "http://127.0.0.1:8001"
 
 $ngrokOut = Join-Path $logsDir "ngrok.out.log"
 $ngrokErr = Join-Path $logsDir "ngrok.err.log"
@@ -94,11 +97,11 @@ Write-Host "[1/6] Bajando servicios locales previos..."
 
 Write-Host "[2/6] Levantando backend..."
 $python = Resolve-PythonCommand -BackendPath $backendPath
-$backendProc = Start-Process -FilePath $python -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
+$backendProc = Start-Process -FilePath $python -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8001" -WorkingDirectory $backendPath -RedirectStandardOutput (Join-Path $logsDir "backend.out.log") -RedirectStandardError (Join-Path $logsDir "backend.err.log") -PassThru
 "$($backendProc.Id)" | Set-Content -Path (Join-Path $logsDir "backend.pid") -Encoding ASCII
 
-if (-not (Wait-Url -Url "http://127.0.0.1:8000/health" -MaxSeconds $WaitSeconds)) {
-  throw "Backend no respondio en http://127.0.0.1:8000/health"
+if (-not (Wait-Url -Url "$localApiUrl/health" -MaxSeconds $WaitSeconds)) {
+  throw "Backend no respondio en $localApiUrl/health"
 }
 
 Write-Host "[3/6] Levantando ngrok (backend/client/staff)..."
@@ -108,7 +111,7 @@ $ngrokProc = Start-Process -FilePath $ngrokCmd.Source -ArgumentList "start --all
 $backendPublic = $null
 for ($i = 0; $i -lt $WaitSeconds; $i++) {
   $tunnels = Get-NgrokTunnels
-  $backendPublic = Resolve-TunnelUrl -TunnelsPayload $tunnels -Name "backend" -AddrSuffix "8000"
+  $backendPublic = Resolve-TunnelUrl -TunnelsPayload $tunnels -Name "backend" -AddrSuffix "8001"
   if ($backendPublic) { break }
   Start-Sleep -Seconds 1
 }
@@ -117,8 +120,8 @@ if (-not $backendPublic) {
 }
 
 Write-Host "[4/6] Escribiendo NEXT_PUBLIC_API_URL en fronts..."
-"NEXT_PUBLIC_API_URL=$backendPublic" | Set-Content -Path (Join-Path $clientPath ".env.local") -Encoding ASCII
-"NEXT_PUBLIC_API_URL=$backendPublic" | Set-Content -Path (Join-Path $staffPath ".env.local") -Encoding ASCII
+"NEXT_PUBLIC_API_URL=$backendPublic" | Set-Content -Path $clientEnvPath -Encoding ASCII
+"NEXT_PUBLIC_API_URL=$backendPublic" | Set-Content -Path $staffEnvPath -Encoding ASCII
 
 Write-Host "[5/6] Levantando cliente y staff..."
 $clientProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm.cmd run dev -- -H 0.0.0.0 -p 5173" -WorkingDirectory $clientPath -RedirectStandardOutput (Join-Path $logsDir "front-client.out.log") -RedirectStandardError (Join-Path $logsDir "front-client.err.log") -PassThru
@@ -146,3 +149,7 @@ Write-Host "Staff:   $staffPublic"
 Write-Host ""
 Write-Host "Para apagar todo:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File $PSScriptRoot\\stop_public_demo.ps1"
+Write-Host ""
+Write-Host "Cuando termine la demo, restaurar el entorno local:"
+Write-Host "  powershell -ExecutionPolicy Bypass -File $PSScriptRoot\\stop_public_demo.ps1"
+Write-Host "  powershell -ExecutionPolicy Bypass -File $PSScriptRoot\\comanda_local.ps1 -Action up"

@@ -149,6 +149,83 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
             )
         existing_tables.add("payment_records")
 
+    if "fiscal_documents" not in existing_tables:
+        if dialect == "postgresql":
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS fiscal_documents (
+                      id SERIAL PRIMARY KEY,
+                      store_id INTEGER NOT NULL,
+                      order_id INTEGER NOT NULL,
+                      document_kind VARCHAR(20) NOT NULL DEFAULT 'INVOICE',
+                      invoice_type VARCHAR(5) NULL,
+                      issue_mode VARCHAR(20) NOT NULL DEFAULT 'ELECTRONIC',
+                      status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
+                      point_of_sale VARCHAR(5) NULL,
+                      invoice_number VARCHAR(30) NULL,
+                      cae VARCHAR(32) NULL,
+                      cae_due_date TIMESTAMP NULL,
+                      request_payload_json TEXT NULL,
+                      response_payload_json TEXT NULL,
+                      last_error TEXT NULL,
+                      email_delivery_status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                      email_send_count INTEGER NOT NULL DEFAULT 0,
+                      email_last_sent_at TIMESTAMP NULL,
+                      email_last_error TEXT NULL,
+                      issued_at TIMESTAMP NULL,
+                      canceled_at TIMESTAMP NULL,
+                      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      CONSTRAINT uq_fiscal_documents_order_kind UNIQUE (order_id, document_kind)
+                    )
+                    """
+                )
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS fiscal_documents (
+                      id INTEGER PRIMARY KEY,
+                      store_id INTEGER NOT NULL,
+                      order_id INTEGER NOT NULL,
+                      document_kind TEXT NOT NULL DEFAULT 'INVOICE',
+                      invoice_type TEXT NULL,
+                      issue_mode TEXT NOT NULL DEFAULT 'ELECTRONIC',
+                      status TEXT NOT NULL DEFAULT 'DRAFT',
+                      point_of_sale TEXT NULL,
+                      invoice_number TEXT NULL,
+                      cae TEXT NULL,
+                      cae_due_date DATETIME NULL,
+                      request_payload_json TEXT NULL,
+                      response_payload_json TEXT NULL,
+                      last_error TEXT NULL,
+                      email_delivery_status TEXT NOT NULL DEFAULT 'PENDING',
+                      email_send_count INTEGER NOT NULL DEFAULT 0,
+                      email_last_sent_at DATETIME NULL,
+                      email_last_error TEXT NULL,
+                      issued_at DATETIME NULL,
+                      canceled_at DATETIME NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      UNIQUE(order_id, document_kind)
+                    )
+                    """
+                )
+            )
+        existing_tables.add("fiscal_documents")
+    if "fiscal_documents" in existing_tables:
+        fiscal_document_columns = _table_columns(conn, "fiscal_documents")
+        if "email_delivery_status" not in fiscal_document_columns:
+            conn.execute(text("ALTER TABLE fiscal_documents ADD COLUMN email_delivery_status TEXT NOT NULL DEFAULT 'PENDING'"))
+        if "email_send_count" not in fiscal_document_columns:
+            conn.execute(text("ALTER TABLE fiscal_documents ADD COLUMN email_send_count INTEGER NOT NULL DEFAULT 0"))
+        if "email_last_sent_at" not in fiscal_document_columns:
+            conn.execute(text("ALTER TABLE fiscal_documents ADD COLUMN email_last_sent_at DATETIME NULL"))
+        if "email_last_error" not in fiscal_document_columns:
+            conn.execute(text("ALTER TABLE fiscal_documents ADD COLUMN email_last_error TEXT NULL"))
+
     if "products" in existing_tables:
         product_columns = _table_columns(conn, "products")
         if "archived" not in product_columns:
@@ -156,6 +233,8 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
                 conn.execute(text("ALTER TABLE products ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE"))
             else:
                 conn.execute(text("ALTER TABLE products ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"))
+        if "vat_rate" not in product_columns:
+            conn.execute(text("ALTER TABLE products ADD COLUMN vat_rate NUMERIC(5,2) NOT NULL DEFAULT 21"))
 
     if "stores" in existing_tables:
         store_columns = _table_columns(conn, "stores")
@@ -209,6 +288,18 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
                 conn.execute(text("ALTER TABLE stores ADD COLUMN payment_modo_enabled INTEGER NOT NULL DEFAULT 1"))
         if "payment_transfer_instructions" not in store_columns:
             conn.execute(text("ALTER TABLE stores ADD COLUMN payment_transfer_instructions TEXT NULL"))
+        if "fiscal_business_name" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_business_name TEXT NULL"))
+        if "fiscal_tax_id" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_tax_id TEXT NULL"))
+        if "fiscal_tax_status" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_tax_status TEXT NOT NULL DEFAULT 'RESPONSABLE_INSCRIPTO'"))
+        if "fiscal_point_of_sale" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_point_of_sale TEXT NULL"))
+        if "fiscal_issuer_email" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_issuer_email TEXT NULL"))
+        if "fiscal_integration_provider" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_integration_provider TEXT NOT NULL DEFAULT 'MANUAL_DEMO'"))
         default_owner_hash = hash_pin("1234")
         conn.execute(
             text("UPDATE stores SET owner_password_hash = :owner_hash WHERE owner_password_hash IS NULL"),
@@ -344,6 +435,39 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
               FOREIGN KEY(table_session_id) REFERENCES table_sessions(id),
               FOREIGN KEY(cash_session_id) REFERENCES cash_sessions(id),
               FOREIGN KEY(created_by_staff_id) REFERENCES staff_accounts(id)
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS fiscal_documents (
+              id INTEGER PRIMARY KEY,
+              store_id INTEGER NOT NULL,
+              order_id INTEGER NOT NULL,
+              document_kind TEXT NOT NULL DEFAULT 'INVOICE',
+              invoice_type TEXT NULL,
+              issue_mode TEXT NOT NULL DEFAULT 'ELECTRONIC',
+              status TEXT NOT NULL DEFAULT 'DRAFT',
+              point_of_sale TEXT NULL,
+              invoice_number TEXT NULL,
+              cae TEXT NULL,
+              cae_due_date DATETIME NULL,
+              request_payload_json TEXT NULL,
+              response_payload_json TEXT NULL,
+              last_error TEXT NULL,
+              email_delivery_status TEXT NOT NULL DEFAULT 'PENDING',
+              email_send_count INTEGER NOT NULL DEFAULT 0,
+              email_last_sent_at DATETIME NULL,
+              email_last_error TEXT NULL,
+              issued_at DATETIME NULL,
+              canceled_at DATETIME NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY(store_id) REFERENCES stores(id),
+              FOREIGN KEY(order_id) REFERENCES orders(id),
+              CONSTRAINT uq_fiscal_documents_order_kind UNIQUE (order_id, document_kind)
             )
             """
         )
@@ -524,12 +648,34 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE orders ADD COLUMN table_session_id INTEGER NULL"))
     if "printed_full_at" not in order_column_names:
         conn.execute(text("ALTER TABLE orders ADD COLUMN printed_full_at DATETIME NULL"))
+    if "fiscal_invoice_requested" not in order_column_names:
+        conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_invoice_requested INTEGER NOT NULL DEFAULT 0"))
+    if "fiscal_customer_tax_status" not in order_column_names:
+        conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_tax_status TEXT NULL"))
+    if "fiscal_customer_document_type" not in order_column_names:
+        conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_document_type TEXT NULL"))
+    if "fiscal_customer_document_number" not in order_column_names:
+        conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_document_number TEXT NULL"))
+    if "fiscal_customer_name" not in order_column_names:
+        conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_name TEXT NULL"))
+    if "fiscal_customer_email" not in order_column_names:
+        conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_email TEXT NULL"))
     if "printed_kitchen_at" not in order_column_names:
         conn.execute(text("ALTER TABLE orders ADD COLUMN printed_kitchen_at DATETIME NULL"))
     if "printed_bar_at" not in order_column_names:
         conn.execute(text("ALTER TABLE orders ADD COLUMN printed_bar_at DATETIME NULL"))
     if "printed_waiter_at" not in order_column_names:
         conn.execute(text("ALTER TABLE orders ADD COLUMN printed_waiter_at DATETIME NULL"))
+
+    fiscal_document_column_names = _table_columns(conn, "fiscal_documents")
+    if "email_delivery_status" not in fiscal_document_column_names:
+        conn.execute(text("ALTER TABLE fiscal_documents ADD COLUMN email_delivery_status TEXT NOT NULL DEFAULT 'PENDING'"))
+    if "email_send_count" not in fiscal_document_column_names:
+        conn.execute(text("ALTER TABLE fiscal_documents ADD COLUMN email_send_count INTEGER NOT NULL DEFAULT 0"))
+    if "email_last_sent_at" not in fiscal_document_column_names:
+        conn.execute(text("ALTER TABLE fiscal_documents ADD COLUMN email_last_sent_at DATETIME NULL"))
+    if "email_last_error" not in fiscal_document_column_names:
+        conn.execute(text("ALTER TABLE fiscal_documents ADD COLUMN email_last_error TEXT NULL"))
 
     order_item_column_names = _table_columns(conn, "order_items")
     if "status" not in order_item_column_names:
@@ -581,6 +727,18 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE stores ADD COLUMN payment_modo_enabled INTEGER NOT NULL DEFAULT 1"))
     if "payment_transfer_instructions" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN payment_transfer_instructions TEXT NULL"))
+    if "fiscal_business_name" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_business_name TEXT NULL"))
+    if "fiscal_tax_id" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_tax_id TEXT NULL"))
+    if "fiscal_tax_status" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_tax_status TEXT NOT NULL DEFAULT 'RESPONSABLE_INSCRIPTO'"))
+    if "fiscal_point_of_sale" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_point_of_sale TEXT NULL"))
+    if "fiscal_issuer_email" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_issuer_email TEXT NULL"))
+    if "fiscal_integration_provider" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_integration_provider TEXT NOT NULL DEFAULT 'MANUAL_DEMO'"))
     conn.execute(
         text("UPDATE stores SET owner_password_hash = :owner_hash WHERE owner_password_hash IS NULL"),
         {"owner_hash": hash_pin("1234")},
@@ -650,6 +808,12 @@ def validate_runtime_schema(conn: Connection) -> list[str]:
             "review_status",
             "payment_gate",
             "payment_status",
+            "fiscal_invoice_requested",
+            "fiscal_customer_tax_status",
+            "fiscal_customer_document_type",
+            "fiscal_customer_document_number",
+            "fiscal_customer_name",
+            "fiscal_customer_email",
         } - _table_columns(conn, "orders")
         for column in sorted(missing):
             issues.append(f"orders missing column: {column}")

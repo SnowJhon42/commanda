@@ -28,6 +28,8 @@ try {
   $root = Split-Path -Parent $PSScriptRoot
   $logsDir = Join-Path $root "logs"
   $ngrokPidFile = Join-Path $logsDir "ngrok.pid"
+  $clientEnvPath = Join-Path $root "comanda-front-client\.env.local"
+  $staffEnvPath = Join-Path $root "comanda-front-staff\.env.local"
 
   $ngrokPid = Read-Pid -Path $ngrokPidFile
   if ($ngrokPid) {
@@ -43,6 +45,14 @@ try {
   }
 
   & "$PSScriptRoot\comanda_local.ps1" -Action down
+  @(
+    "NEXT_PUBLIC_API_URL=/api-proxy"
+    "BACKEND_PROXY_TARGET=http://127.0.0.1:8001"
+  ) | Set-Content -Path $clientEnvPath -Encoding ASCII
+  @(
+    "NEXT_PUBLIC_API_URL=/api-proxy"
+    "BACKEND_PROXY_TARGET=http://127.0.0.1:8001"
+  ) | Set-Content -Path $staffEnvPath -Encoding ASCII
 } catch {
   if (-not $NoThrow) { throw }
   Write-Host "stop_public_demo: warning -> $($_.Exception.Message)"

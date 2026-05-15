@@ -6,8 +6,14 @@
     "comanda-front-staff"
   ],
   "scripts": {
-    "dev:backend": "set DATABASE_URL=sqlite:///./comanda-backend/comanda_dev.db&& comanda-backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir comanda-backend",
+    "dev:backend": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action backend-up",
     "restaurant:open": "powershell -ExecutionPolicy Bypass -File .\\scripts\\open_restaurant.ps1",
+    "restaurant:access:list": "powershell -ExecutionPolicy Bypass -File .\\scripts\\list_restaurant_access.ps1",
+    "restaurant:access:reset": "powershell -ExecutionPolicy Bypass -File .\\scripts\\reset_store_access.ps1",
+    "local:up": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action up",
+    "local:down": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action down",
+    "local:status": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action status",
+    "local:restart": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action restart",
     "backend:up": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action backend-up",
     "backend:down": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action backend-down",
     "backend:status": "powershell -ExecutionPolicy Bypass -File .\\scripts\\comanda_local.ps1 -Action backend-status",

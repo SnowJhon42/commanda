@@ -32,5 +32,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev-reset.ps1 -Start
 
 ## URLs
 
+- Backend: `http://localhost:8001/health`
 - Cliente: `http://localhost:5173`
 - Staff: `http://localhost:5174`
