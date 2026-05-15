@@ -12,10 +12,16 @@ import {
   collectOrderPayment,
   fetchStaffBoardItems,
   fetchShiftSummaries,
+  fetchFiscalDocumentsHistory,
+  fetchFiscalMailConfig,
+  resendFiscalDocumentEmail,
   fetchTables,
   fetchTableSessions,
   fetchTableSessionConsumption,
   fetchStaffOrderItems,
+  updateOrderFiscalDraft,
+  updateOrderFiscalDocument,
+  issueOrderFiscalDocument,
   fetchTableSessionCashRequests,
   markOrderPrintStatus,
   fetchStoreClientVisibility,
@@ -49,16 +55,17 @@ import { StoreProfilePage } from "./pages/StoreProfilePage";
 import { StoreMessagingPage } from "./pages/StoreMessagingPage";
 import { ShiftClosurePage } from "./pages/ShiftClosurePage";
 import { ShiftSummariesPage } from "./pages/ShiftSummariesPage";
+import { FiscalDocumentsPage } from "./pages/FiscalDocumentsPage";
 import { SalonTablesPage } from "./pages/SalonTablesPage";
 import { TableSessionsPanel } from "./pages/TableSessionsPanel";
 import { TableQrPage } from "./pages/TableQrPage";
 import { StartupGatePage } from "./pages/StartupGatePage";
 import { elapsedMinutes } from "./utils/boardMeta";
-import { printFullOrderTicket, printOrderCommands } from "./utils/printTickets";
+import { printFullOrderTicket, printOrderCommands, printOrderPrebill } from "./utils/printTickets";
 
 const STATUS_OPTIONS = ["", "RECEIVED", "IN_PROGRESS", "DONE", "PARCIAL", "DELIVERED"];
 const ADMIN_QUEUE_OPTIONS = ["ACTIVE", "ALL", "DELIVERED"];
-const ADMIN_VIEW_OPTIONS = ["BOARD", "SALON", "BAR", "FEEDBACK", "PROFILE", "MENU", "QR", "MESSAGING", "CLOSURE", "SUMMARIES"];
+const ADMIN_VIEW_OPTIONS = ["BOARD", "SALON", "BAR", "FEEDBACK", "PROFILE", "MENU", "QR", "MESSAGING", "CLOSURE", "SUMMARIES", "FISCAL"];
 const ADMIN_TABS_STORAGE_KEY = "comanda_staff_admin_tabs_v1";
 const ARG_TZ = "America/Argentina/Buenos_Aires";
 
@@ -81,6 +88,7 @@ function adminViewLabel(mode) {
   if (mode === "MESSAGING") return "MENSAJES";
   if (mode === "CLOSURE") return "CIERRE";
   if (mode === "SUMMARIES") return "RESUMENES";
+  if (mode === "FISCAL") return "HISTORIAL FISCAL";
   return mode;
 }
 
@@ -293,6 +301,10 @@ function SalonOrderModal({
   onApproveOrder = () => {},
   onRejectOrder = () => {},
   onResolveCashRequest = () => {},
+  onPrintPrebill = () => {},
+  onSaveFiscalDraft = async () => {},
+  onUpdateFiscalDocument = async () => {},
+  onIssueFiscalDocument = async () => {},
   availableTables = [],
   busyId = null,
   onMoveTableSession = async () => {},
@@ -382,6 +394,10 @@ function SalonOrderModal({
             onApproveOrder={onApproveOrder}
             onRejectOrder={onRejectOrder}
             onResolveCashRequest={onResolveCashRequest}
+            onPrintPrebill={onPrintPrebill}
+            onSaveFiscalDraft={onSaveFiscalDraft}
+            onUpdateFiscalDocument={onUpdateFiscalDocument}
+            onIssueFiscalDocument={onIssueFiscalDocument}
             billingBusy={billingBusy}
           />
         </div>
@@ -405,6 +421,10 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackSummary, setFeedbackSummary] = useState(null);
+  const [fiscalHistory, setFiscalHistory] = useState({ total: 0, items: [] });
+  const [fiscalHistoryLoading, setFiscalHistoryLoading] = useState(false);
+  const [fiscalHistoryFilter, setFiscalHistoryFilter] = useState("");
+  const [fiscalMailConfig, setFiscalMailConfig] = useState(null);
   const [showLiveTotalToClient, setShowLiveTotalToClient] = useState(true);
   const [updatingClientVisibility, setUpdatingClientVisibility] = useState(false);
   const [printMode, setPrintMode] = useState("MANUAL");
@@ -1158,6 +1178,142 @@ export function App() {
     [session, selectedOrderId, loadBoard, loadTableSessions, loadOrderDetail]
   );
 
+  const handlePrintPrebill = useCallback(() => {
+    if (!selectedOrderDetail) return;
+    setError("");
+    try {
+      printOrderPrebill(selectedOrderDetail);
+    } catch (err) {
+      setError(err.message || "No se pudo imprimir la precuenta.");
+    }
+  }, [selectedOrderDetail]);
+
+  const saveFiscalDraft = useCallback(
+    async (payload) => {
+      if (!session || !selectedOrderId) return null;
+      setBillingBusy(true);
+      setError("");
+      try {
+        const result = await updateOrderFiscalDraft({
+          token: session.access_token,
+          orderId: selectedOrderId,
+          payload,
+        });
+        await loadOrderDetail();
+        return result;
+      } catch (err) {
+        setError(err.message || "No se pudieron guardar los datos fiscales.");
+        throw err;
+      } finally {
+        setBillingBusy(false);
+      }
+    },
+    [session, selectedOrderId, loadOrderDetail]
+  );
+
+  const saveFiscalDocument = useCallback(
+    async (payload) => {
+      if (!session || !selectedOrderId) return null;
+      setBillingBusy(true);
+      setError("");
+      try {
+        const result = await updateOrderFiscalDocument({
+          token: session.access_token,
+          orderId: selectedOrderId,
+          payload,
+        });
+        await loadOrderDetail();
+        return result;
+      } catch (err) {
+        setError(err.message || "No se pudo actualizar el comprobante fiscal.");
+        throw err;
+      } finally {
+        setBillingBusy(false);
+      }
+    },
+    [session, selectedOrderId, loadOrderDetail]
+  );
+
+  const loadFiscalHistory = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    setFiscalHistoryLoading(true);
+    try {
+      const data = await fetchFiscalDocumentsHistory({
+        token: session.access_token,
+        storeId: session.staff.store_id,
+        status: fiscalHistoryFilter,
+      });
+      setFiscalHistory(data);
+    } catch (err) {
+      setError(err.message || "No se pudo cargar el historial fiscal.");
+    } finally {
+      setFiscalHistoryLoading(false);
+    }
+  }, [session, fiscalHistoryFilter]);
+
+  const loadFiscalMailConfig = useCallback(async () => {
+    if (!session || session.staff.sector !== "ADMIN") return;
+    try {
+      const data = await fetchFiscalMailConfig({
+        token: session.access_token,
+      });
+      setFiscalMailConfig(data);
+    } catch (err) {
+      setError(err.message || "No se pudo cargar la configuracion de mail fiscal.");
+    }
+  }, [session]);
+
+  const handleResendFiscalEmail = useCallback(
+    async (orderId) => {
+      if (!session || session.staff.sector !== "ADMIN" || !orderId) return;
+      setBillingBusy(true);
+      try {
+        await resendFiscalDocumentEmail({
+          token: session.access_token,
+          orderId,
+        });
+        await loadFiscalHistory();
+        if (selectedOrderId === orderId) {
+          await loadOrderDetail();
+        }
+      } catch (err) {
+        setError(err.message || "No se pudo reenviar el mail fiscal.");
+      } finally {
+        setBillingBusy(false);
+      }
+    },
+    [session, loadFiscalHistory, selectedOrderId, loadOrderDetail]
+  );
+
+  const triggerFiscalDocumentIssue = useCallback(
+    async () => {
+      if (!session || !selectedOrderId) return null;
+      setBillingBusy(true);
+      setError("");
+      try {
+        const result = await issueOrderFiscalDocument({
+          token: session.access_token,
+          orderId: selectedOrderId,
+        });
+        await loadOrderDetail();
+        return result;
+      } catch (err) {
+        setError(err.message || "No se pudo emitir el comprobante fiscal.");
+        throw err;
+      } finally {
+        setBillingBusy(false);
+      }
+    },
+    [session, selectedOrderId, loadOrderDetail]
+  );
+
+  useEffect(() => {
+    if (staffSector === "ADMIN" && adminView === "FISCAL") {
+      loadFiscalHistory();
+      loadFiscalMailConfig();
+    }
+  }, [staffSector, adminView, loadFiscalHistory, loadFiscalMailConfig]);
+
   const markTableSession = useCallback(
     async (tableSessionId, toStatus) => {
       if (!session || !tableSessionId) return;
@@ -1524,6 +1680,23 @@ export function App() {
       }
       if (adminView === "MESSAGING") {
         return <StoreMessagingPage token={session?.access_token} storeId={session?.staff?.store_id} />;
+      }
+      if (adminView === "FISCAL") {
+        return (
+          <FiscalDocumentsPage
+            history={fiscalHistory}
+            loading={fiscalHistoryLoading}
+            filter={fiscalHistoryFilter}
+            mailConfig={fiscalMailConfig}
+            onFilterChange={setFiscalHistoryFilter}
+            onRefresh={loadFiscalHistory}
+            onResendEmail={handleResendFiscalEmail}
+            onOpenOrder={(orderId) => {
+              setSelectedOrderId(orderId);
+              setAdminView("SALON");
+            }}
+          />
+        );
       }
       if (adminView === "BAR") {
         const barRows = visibleRows.filter(
@@ -2236,13 +2409,17 @@ export function App() {
           onResolveCashRequest={resolveCash}
           onApproveOrder={approvePendingOrder}
           onRejectOrder={rejectPendingOrder}
+          onPrintPrebill={handlePrintPrebill}
+          onSaveFiscalDraft={saveFiscalDraft}
+          onUpdateFiscalDocument={saveFiscalDocument}
+          onIssueFiscalDocument={triggerFiscalDocumentIssue}
           availableTables={tablesRows}
           busyId={tableSessionBusyId}
           onMoveTableSession={moveActiveTableSession}
         />
       ) : null}
 
-        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "SALON" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES")) && (
+        {!(staffSector === "ADMIN" && (adminView === "FEEDBACK" || adminView === "BOARD" || adminView === "SALON" || adminView === "MENU" || adminView === "QR" || adminView === "PROFILE" || adminView === "MESSAGING" || adminView === "CLOSURE" || adminView === "SUMMARIES" || adminView === "FISCAL")) && (
           <OrderDetailPanel
             orderDetail={selectedOrderDetail}
             selectedOrderId={selectedOrderId}
@@ -2261,6 +2438,10 @@ export function App() {
             onResolveCashRequest={resolveCash}
             onApproveOrder={approvePendingOrder}
             onRejectOrder={rejectPendingOrder}
+            onPrintPrebill={handlePrintPrebill}
+            onSaveFiscalDraft={saveFiscalDraft}
+            onUpdateFiscalDocument={saveFiscalDocument}
+            onIssueFiscalDocument={triggerFiscalDocumentIssue}
             billingBusy={billingBusy}
         />
       )}

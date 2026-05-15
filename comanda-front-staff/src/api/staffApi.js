@@ -1,4 +1,4 @@
-﻿const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+﻿const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 async function toApiError(res, fallbackMessage) {
   let detail = "";
@@ -122,6 +122,94 @@ export async function fetchTableSessions({ token, storeId, onlyWithoutOrder = fa
     return res.json();
   } catch (error) {
     throw toNetworkError(error, "No se pudieron cargar las mesas ocupadas.");
+  }
+}
+
+export async function updateOrderFiscalDraft({ token, orderId, payload }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/fiscal-draft`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudieron guardar los datos fiscales.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudieron guardar los datos fiscales.");
+  }
+}
+
+export async function updateOrderFiscalDocument({ token, orderId, payload }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/fiscal-document`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await toApiError(res, "No se pudo actualizar el comprobante fiscal.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo actualizar el comprobante fiscal.");
+  }
+}
+
+export async function issueOrderFiscalDocument({ token, orderId }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/fiscal-document/issue`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo emitir el comprobante fiscal.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo emitir el comprobante fiscal.");
+  }
+}
+
+export async function fetchFiscalDocumentsHistory({ token, storeId, status = "" }) {
+  try {
+    const qs = new URLSearchParams({ store_id: String(storeId) });
+    if (status) qs.append("status", status);
+    const res = await fetch(`${API_URL}/staff/fiscal-documents?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar el historial fiscal.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar el historial fiscal.");
+  }
+}
+
+export async function resendFiscalDocumentEmail({ token, orderId }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/orders/${orderId}/fiscal-document/resend-email`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo reenviar el mail fiscal.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo reenviar el mail fiscal.");
+  }
+}
+
+export async function fetchFiscalMailConfig({ token }) {
+  try {
+    const res = await fetch(`${API_URL}/staff/fiscal-mail/config`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) await toApiError(res, "No se pudo cargar la configuracion de mail fiscal.");
+    return res.json();
+  } catch (error) {
+    throw toNetworkError(error, "No se pudo cargar la configuracion de mail fiscal.");
   }
 }
 

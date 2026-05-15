@@ -19,6 +19,7 @@ const DEFAULT_FORM = {
   name: "",
   description: "",
   base_price: "",
+  vat_rate: "21",
   fulfillment_sector: "KITCHEN",
   category_id: "",
   image_url: "",
@@ -33,6 +34,7 @@ function productPayloadFromForm(form) {
     name: form.name.trim(),
     description: form.description.trim() || undefined,
     base_price: Number(form.base_price || 0),
+    vat_rate: Number(form.vat_rate || 21),
     fulfillment_sector: form.fulfillment_sector,
     category_id: form.category_id ? Number(form.category_id) : null,
     image_url: form.image_url ? form.image_url : null,
@@ -45,6 +47,7 @@ function formFromProduct(product) {
     name: product.name,
     description: product.description || "",
     base_price: String(product.base_price),
+    vat_rate: String(product.vat_rate ?? 21),
     fulfillment_sector: product.fulfillment_sector,
     category_id: product.category_id || "",
     image_url: product.image_url || "",
@@ -126,6 +129,7 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
       name: product.name,
       description: product.description || "",
       base_price: String(product.base_price),
+      vat_rate: String(product.vat_rate ?? 21),
       fulfillment_sector: product.fulfillment_sector,
       category_id: product.category_id || "",
       image_url: product.image_url || "",
@@ -147,6 +151,21 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
     () => categories.find((category) => String(category.id) === String(form.category_id)) || null,
     [categories, form.category_id]
   );
+  const pricePreview = useMemo(() => {
+    const gross = Number(form.base_price || 0);
+    const vatRate = Number(form.vat_rate || 0);
+    if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(vatRate)) {
+      return { gross: 0, net: 0, vat: 0 };
+    }
+    const divisor = 1 + vatRate / 100;
+    const net = divisor > 0 ? gross / divisor : gross;
+    const vat = gross - net;
+    return {
+      gross,
+      net: Number(net.toFixed(2)),
+      vat: Number(vat.toFixed(2)),
+    };
+  }, [form.base_price, form.vat_rate]);
 
   const validImportRows = useMemo(
     () => importDraft.filter((row) => row.name && !row.errors?.length && row.base_price !== null),
@@ -630,6 +649,15 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
                     onChange={(event) => setForm((prev) => ({ ...prev, base_price: event.target.value }))}
                   />
                 </label>
+                <label className="field">
+                  IVA incluido
+                  <select value={form.vat_rate} onChange={(event) => setForm((prev) => ({ ...prev, vat_rate: event.target.value }))}>
+                    <option value="21">21%</option>
+                    <option value="10.5">10.5%</option>
+                    <option value="27">27%</option>
+                    <option value="0">0% / Exento</option>
+                  </select>
+                </label>
                 <label className="field field-span-2">
                   Descripción
                   <textarea
@@ -638,6 +666,24 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
                     placeholder="Milanesa vacuna con papas fritas"
                   />
                 </label>
+                <div className="field field-span-2">
+                  <span>Vista fiscal automática</span>
+                  <div className="menu-summary-list">
+                    <div>
+                      <span>Precio final</span>
+                      <strong>$ {pricePreview.gross.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Neto sin IVA</span>
+                      <strong>$ {pricePreview.net.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>IVA contenido</span>
+                      <strong>$ {pricePreview.vat.toFixed(2)}</strong>
+                    </div>
+                  </div>
+                  <small className="muted">Cargás el precio final y COMANDA calcula neto e IVA automáticamente.</small>
+                </div>
                 <label className="field">
                   Sector
                   <select
@@ -830,6 +876,14 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
                 <div>
                   <span>Precio</span>
                   <strong>{form.base_price ? `$ ${form.base_price}` : "Sin precio"}</strong>
+                </div>
+                <div>
+                  <span>IVA</span>
+                  <strong>{form.vat_rate ? `${form.vat_rate}%` : "21%"}</strong>
+                </div>
+                <div>
+                  <span>Neto</span>
+                  <strong>$ {pricePreview.net.toFixed(2)}</strong>
                 </div>
                 <div>
                   <span>Imagen</span>
@@ -1118,6 +1172,7 @@ export function MenuEditorPage({ token, storeId, staffDisplayName = "" }) {
                       <span className="muted">#{product.id} · {product.fulfillment_sector}</span>
                       <span>{product.description}</span>
                       <span>$ {product.base_price}</span>
+                      <span className="muted">IVA {product.vat_rate ?? 21}% · Neto $ {Number(product.net_price || 0).toFixed(2)}</span>
                       <span className="muted">
                         Extras: {(product.extra_options || []).filter((extra) => extra.active).length} activos / {(product.extra_options || []).length} total
                       </span>

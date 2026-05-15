@@ -25,6 +25,24 @@ const COLOR_OPTIONS = [
   { value: "NEGRO", label: "Negro", swatch: "#1f2937" },
 ];
 
+const FISCAL_STATUS_OPTIONS = [
+  { value: "RESPONSABLE_INSCRIPTO", label: "Responsable inscripto" },
+  { value: "MONOTRIBUTISTA", label: "Monotributista" },
+  { value: "EXENTO", label: "Exento" },
+];
+
+const FISCAL_PROVIDER_OPTIONS = [
+  { value: "MANUAL_DEMO", label: "Demo interno" },
+  { value: "ARCA_DIRECT", label: "ARCA directa" },
+  { value: "EXTERNAL_API", label: "Tercero / API externa" },
+];
+
+const FISCAL_SETUP_STATUS_LABELS = {
+  NOT_CONFIGURED: "No configurado",
+  INCOMPLETE: "Incompleto",
+  READY_TO_INTEGRATE: "Listo para integrar",
+};
+
 const THEME_TONE = {
   CLASSIC: {
     surface: "#fffaf3",
@@ -65,6 +83,14 @@ const EMPTY_PROFILE = {
   payment_mercado_pago_enabled: true,
   payment_modo_enabled: true,
   payment_transfer_instructions: "",
+  fiscal_business_name: "",
+  fiscal_tax_id: "",
+  fiscal_tax_status: "RESPONSABLE_INSCRIPTO",
+  fiscal_point_of_sale: "",
+  fiscal_issuer_email: "",
+  fiscal_integration_provider: "MANUAL_DEMO",
+  fiscal_setup_status: "NOT_CONFIGURED",
+  fiscal_setup_missing_fields: [],
 };
 
 const EMPTY_STAFF_FORM = {
@@ -91,6 +117,14 @@ function normalizeProfile(data) {
     payment_mercado_pago_enabled: Boolean(data?.payment_mercado_pago_enabled ?? true),
     payment_modo_enabled: Boolean(data?.payment_modo_enabled ?? true),
     payment_transfer_instructions: data?.payment_transfer_instructions || "",
+    fiscal_business_name: data?.fiscal_business_name || "",
+    fiscal_tax_id: data?.fiscal_tax_id || "",
+    fiscal_tax_status: data?.fiscal_tax_status || "RESPONSABLE_INSCRIPTO",
+    fiscal_point_of_sale: data?.fiscal_point_of_sale || "",
+    fiscal_issuer_email: data?.fiscal_issuer_email || "",
+    fiscal_integration_provider: data?.fiscal_integration_provider || "MANUAL_DEMO",
+    fiscal_setup_status: data?.fiscal_setup_status || "NOT_CONFIGURED",
+    fiscal_setup_missing_fields: Array.isArray(data?.fiscal_setup_missing_fields) ? data.fiscal_setup_missing_fields : [],
   };
 }
 
@@ -164,6 +198,7 @@ export function StoreProfilePage({ token, storeId, sessionStaffId = null, staffD
     [profile.theme_preset]
   );
   const previewTone = THEME_TONE[profile.theme_preset] || THEME_TONE.CLASSIC;
+  const fiscalSetupLabel = FISCAL_SETUP_STATUS_LABELS[profile.fiscal_setup_status] || "Incompleto";
 
   const updateProfile = (key, value) => {
     setProfile((current) => ({ ...current, [key]: value }));
@@ -268,6 +303,12 @@ export function StoreProfilePage({ token, storeId, sessionStaffId = null, staffD
           payment_mercado_pago_enabled: profile.payment_mercado_pago_enabled,
           payment_modo_enabled: profile.payment_modo_enabled,
           payment_transfer_instructions: profile.payment_transfer_instructions.trim() || null,
+          fiscal_business_name: profile.fiscal_business_name.trim() || null,
+          fiscal_tax_id: profile.fiscal_tax_id.trim() || null,
+          fiscal_tax_status: profile.fiscal_tax_status,
+          fiscal_point_of_sale: profile.fiscal_point_of_sale.trim() || null,
+          fiscal_issuer_email: profile.fiscal_issuer_email.trim() || null,
+          fiscal_integration_provider: profile.fiscal_integration_provider,
         },
       });
       setProfile(normalizeProfile(data));
@@ -665,6 +706,92 @@ export function StoreProfilePage({ token, storeId, sessionStaffId = null, staffD
                 onChange={(event) => updateProfile("show_watermark_logo", event.target.checked)}
               />
             </label>
+          </div>
+
+          <div className="menu-editor-card">
+            <div className="section-head">
+              <div>
+                <h4>Configuración fiscal</h4>
+                <p className="muted">Solo dueño/admin. Estos datos identifican al emisor para la futura facturación electrónica.</p>
+              </div>
+              <span className="menu-admin-chip">{fiscalSetupLabel}</span>
+            </div>
+
+            <div className="form-grid">
+              <label className="field">
+                Razón social
+                <input
+                  value={profile.fiscal_business_name}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_business_name", event.target.value)}
+                  placeholder="Ej: Barra Centro SRL"
+                />
+              </label>
+              <label className="field">
+                CUIT del local
+                <input
+                  value={profile.fiscal_tax_id}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_tax_id", event.target.value)}
+                  placeholder="30-12345678-9"
+                />
+              </label>
+              <label className="field">
+                Condición fiscal del local
+                <select
+                  value={profile.fiscal_tax_status}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_tax_status", event.target.value)}
+                >
+                  {FISCAL_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Punto de venta
+                <input
+                  value={profile.fiscal_point_of_sale}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_point_of_sale", event.target.value)}
+                  placeholder="00001"
+                />
+              </label>
+              <label className="field">
+                Email emisor
+                <input
+                  type="email"
+                  value={profile.fiscal_issuer_email}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_issuer_email", event.target.value)}
+                  placeholder="facturacion@local.com"
+                />
+              </label>
+              <label className="field">
+                Proveedor de emisión
+                <select
+                  value={profile.fiscal_integration_provider}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_integration_provider", event.target.value)}
+                >
+                  {FISCAL_PROVIDER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {profile.fiscal_setup_missing_fields.length ? (
+              <p className="muted">Faltan: {profile.fiscal_setup_missing_fields.join(", ")}.</p>
+            ) : (
+              <p className="muted">Perfil fiscal completo para pasar al siguiente sprint de comprobante fiscal.</p>
+            )}
+            <p className="muted">
+              Esto todavía no emite en ARCA. Deja preparado el perfil fiscal del local para el siguiente sprint.
+            </p>
           </div>
 
           <div className="menu-editor-card">
