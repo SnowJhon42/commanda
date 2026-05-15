@@ -54,6 +54,12 @@ class Settings:
     )
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    smtp_host: str | None = os.getenv("SMTP_HOST")
+    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
+    smtp_username: str | None = os.getenv("SMTP_USERNAME")
+    smtp_password: str | None = os.getenv("SMTP_PASSWORD")
+    smtp_use_tls: bool = os.getenv("SMTP_USE_TLS", "true").strip().lower() not in {"0", "false", "no"}
+    smtp_from_email: str | None = os.getenv("SMTP_FROM_EMAIL")
     cors_allow_origin_regex: str | None = (
         os.getenv("CORS_ALLOW_ORIGIN_REGEX", _DEFAULT_DEV_CORS_REGEX if _ENVIRONMENT == "dev" else "").strip() or None
     )

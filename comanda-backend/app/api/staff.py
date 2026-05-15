@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import ensure_sector_access, get_current_staff
+from app.core.config import settings
 from app.core.security import hash_pin, verify_pin
 from app.db.models import (
     BillPartPaymentStatus,
@@ -18,6 +19,7 @@ from app.db.models import (
     CashSession,
     CashSessionStatus,
     CashRequestStatus,
+    FiscalDocument,
     ItemStatusEvent,
     Order,
     OrderItem,
@@ -63,10 +65,19 @@ from app.schemas.orders import (
     CollectOrderPaymentResponse,
     CashSessionOut,
     CashSessionResponse,
+    FiscalDocumentOut,
+    FiscalDocumentIssueOut,
+    FiscalDocumentHistoryItemOut,
+    FiscalDocumentsHistoryResponse,
+    FiscalDocumentEmailOut,
+    FiscalMailConfigOut,
+    FiscalDocumentUpdateIn,
     ForceCloseTableSessionResponse,
     HistoricalSectorAverageOut,
     HistoricalServiceTimesOut,
     ItemStatusEventOut,
+    FiscalInvoiceDraftOut,
+    FiscalInvoiceDraftUpdateIn,
     MarkOrderPrintRequest,
     MarkOrderPrintResponse,
     OpenCashSessionRequest,
@@ -89,6 +100,7 @@ from app.schemas.orders import (
     StaffAccountsResponse,
     StaffShiftOut,
     StoreClientVisibilityResponse,
+    StoreFiscalProfileOut,
     StoreFloorPlanItemOut,
     StoreFloorPlanResponse,
     StoreFloorPlanZoneOut,
@@ -110,6 +122,8 @@ from app.schemas.menu import ImageUrlPatchIn
 from app.services.billing import get_latest_bill_split, to_bill_split_out
 from app.services.print_tracking import build_order_print_status, mark_order_print_target
 from app.services.item_status import change_item_status
+from app.services.fiscal_issuer import issue_document
+from app.services.fiscal_mailer import mail_transport_mode, send_fiscal_document_email
 from app.services.realtime import event_bus
 from app.services.store_theme import suggest_store_theme
 
@@ -132,9 +146,36 @@ DEFAULT_FLOOR_PLAN_ZONES = [
     {"id": "private", "name": "Salon Privado"},
 ]
 FLOOR_PLAN_SHAPES = {"SQUARE", "RECT", "CIRCLE"}
+STORE_FISCAL_REQUIRED_FIELDS = {
+    "fiscal_business_name": "razon social",
+    "fiscal_tax_id": "CUIT",
+    "fiscal_tax_status": "condicion fiscal",
+    "fiscal_point_of_sale": "punto de venta",
+    "fiscal_issuer_email": "email emisor",
+}
+
+
+def _store_fiscal_setup(store: Store) -> tuple[str, list[str]]:
+    missing_fields = [
+        label
+        for field_name, label in STORE_FISCAL_REQUIRED_FIELDS.items()
+        if not str(getattr(store, field_name, "") or "").strip()
+    ]
+    configured_core_fields = (
+        str(store.fiscal_business_name or "").strip(),
+        str(store.fiscal_tax_id or "").strip(),
+        str(store.fiscal_point_of_sale or "").strip(),
+        str(store.fiscal_issuer_email or "").strip(),
+    )
+    if not any(configured_core_fields):
+        return "NOT_CONFIGURED", missing_fields
+    if missing_fields:
+        return "INCOMPLETE", missing_fields
+    return "READY_TO_INTEGRATE", []
 
 
 def _store_profile_out(store: Store) -> StoreProfileResponse:
+    fiscal_setup_status, fiscal_setup_missing_fields = _store_fiscal_setup(store)
     return StoreProfileResponse(
         store_id=store.id,
         restaurant_name=store.name,
@@ -152,6 +193,14 @@ def _store_profile_out(store: Store) -> StoreProfileResponse:
         payment_mercado_pago_enabled=bool(store.payment_mercado_pago_enabled),
         payment_modo_enabled=bool(store.payment_modo_enabled),
         payment_transfer_instructions=store.payment_transfer_instructions,
+        fiscal_business_name=store.fiscal_business_name,
+        fiscal_tax_id=store.fiscal_tax_id,
+        fiscal_tax_status=store.fiscal_tax_status or "RESPONSABLE_INSCRIPTO",
+        fiscal_point_of_sale=store.fiscal_point_of_sale,
+        fiscal_issuer_email=store.fiscal_issuer_email,
+        fiscal_integration_provider=store.fiscal_integration_provider or "MANUAL_DEMO",
+        fiscal_setup_status=fiscal_setup_status,
+        fiscal_setup_missing_fields=fiscal_setup_missing_fields,
     )
 
 
@@ -354,6 +403,190 @@ def _order_total_amount(order: Order) -> float:
 
 def _money(value: float | Decimal) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _suggest_invoice_type(*, store_tax_status: str | None, customer_tax_status: str | None) -> str | None:
+    issuer = (store_tax_status or "RESPONSABLE_INSCRIPTO").strip().upper()
+    customer = (customer_tax_status or "").strip().upper()
+    if not customer:
+        return None
+    if issuer in {"MONOTRIBUTISTA", "EXENTO"}:
+        return "C"
+    if issuer == "RESPONSABLE_INSCRIPTO":
+        if customer in {"RESPONSABLE_INSCRIPTO", "MONOTRIBUTISTA"}:
+            return "A"
+        return "B"
+    return None
+
+
+def _store_fiscal_profile(store: Store | None) -> StoreFiscalProfileOut:
+    setup_status, _missing_fields = _store_fiscal_setup(store) if store else ("NOT_CONFIGURED", list(STORE_FISCAL_REQUIRED_FIELDS.values()))
+    return StoreFiscalProfileOut(
+        business_name=(store.fiscal_business_name or store.name) if store else None,
+        tax_id=store.fiscal_tax_id if store else None,
+        tax_status=(store.fiscal_tax_status or "RESPONSABLE_INSCRIPTO") if store else "RESPONSABLE_INSCRIPTO",
+        point_of_sale=store.fiscal_point_of_sale if store else None,
+        issuer_email=store.fiscal_issuer_email if store else None,
+        setup_status=setup_status,
+        integration_provider=(store.fiscal_integration_provider or "MANUAL_DEMO") if store else "MANUAL_DEMO",
+    )
+
+
+def _require_store_fiscal_ready(store: Store | None) -> None:
+    if not store:
+        raise HTTPException(status_code=409, detail="No se encontró el local emisor.")
+    setup_status, missing_fields = _store_fiscal_setup(store)
+    if setup_status != "READY_TO_INTEGRATE":
+        raise HTTPException(
+            status_code=409,
+            detail=f"El perfil fiscal del local está incompleto. Faltan: {', '.join(missing_fields)}.",
+        )
+
+
+def _order_fiscal_invoice_draft(order: Order, store: Store | None) -> FiscalInvoiceDraftOut | None:
+    if not order.fiscal_invoice_requested and not order.fiscal_customer_tax_status and not order.fiscal_customer_email:
+        return None
+    suggested = _suggest_invoice_type(
+        store_tax_status=store.fiscal_tax_status if store else None,
+        customer_tax_status=order.fiscal_customer_tax_status,
+    )
+    ready = bool(
+        order.fiscal_invoice_requested
+        and order.fiscal_customer_tax_status
+        and order.fiscal_customer_document_type
+        and order.fiscal_customer_document_number
+        and order.fiscal_customer_name
+        and order.fiscal_customer_email
+        and suggested
+    )
+    return FiscalInvoiceDraftOut(
+        requested=bool(order.fiscal_invoice_requested),
+        customer_tax_status=order.fiscal_customer_tax_status,
+        customer_document_type=order.fiscal_customer_document_type,
+        customer_document_number=order.fiscal_customer_document_number,
+        customer_name=order.fiscal_customer_name,
+        customer_email=order.fiscal_customer_email,
+        suggested_invoice_type=suggested,
+        issue_mode="ELECTRONIC",
+        ready_to_issue=ready,
+    )
+
+
+def _safe_json_loads(value: str | None) -> dict:
+    if not value:
+        return {}
+    try:
+        payload = json.loads(value)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _fiscal_document_out(document: FiscalDocument | None) -> FiscalDocumentOut | None:
+    if not document:
+        return None
+    return FiscalDocumentOut(
+        id=document.id,
+        document_kind=document.document_kind,
+        invoice_type=document.invoice_type,
+        issue_mode=document.issue_mode,
+        status=document.status,
+        point_of_sale=document.point_of_sale,
+        invoice_number=document.invoice_number,
+        cae=document.cae,
+        cae_due_date=document.cae_due_date,
+        request_payload=_safe_json_loads(document.request_payload_json),
+        response_payload=_safe_json_loads(document.response_payload_json),
+        last_error=document.last_error,
+        email_delivery_status=document.email_delivery_status,
+        email_send_count=int(document.email_send_count or 0),
+        email_last_sent_at=document.email_last_sent_at,
+        email_last_error=document.email_last_error,
+        issued_at=document.issued_at,
+        canceled_at=document.canceled_at,
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+    )
+
+
+def _fiscal_document_history_item(document: FiscalDocument, order: Order | None, table_code: str | None) -> FiscalDocumentHistoryItemOut:
+    provider = "MANUAL_DEMO"
+    fiscal_valid = False
+    response_payload = _safe_json_loads(document.response_payload_json)
+    if response_payload:
+        provider = str(response_payload.get("provider") or provider)
+        fiscal_valid = bool(response_payload.get("fiscal_valid", False))
+    return FiscalDocumentHistoryItemOut(
+        document_id=document.id,
+        order_id=document.order_id,
+        table_code=table_code,
+        ticket_number=order.ticket_number if order else None,
+        customer_name=order.fiscal_customer_name if order else None,
+        customer_email=order.fiscal_customer_email if order else None,
+        invoice_type=document.invoice_type,
+        status=document.status,
+        provider=provider,
+        fiscal_valid=fiscal_valid,
+        invoice_number=document.invoice_number,
+        cae=document.cae,
+        email_delivery_status=document.email_delivery_status,
+        email_send_count=int(document.email_send_count or 0),
+        email_last_sent_at=document.email_last_sent_at,
+        issued_at=document.issued_at,
+        updated_at=document.updated_at,
+    )
+
+
+def _sync_order_fiscal_document(db: Session, order: Order, store: Store | None) -> FiscalDocument | None:
+    draft = _order_fiscal_invoice_draft(order, store)
+    if not draft or not draft.requested:
+        return None
+
+    document = db.scalar(
+        select(FiscalDocument).where(
+            FiscalDocument.order_id == order.id,
+            FiscalDocument.document_kind == "INVOICE",
+        )
+    )
+    if not document:
+        document = FiscalDocument(
+            store_id=order.store_id,
+            order_id=order.id,
+            document_kind="INVOICE",
+            issue_mode="ELECTRONIC",
+        )
+
+    request_payload = {
+        "order_id": order.id,
+        "store_id": order.store_id,
+        "ticket_number": order.ticket_number,
+        "customer": {
+            "tax_status": draft.customer_tax_status,
+            "document_type": draft.customer_document_type,
+            "document_number": draft.customer_document_number,
+            "name": draft.customer_name,
+            "email": draft.customer_email,
+        },
+        "issuer": {
+            "business_name": store.fiscal_business_name if store else None,
+            "tax_id": store.fiscal_tax_id if store else None,
+            "tax_status": store.fiscal_tax_status if store else None,
+            "point_of_sale": store.fiscal_point_of_sale if store else None,
+            "issuer_email": store.fiscal_issuer_email if store else None,
+        },
+        "suggested_invoice_type": draft.suggested_invoice_type,
+    }
+
+    document.store_id = order.store_id
+    document.invoice_type = draft.suggested_invoice_type
+    document.point_of_sale = store.fiscal_point_of_sale if store else None
+    document.request_payload_json = json.dumps(request_payload, ensure_ascii=True)
+    if document.status not in {"ISSUED", "CANCELED"}:
+        document.status = "READY_TO_ISSUE" if draft.ready_to_issue else "DRAFT"
+        document.last_error = None
+    db.add(document)
+    db.flush()
+    return document
 
 
 def _current_cash_session(db: Session, store_id: int) -> CashSession | None:
@@ -1548,6 +1781,12 @@ def patch_store_profile_settings(
     store.payment_mercado_pago_enabled = bool(payload.payment_mercado_pago_enabled)
     store.payment_modo_enabled = bool(payload.payment_modo_enabled)
     store.payment_transfer_instructions = (payload.payment_transfer_instructions or "").strip() or None
+    store.fiscal_business_name = (payload.fiscal_business_name or "").strip() or None
+    store.fiscal_tax_id = (payload.fiscal_tax_id or "").strip() or None
+    store.fiscal_tax_status = payload.fiscal_tax_status
+    store.fiscal_point_of_sale = (payload.fiscal_point_of_sale or "").strip() or None
+    store.fiscal_issuer_email = (payload.fiscal_issuer_email or "").strip() or None
+    store.fiscal_integration_provider = payload.fiscal_integration_provider
     if payload.new_owner_password is not None and payload.new_owner_password.strip():
         store.owner_password_hash = hash_pin(payload.new_owner_password.strip())
     db.add(store)
@@ -2309,6 +2548,7 @@ def get_staff_order_items_detail(
     )
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    store = db.get(Store, current_staff.store_id)
 
     now_utc = datetime.now(tz=timezone.utc)
     table_session = None
@@ -2357,6 +2597,7 @@ def get_staff_order_items_detail(
                 item_name=item.product.name,
                 qty=item.qty,
                 unit_price=float(item.unit_price),
+                vat_rate=float(item.product.vat_rate if item.product and item.product.vat_rate is not None else 21),
                 notes=item.notes,
                 sector=item.sector,
                 status=item.status,
@@ -2406,11 +2647,314 @@ def get_staff_order_items_detail(
                 .order_by(TableSessionCashRequest.created_at.desc(), TableSessionCashRequest.id.desc())
             ).all()
         ],
+        store_fiscal_profile=_store_fiscal_profile(store),
+        fiscal_invoice_draft=_order_fiscal_invoice_draft(order, store),
+        fiscal_document=_fiscal_document_out(
+            db.scalar(
+                select(FiscalDocument)
+                .where(FiscalDocument.order_id == order.id, FiscalDocument.document_kind == "INVOICE")
+                .order_by(FiscalDocument.updated_at.desc(), FiscalDocument.id.desc())
+                .limit(1)
+            )
+        ),
         print_status=build_order_print_status(order),
         table_elapsed_minutes=_minutes_since(table_session.created_at if table_session else order.created_at, now_utc),
         order_elapsed_minutes=_minutes_since(order.created_at, now_utc),
         created_at=order.created_at,
     )
+
+
+@router.patch("/orders/{order_id}/fiscal-draft", response_model=FiscalInvoiceDraftOut)
+def update_order_fiscal_draft(
+    order_id: int,
+    payload: FiscalInvoiceDraftUpdateIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> FiscalInvoiceDraftOut:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Solo admin puede cargar datos fiscales.")
+    order = db.scalar(select(Order).where(Order.id == order_id, Order.store_id == current_staff.store_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    store = db.get(Store, current_staff.store_id)
+
+    order.fiscal_invoice_requested = bool(payload.requested)
+    order.fiscal_customer_tax_status = payload.customer_tax_status
+    order.fiscal_customer_document_type = payload.customer_document_type
+    order.fiscal_customer_document_number = payload.customer_document_number.strip()
+    order.fiscal_customer_name = payload.customer_name.strip()
+    order.fiscal_customer_email = payload.customer_email.strip().lower()
+    order.updated_at = datetime.utcnow()
+    db.add(order)
+    _sync_order_fiscal_document(db, order, store)
+    db.commit()
+    db.refresh(order)
+
+    draft = _order_fiscal_invoice_draft(order, store)
+    if not draft:
+        raise HTTPException(status_code=500, detail="No se pudo construir el borrador fiscal.")
+    event_bus.publish(
+        "order.fiscal.updated",
+        {
+            "order_id": order.id,
+            "store_id": order.store_id,
+            "table_session_id": order.table_session_id,
+            "ticket_number": order.ticket_number,
+            "suggested_invoice_type": draft.suggested_invoice_type,
+            "ready_to_issue": draft.ready_to_issue,
+        },
+    )
+    return draft
+
+
+@router.patch("/orders/{order_id}/fiscal-document", response_model=FiscalDocumentOut)
+def update_order_fiscal_document(
+    order_id: int,
+    payload: FiscalDocumentUpdateIn,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> FiscalDocumentOut:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Solo admin puede actualizar comprobantes fiscales.")
+    order = db.scalar(select(Order).where(Order.id == order_id, Order.store_id == current_staff.store_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    store = db.get(Store, current_staff.store_id)
+
+    document = _sync_order_fiscal_document(db, order, store)
+    if not document:
+        raise HTTPException(status_code=409, detail="Primero cargá el borrador fiscal del pedido.")
+
+    next_status = payload.status.strip().upper()
+    current_status = (document.status or "DRAFT").strip().upper()
+    draft = _order_fiscal_invoice_draft(order, store)
+    if not draft:
+        raise HTTPException(status_code=409, detail="El pedido todavía no tiene borrador fiscal válido.")
+
+    if current_status == "CANCELED":
+        raise HTTPException(status_code=409, detail="El comprobante ya está anulado y no puede volver a editarse.")
+
+    if next_status in {"READY_TO_ISSUE", "ISSUED"}:
+        _require_store_fiscal_ready(store)
+        if not draft.ready_to_issue:
+            raise HTTPException(status_code=409, detail="El borrador fiscal del pedido todavía está incompleto.")
+
+    if next_status == "ISSUED":
+        if not str(payload.invoice_number or "").strip():
+            raise HTTPException(status_code=422, detail="Para marcar emitido hace falta número de comprobante.")
+        if not str(payload.cae or "").strip():
+            raise HTTPException(status_code=422, detail="Para marcar emitido hace falta CAE.")
+        if payload.cae_due_date is None:
+            raise HTTPException(status_code=422, detail="Para marcar emitido hace falta vencimiento de CAE.")
+
+    if next_status == "ERROR" and not str(payload.last_error or "").strip():
+        raise HTTPException(status_code=422, detail="Para marcar error hace falta detalle del problema.")
+
+    if next_status == "CANCELED" and current_status == "ISSUED":
+        raise HTTPException(
+            status_code=409,
+            detail="Un comprobante emitido no se anula desde acá. Debe resolverse con nota de crédito en el siguiente sprint.",
+        )
+
+    document.status = next_status
+    document.invoice_number = (payload.invoice_number or "").strip() or None
+    document.cae = (payload.cae or "").strip() or None
+    document.cae_due_date = payload.cae_due_date
+    document.response_payload_json = json.dumps(payload.response_payload or {}, ensure_ascii=True) if payload.response_payload else None
+    document.last_error = (payload.last_error or "").strip() or None
+    if next_status == "ISSUED":
+        document.issued_at = document.issued_at or datetime.utcnow()
+        document.canceled_at = None
+    elif next_status == "CANCELED":
+        document.canceled_at = datetime.utcnow()
+    else:
+        document.canceled_at = None
+
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+
+    event_bus.publish(
+        "order.fiscal.document.updated",
+        {
+            "order_id": order.id,
+            "store_id": order.store_id,
+            "table_session_id": order.table_session_id,
+            "ticket_number": order.ticket_number,
+            "document_id": document.id,
+            "status": document.status,
+            "invoice_type": document.invoice_type,
+            "invoice_number": document.invoice_number,
+            "cae": document.cae,
+        },
+    )
+    return _fiscal_document_out(document)
+
+
+@router.post("/orders/{order_id}/fiscal-document/issue", response_model=FiscalDocumentIssueOut)
+def issue_order_fiscal_document(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> FiscalDocumentIssueOut:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Solo admin puede emitir comprobantes fiscales.")
+    order = db.scalar(select(Order).where(Order.id == order_id, Order.store_id == current_staff.store_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    store = db.get(Store, current_staff.store_id)
+    _require_store_fiscal_ready(store)
+
+    draft = _order_fiscal_invoice_draft(order, store)
+    if not draft or not draft.ready_to_issue:
+        raise HTTPException(status_code=409, detail="El borrador fiscal del pedido todavía está incompleto.")
+
+    document = _sync_order_fiscal_document(db, order, store)
+    if not document:
+        raise HTTPException(status_code=409, detail="No existe comprobante interno listo para emitir.")
+    if document.status == "CANCELED":
+        raise HTTPException(status_code=409, detail="El comprobante interno está anulado.")
+    if document.status == "ISSUED":
+        return FiscalDocumentIssueOut(
+            provider=store.fiscal_integration_provider or "MANUAL_DEMO",
+            mode="DEMO" if (store.fiscal_integration_provider or "MANUAL_DEMO") == "MANUAL_DEMO" else "LIVE",
+            fiscal_valid=False,
+            message="El comprobante ya estaba emitido.",
+            document=_fiscal_document_out(document),
+        )
+
+    try:
+        result = issue_document(db, store=store, order=order, document=document)
+    except ValueError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+    if order.fiscal_customer_email:
+        send_fiscal_document_email(
+            db,
+            store=store,
+            order=order,
+            document=document,
+            recipient_email=order.fiscal_customer_email,
+        )
+
+    db.commit()
+    db.refresh(document)
+    event_bus.publish(
+        "order.fiscal.document.issued",
+        {
+            "order_id": order.id,
+            "store_id": order.store_id,
+            "table_session_id": order.table_session_id,
+            "ticket_number": order.ticket_number,
+            "document_id": document.id,
+            "provider": result.provider,
+            "status": document.status,
+            "invoice_number": document.invoice_number,
+            "cae": document.cae,
+            "fiscal_valid": result.fiscal_valid,
+        },
+    )
+    return FiscalDocumentIssueOut(
+        provider=result.provider,
+        mode=result.mode,
+        fiscal_valid=result.fiscal_valid,
+        message=result.message,
+        document=_fiscal_document_out(document),
+    )
+
+
+@router.post("/orders/{order_id}/fiscal-document/resend-email", response_model=FiscalDocumentEmailOut)
+def resend_order_fiscal_document_email(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> FiscalDocumentEmailOut:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Solo admin puede reenviar mails fiscales.")
+    order = db.scalar(select(Order).where(Order.id == order_id, Order.store_id == current_staff.store_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if not str(order.fiscal_customer_email or "").strip():
+        raise HTTPException(status_code=409, detail="El pedido no tiene email fiscal del cliente.")
+    store = db.get(Store, current_staff.store_id)
+    document = db.scalar(
+        select(FiscalDocument)
+        .where(FiscalDocument.order_id == order.id, FiscalDocument.document_kind == "INVOICE")
+        .order_by(FiscalDocument.updated_at.desc(), FiscalDocument.id.desc())
+        .limit(1)
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="No existe comprobante fiscal para reenviar.")
+    if document.status != "ISSUED":
+        raise HTTPException(status_code=409, detail="Solo se pueden reenviar comprobantes emitidos.")
+
+    result = send_fiscal_document_email(
+        db,
+        store=store,
+        order=order,
+        document=document,
+        recipient_email=order.fiscal_customer_email,
+    )
+    db.commit()
+    db.refresh(document)
+    return FiscalDocumentEmailOut(
+        document_id=document.id,
+        mode=result.mode,
+        delivered=result.delivered,
+        message=result.message,
+        email_delivery_status=document.email_delivery_status,
+        email_send_count=int(document.email_send_count or 0),
+        email_last_sent_at=document.email_last_sent_at,
+        email_last_error=document.email_last_error,
+    )
+
+
+@router.get("/fiscal-mail/config", response_model=FiscalMailConfigOut)
+def get_fiscal_mail_config(
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> FiscalMailConfigOut:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Solo admin puede ver la configuracion de mail fiscal.")
+    return FiscalMailConfigOut(
+        mode=mail_transport_mode(),
+        smtp_configured=mail_transport_mode() == "SMTP",
+        from_email=settings.smtp_from_email,
+        host=settings.smtp_host,
+        port=settings.smtp_port if settings.smtp_host else None,
+        use_tls=settings.smtp_use_tls,
+    )
+
+
+@router.get("/fiscal-documents", response_model=FiscalDocumentsHistoryResponse)
+def get_fiscal_documents_history(
+    store_id: int,
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    current_staff: StaffAccount = Depends(get_current_staff),
+) -> FiscalDocumentsHistoryResponse:
+    if current_staff.sector != Sector.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Solo admin puede ver historial fiscal.")
+    if store_id != current_staff.store_id:
+        raise HTTPException(status_code=403, detail="Cross-store access is not allowed")
+
+    stmt = (
+        select(FiscalDocument, Order, Table.code)
+        .join(Order, Order.id == FiscalDocument.order_id)
+        .join(Table, Table.id == Order.table_id)
+        .where(FiscalDocument.store_id == store_id)
+        .order_by(FiscalDocument.updated_at.desc(), FiscalDocument.id.desc())
+    )
+    normalized_status = str(status or "").strip().upper()
+    if normalized_status:
+        stmt = stmt.where(FiscalDocument.status == normalized_status)
+
+    rows = db.execute(stmt).all()
+    items = [
+        _fiscal_document_history_item(document, order, table_code)
+        for document, order, table_code in rows
+    ]
+    return FiscalDocumentsHistoryResponse(total=len(items), items=items)
 
 
 @router.post("/orders/{order_id}/print-status", response_model=MarkOrderPrintResponse)

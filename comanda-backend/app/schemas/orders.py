@@ -1,6 +1,194 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+FISCAL_TAX_STATUS_CHOICES = {"CONSUMIDOR_FINAL", "RESPONSABLE_INSCRIPTO", "MONOTRIBUTISTA", "EXENTO"}
+FISCAL_DOCUMENT_TYPE_CHOICES = {"DNI", "CUIT"}
+STORE_FISCAL_TAX_STATUS_CHOICES = {"RESPONSABLE_INSCRIPTO", "MONOTRIBUTISTA", "EXENTO"}
+STORE_FISCAL_SETUP_STATUS_CHOICES = {"NOT_CONFIGURED", "INCOMPLETE", "READY_TO_INTEGRATE"}
+FISCAL_INTEGRATION_PROVIDER_CHOICES = {"MANUAL_DEMO", "ARCA_DIRECT", "EXTERNAL_API"}
+
+
+def normalize_fiscal_tax_status(value: str) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized not in FISCAL_TAX_STATUS_CHOICES:
+        raise ValueError("unsupported fiscal tax status")
+    return normalized
+
+
+def normalize_document_type(value: str) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized not in FISCAL_DOCUMENT_TYPE_CHOICES:
+        raise ValueError("unsupported fiscal document type")
+    return normalized
+
+
+def normalize_store_fiscal_tax_status(value: str) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized not in STORE_FISCAL_TAX_STATUS_CHOICES:
+        raise ValueError("unsupported store fiscal tax status")
+    return normalized
+
+
+def normalize_store_point_of_sale(value: str | None) -> str | None:
+    candidate = str(value or "").strip()
+    if not candidate:
+        return None
+    if not candidate.isdigit():
+        raise ValueError("point of sale must be numeric")
+    if len(candidate) > 5:
+        raise ValueError("point of sale too long")
+    return candidate
+
+
+def normalize_optional_email(value: str | None) -> str | None:
+    candidate = str(value or "").strip()
+    if not candidate:
+        return None
+    if "@" not in candidate or "." not in candidate.split("@")[-1]:
+        raise ValueError("invalid email")
+    return candidate
+
+
+def normalize_fiscal_integration_provider(value: str) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized not in FISCAL_INTEGRATION_PROVIDER_CHOICES:
+        raise ValueError("unsupported fiscal integration provider")
+    return normalized
+
+
+class FiscalInvoiceDraftOut(BaseModel):
+    requested: bool = False
+    customer_tax_status: str | None = None
+    customer_document_type: str | None = None
+    customer_document_number: str | None = None
+    customer_name: str | None = None
+    customer_email: str | None = None
+    suggested_invoice_type: str | None = None
+    issue_mode: str = "ELECTRONIC"
+    ready_to_issue: bool = False
+
+
+class FiscalInvoiceDraftUpdateIn(BaseModel):
+    requested: bool = True
+    customer_tax_status: str
+    customer_document_type: str
+    customer_document_number: str
+    customer_name: str
+    customer_email: str
+
+    @field_validator("customer_tax_status")
+    @classmethod
+    def validate_customer_tax_status(cls, value: str) -> str:
+        return normalize_fiscal_tax_status(value)
+
+    @field_validator("customer_document_type")
+    @classmethod
+    def validate_document_type(cls, value: str) -> str:
+        return normalize_document_type(value)
+
+    @field_validator("customer_document_number", "customer_name", "customer_email")
+    @classmethod
+    def validate_required_text(cls, value: str) -> str:
+        candidate = str(value or "").strip()
+        if not candidate:
+            raise ValueError("required field")
+        return candidate
+
+
+class StoreFiscalProfileOut(BaseModel):
+    business_name: str | None = None
+    tax_id: str | None = None
+    tax_status: str
+    point_of_sale: str | None = None
+    issuer_email: str | None = None
+    setup_status: str = "NOT_CONFIGURED"
+    integration_provider: str = "MANUAL_DEMO"
+
+
+class FiscalDocumentOut(BaseModel):
+    id: int
+    document_kind: str = "INVOICE"
+    invoice_type: str | None = None
+    issue_mode: str = "ELECTRONIC"
+    status: str = "DRAFT"
+    point_of_sale: str | None = None
+    invoice_number: str | None = None
+    cae: str | None = None
+    cae_due_date: datetime | None = None
+    request_payload: dict = Field(default_factory=dict)
+    response_payload: dict = Field(default_factory=dict)
+    last_error: str | None = None
+    email_delivery_status: str = "PENDING"
+    email_send_count: int = 0
+    email_last_sent_at: datetime | None = None
+    email_last_error: str | None = None
+    issued_at: datetime | None = None
+    canceled_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class FiscalDocumentUpdateIn(BaseModel):
+    status: str = Field(..., pattern="^(DRAFT|READY_TO_ISSUE|ISSUED|ERROR|CANCELED)$")
+    invoice_number: str | None = Field(default=None, max_length=30)
+    cae: str | None = Field(default=None, max_length=32)
+    cae_due_date: datetime | None = None
+    response_payload: dict = Field(default_factory=dict)
+    last_error: str | None = Field(default=None, max_length=4000)
+
+
+class FiscalDocumentIssueOut(BaseModel):
+    provider: str
+    mode: str = "DEMO"
+    document: FiscalDocumentOut
+    fiscal_valid: bool = False
+    message: str
+
+
+class FiscalDocumentHistoryItemOut(BaseModel):
+    document_id: int
+    order_id: int
+    table_code: str | None = None
+    ticket_number: int | None = None
+    customer_name: str | None = None
+    customer_email: str | None = None
+    invoice_type: str | None = None
+    status: str
+    provider: str = "MANUAL_DEMO"
+    fiscal_valid: bool = False
+    invoice_number: str | None = None
+    cae: str | None = None
+    email_delivery_status: str = "PENDING"
+    email_send_count: int = 0
+    email_last_sent_at: datetime | None = None
+    issued_at: datetime | None = None
+    updated_at: datetime
+
+
+class FiscalDocumentsHistoryResponse(BaseModel):
+    total: int
+    items: list[FiscalDocumentHistoryItemOut]
+
+
+class FiscalDocumentEmailOut(BaseModel):
+    document_id: int
+    mode: str
+    delivered: bool = False
+    message: str
+    email_delivery_status: str
+    email_send_count: int = 0
+    email_last_sent_at: datetime | None = None
+    email_last_error: str | None = None
+
+
+class FiscalMailConfigOut(BaseModel):
+    mode: str = "SIMULATED"
+    smtp_configured: bool = False
+    from_email: str | None = None
+    host: str | None = None
+    port: int | None = None
+    use_tls: bool = True
 
 
 class CreateOrderItemIn(BaseModel):
@@ -214,6 +402,14 @@ class StoreProfileResponse(BaseModel):
     payment_mercado_pago_enabled: bool = True
     payment_modo_enabled: bool = True
     payment_transfer_instructions: str | None = None
+    fiscal_business_name: str | None = None
+    fiscal_tax_id: str | None = None
+    fiscal_tax_status: str = "RESPONSABLE_INSCRIPTO"
+    fiscal_point_of_sale: str | None = None
+    fiscal_issuer_email: str | None = None
+    fiscal_integration_provider: str = "MANUAL_DEMO"
+    fiscal_setup_status: str = "NOT_CONFIGURED"
+    fiscal_setup_missing_fields: list[str] = []
 
 
 class StaffAccountOut(BaseModel):
@@ -286,6 +482,32 @@ class UpdateStoreProfileRequest(BaseModel):
     payment_mercado_pago_enabled: bool = True
     payment_modo_enabled: bool = True
     payment_transfer_instructions: str | None = Field(default=None, max_length=2000)
+    fiscal_business_name: str | None = Field(default=None, max_length=255)
+    fiscal_tax_id: str | None = Field(default=None, max_length=32)
+    fiscal_tax_status: str = Field("RESPONSABLE_INSCRIPTO")
+    fiscal_point_of_sale: str | None = Field(default=None, max_length=5)
+    fiscal_issuer_email: str | None = Field(default=None, max_length=255)
+    fiscal_integration_provider: str = Field("MANUAL_DEMO")
+
+    @field_validator("fiscal_tax_status")
+    @classmethod
+    def validate_store_tax_status(cls, value: str) -> str:
+        return normalize_store_fiscal_tax_status(value)
+
+    @field_validator("fiscal_point_of_sale")
+    @classmethod
+    def validate_store_point_of_sale(cls, value: str | None) -> str | None:
+        return normalize_store_point_of_sale(value)
+
+    @field_validator("fiscal_issuer_email")
+    @classmethod
+    def validate_fiscal_issuer_email(cls, value: str | None) -> str | None:
+        return normalize_optional_email(value)
+
+    @field_validator("fiscal_integration_provider")
+    @classmethod
+    def validate_fiscal_integration_provider(cls, value: str) -> str:
+        return normalize_fiscal_integration_provider(value)
 
 
 class StoreThemeSuggestionRequest(BaseModel):
@@ -692,6 +914,7 @@ class StaffBoardItemOut(BaseModel):
     item_name: str
     qty: int
     unit_price: float = 0
+    vat_rate: float = 21
     notes: str | None = None
     sector: str
     status: str
@@ -781,6 +1004,9 @@ class AdminOrderItemsDetailResponse(BaseModel):
     bill_split: BillSplitOut | None = None
     cash_requests: list[TableSessionCashRequestOut] = []
     print_status: "OrderPrintStatusOut"
+    store_fiscal_profile: StoreFiscalProfileOut
+    fiscal_invoice_draft: FiscalInvoiceDraftOut | None = None
+    fiscal_document: FiscalDocumentOut | None = None
     table_elapsed_minutes: int = 0
     order_elapsed_minutes: int = 0
     created_at: datetime

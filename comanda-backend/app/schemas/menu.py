@@ -2,6 +2,15 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
+VAT_RATE_CHOICES = {0.0, 10.5, 21.0, 27.0}
+
+
+def normalize_vat_rate(value: float) -> float:
+    rounded = round(float(value), 2)
+    if rounded not in VAT_RATE_CHOICES:
+        raise ValueError("vat_rate must be one of 0, 10.5, 21 or 27")
+    return rounded
+
 
 class CategoryOut(BaseModel):
     id: int
@@ -45,6 +54,9 @@ class ProductOut(BaseModel):
     image_url: str | None = None
     description: str | None = None
     base_price: float
+    vat_rate: float = 21.0
+    net_price: float
+    vat_amount: float
     fulfillment_sector: str
     variants: list[VariantOut]
     extra_options: list[ExtraOptionOut]
@@ -78,6 +90,7 @@ class MenuResponse(BaseModel):
 class ProductCreateIn(BaseModel):
     name: str
     base_price: float
+    vat_rate: float = 21.0
     fulfillment_sector: str
     category_id: int | None = None
     description: str | None = None
@@ -90,10 +103,15 @@ class ProductCreateIn(BaseModel):
             raise ValueError("base_price cannot be negative")
         return value
 
+    @field_validator("vat_rate")
+    def vat_rate_supported(cls, value: float) -> float:
+        return normalize_vat_rate(value)
+
 
 class ProductUpdateIn(BaseModel):
     name: str | None = None
     base_price: float | None = None
+    vat_rate: float | None = None
     fulfillment_sector: str | None = None
     category_id: int | None = None
     description: str | None = None
@@ -107,6 +125,12 @@ class ProductUpdateIn(BaseModel):
         if value < 0:
             raise ValueError("base_price cannot be negative")
         return value
+
+    @field_validator("vat_rate")
+    def vat_rate_supported(cls, value: float | None) -> float | None:
+        if value is None:
+            return value
+        return normalize_vat_rate(value)
 
 
 class ImageUrlPatchIn(BaseModel):

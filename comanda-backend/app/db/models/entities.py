@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -123,6 +123,12 @@ class Store(Base):
     payment_mercado_pago_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     payment_modo_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     payment_transfer_instructions: Mapped[str | None] = mapped_column(Text)
+    fiscal_business_name: Mapped[str | None] = mapped_column(String(255))
+    fiscal_tax_id: Mapped[str | None] = mapped_column(String(32))
+    fiscal_tax_status: Mapped[str] = mapped_column(String(40), default="RESPONSABLE_INSCRIPTO", nullable=False)
+    fiscal_point_of_sale: Mapped[str | None] = mapped_column(String(5))
+    fiscal_issuer_email: Mapped[str | None] = mapped_column(String(255))
+    fiscal_integration_provider: Mapped[str] = mapped_column(String(40), default="MANUAL_DEMO", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -209,6 +215,7 @@ class Product(Base):
     image_url: Mapped[str | None] = mapped_column(String(500))
     description: Mapped[str | None] = mapped_column(Text)
     base_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    vat_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=21, server_default=text("21"))
     fulfillment_sector: Mapped[str] = mapped_column(String(20), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -311,6 +318,12 @@ class Order(Base):
     service_mode: Mapped[str] = mapped_column(String(20), default=ServiceMode.RESTAURANTE.value, nullable=False)
     payment_gate: Mapped[str] = mapped_column(String(32), default=PaymentGate.NONE.value, nullable=False)
     payment_status: Mapped[str] = mapped_column(String(20), default=OrderPaymentStatus.CONFIRMED.value, nullable=False)
+    fiscal_invoice_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    fiscal_customer_tax_status: Mapped[str | None] = mapped_column(String(40))
+    fiscal_customer_document_type: Mapped[str | None] = mapped_column(String(20))
+    fiscal_customer_document_number: Mapped[str | None] = mapped_column(String(40))
+    fiscal_customer_name: Mapped[str | None] = mapped_column(String(255))
+    fiscal_customer_email: Mapped[str | None] = mapped_column(String(255))
     printed_full_at: Mapped[datetime | None] = mapped_column(DateTime)
     printed_kitchen_at: Mapped[datetime | None] = mapped_column(DateTime)
     printed_bar_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -325,6 +338,39 @@ class Order(Base):
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order")
     sector_statuses: Mapped[list["OrderSectorStatus"]] = relationship(back_populates="order")
     bill_splits: Mapped[list["BillSplit"]] = relationship(back_populates="order")
+    fiscal_documents: Mapped[list["FiscalDocument"]] = relationship(back_populates="order")
+
+
+class FiscalDocument(Base):
+    __tablename__ = "fiscal_documents"
+    __table_args__ = (UniqueConstraint("order_id", "document_kind", name="uq_fiscal_documents_order_kind"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False)
+    document_kind: Mapped[str] = mapped_column(String(20), default="INVOICE", nullable=False)
+    invoice_type: Mapped[str | None] = mapped_column(String(5))
+    issue_mode: Mapped[str] = mapped_column(String(20), default="ELECTRONIC", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="DRAFT", nullable=False)
+    point_of_sale: Mapped[str | None] = mapped_column(String(5))
+    invoice_number: Mapped[str | None] = mapped_column(String(30))
+    cae: Mapped[str | None] = mapped_column(String(32))
+    cae_due_date: Mapped[datetime | None] = mapped_column(DateTime)
+    request_payload_json: Mapped[str | None] = mapped_column(Text)
+    response_payload_json: Mapped[str | None] = mapped_column(Text)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    email_delivery_status: Mapped[str] = mapped_column(String(20), default="PENDING", nullable=False)
+    email_send_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    email_last_sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+    email_last_error: Mapped[str | None] = mapped_column(Text)
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime)
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    order: Mapped["Order"] = relationship(back_populates="fiscal_documents")
 
 
 class OrderItem(Base):

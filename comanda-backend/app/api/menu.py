@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,6 +9,36 @@ from app.db.session import get_db
 from app.schemas.menu import CategoryOut, ExtraOptionOut, MenuResponse, ProductOut, VariantOut
 
 router = APIRouter(tags=["menu"])
+
+
+def _product_prices(base_price: float, vat_rate: float) -> tuple[float, float]:
+    gross_price = Decimal(str(base_price or 0))
+    rate = Decimal(str(vat_rate or 0))
+    divisor = Decimal("1") + (rate / Decimal("100"))
+    net_price = gross_price if divisor == Decimal("0") else (gross_price / divisor)
+    net_price = net_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    vat_amount = (gross_price - net_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return float(net_price), float(vat_amount)
+
+
+def _product_out(product: Product, variants_by_product: dict[int, list[VariantOut]], extras_by_product: dict[int, list[ExtraOptionOut]]) -> ProductOut:
+    vat_rate = float(product.vat_rate or 21)
+    net_price, vat_amount = _product_prices(float(product.base_price), vat_rate)
+    return ProductOut(
+        id=product.id,
+        category_id=product.category_id,
+        name=product.name,
+        image_url=product.image_url,
+        description=product.description,
+        base_price=float(product.base_price),
+        vat_rate=vat_rate,
+        net_price=net_price,
+        vat_amount=vat_amount,
+        fulfillment_sector=product.fulfillment_sector,
+        variants=variants_by_product.get(product.id, []),
+        extra_options=extras_by_product.get(product.id, []),
+        active=product.active,
+    )
 
 
 @router.get("/menu", response_model=MenuResponse)
@@ -73,19 +105,5 @@ def get_menu(store_id: int, db: Session = Depends(get_db)) -> MenuResponse:
         payment_modo_enabled=bool(store.payment_modo_enabled),
         payment_transfer_instructions=store.payment_transfer_instructions,
         categories=[CategoryOut(id=c.id, name=c.name, image_url=c.image_url, sort_order=c.sort_order) for c in categories],
-        products=[
-            ProductOut(
-                id=p.id,
-                category_id=p.category_id,
-                name=p.name,
-                image_url=p.image_url,
-                description=p.description,
-                base_price=float(p.base_price),
-                fulfillment_sector=p.fulfillment_sector,
-                variants=variants_by_product.get(p.id, []),
-                extra_options=extras_by_product.get(p.id, []),
-                active=p.active,
-            )
-            for p in products
-        ],
+        products=[_product_out(p, variants_by_product, extras_by_product) for p in products],
     )

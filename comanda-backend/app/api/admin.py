@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
@@ -10,6 +12,7 @@ from app.db.models import (
     BillSplit,
     BillSplitPart,
     BillSplitStatus,
+    FiscalDocument,
     FulfillmentSector,
     ItemStatusEvent,
     MenuCategory,
@@ -56,8 +59,11 @@ from app.schemas.orders import (
     AdminOrderSummaryOut,
     AdminOrdersResponse,
     AdminSectorDelayOut,
+    FiscalDocumentOut,
+    FiscalInvoiceDraftOut,
     ItemStatusEventOut,
     SectorStatusOut,
+    StoreFiscalProfileOut,
     StaffBoardItemOut,
 )
 from app.services.billing import get_latest_bill_split, to_bill_split_out
@@ -165,14 +171,111 @@ def _minutes_since(reference_dt: datetime | None, now_utc: datetime) -> int:
     return max(0, int((current_aware - reference_aware).total_seconds() // 60))
 
 
+def _suggest_invoice_type(*, store_tax_status: str | None, customer_tax_status: str | None) -> str | None:
+    issuer = (store_tax_status or "RESPONSABLE_INSCRIPTO").strip().upper()
+    customer = (customer_tax_status or "").strip().upper()
+    if not customer:
+        return None
+    if issuer in {"MONOTRIBUTISTA", "EXENTO"}:
+        return "C"
+    if issuer == "RESPONSABLE_INSCRIPTO":
+        if customer in {"RESPONSABLE_INSCRIPTO", "MONOTRIBUTISTA"}:
+            return "A"
+        return "B"
+    return None
+
+
+def _store_fiscal_profile(store: Store | None) -> StoreFiscalProfileOut:
+    return StoreFiscalProfileOut(
+        business_name=(store.fiscal_business_name or store.name) if store else None,
+        tax_id=store.fiscal_tax_id if store else None,
+        tax_status=(store.fiscal_tax_status or "RESPONSABLE_INSCRIPTO") if store else "RESPONSABLE_INSCRIPTO",
+        point_of_sale=store.fiscal_point_of_sale if store else None,
+        issuer_email=store.fiscal_issuer_email if store else None,
+        setup_status="READY_TO_INTEGRATE" if store and store.fiscal_business_name and store.fiscal_tax_id and store.fiscal_point_of_sale and store.fiscal_issuer_email else "INCOMPLETE",
+        integration_provider=(store.fiscal_integration_provider or "MANUAL_DEMO") if store else "MANUAL_DEMO",
+    )
+
+
+def _order_fiscal_invoice_draft(order: Order, store: Store | None) -> FiscalInvoiceDraftOut | None:
+    if not order.fiscal_invoice_requested and not order.fiscal_customer_tax_status and not order.fiscal_customer_email:
+        return None
+    suggested = _suggest_invoice_type(
+        store_tax_status=store.fiscal_tax_status if store else None,
+        customer_tax_status=order.fiscal_customer_tax_status,
+    )
+    ready = bool(
+        order.fiscal_invoice_requested
+        and order.fiscal_customer_tax_status
+        and order.fiscal_customer_document_type
+        and order.fiscal_customer_document_number
+        and order.fiscal_customer_name
+        and order.fiscal_customer_email
+        and suggested
+    )
+    return FiscalInvoiceDraftOut(
+        requested=bool(order.fiscal_invoice_requested),
+        customer_tax_status=order.fiscal_customer_tax_status,
+        customer_document_type=order.fiscal_customer_document_type,
+        customer_document_number=order.fiscal_customer_document_number,
+        customer_name=order.fiscal_customer_name,
+        customer_email=order.fiscal_customer_email,
+        suggested_invoice_type=suggested,
+        issue_mode="ELECTRONIC",
+        ready_to_issue=ready,
+    )
+
+
+def _safe_json_loads(value: str | None) -> dict:
+    if not value:
+        return {}
+    try:
+        payload = json.loads(value)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _fiscal_document_out(document: FiscalDocument | None) -> FiscalDocumentOut | None:
+    if not document:
+        return None
+    return FiscalDocumentOut(
+        id=document.id,
+        document_kind=document.document_kind,
+        invoice_type=document.invoice_type,
+        issue_mode=document.issue_mode,
+        status=document.status,
+        point_of_sale=document.point_of_sale,
+        invoice_number=document.invoice_number,
+        cae=document.cae,
+        cae_due_date=document.cae_due_date,
+        request_payload=_safe_json_loads(document.request_payload_json),
+        response_payload=_safe_json_loads(document.response_payload_json),
+        last_error=document.last_error,
+        issued_at=document.issued_at,
+        canceled_at=document.canceled_at,
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+    )
+
+
 def _product_out(product: Product) -> ProductOut:
+    gross_price = Decimal(str(product.base_price or 0))
+    vat_rate = Decimal(str(product.vat_rate or 0))
+    divisor = Decimal("1") + (vat_rate / Decimal("100"))
+    net_price = gross_price if divisor == Decimal("0") else (gross_price / divisor)
+    net_price = net_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    vat_amount = (gross_price - net_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return ProductOut(
         id=product.id,
         category_id=product.category_id,
         name=product.name,
         image_url=product.image_url,
         description=product.description,
-        base_price=float(product.base_price),
+        base_price=float(gross_price),
+        vat_rate=float(vat_rate),
+        net_price=float(net_price),
+        vat_amount=float(vat_amount),
         fulfillment_sector=product.fulfillment_sector,
         variants=[
             VariantOut(id=variant.id, name=variant.name, extra_price=float(variant.extra_price))
@@ -351,6 +454,7 @@ def commit_menu_import(
             name=product_name,
             description=item.description.strip() if item.description else None,
             base_price=item.base_price,
+            vat_rate=21,
             fulfillment_sector=item.fulfillment_sector,
             category_id=category.id if category else None,
             image_url=ImageUrlPatchIn(image_url=item.image_url).image_url if item.image_url else None,
@@ -417,6 +521,7 @@ def create_admin_product(
         name=payload.name.strip(),
         description=payload.description,
         base_price=payload.base_price,
+        vat_rate=payload.vat_rate,
         fulfillment_sector=sector_value,
         category_id=payload.category_id,
         image_url=image_payload.image_url,
@@ -449,6 +554,8 @@ def update_admin_product(
         product.description = payload.description
     if payload.base_price is not None:
         product.base_price = payload.base_price
+    if payload.vat_rate is not None:
+        product.vat_rate = payload.vat_rate
     if payload.fulfillment_sector:
         sector_value = payload.fulfillment_sector.upper()
         if sector_value not in {value.value for value in FulfillmentSector}:
@@ -801,6 +908,7 @@ def get_admin_order_items_detail(
     )
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    store = db.get(Store, current_staff.store_id)
 
     now_utc = datetime.now(tz=timezone.utc)
     table_session = None
@@ -849,6 +957,7 @@ def get_admin_order_items_detail(
                 item_name=item.product.name,
                 qty=item.qty,
                 unit_price=float(item.unit_price),
+                vat_rate=float(item.product.vat_rate if item.product and item.product.vat_rate is not None else 21),
                 notes=item.notes,
                 sector=item.sector,
                 status=item.status,
@@ -896,6 +1005,16 @@ def get_admin_order_items_detail(
             ).all()
         ],
         print_status=build_order_print_status(order),
+        store_fiscal_profile=_store_fiscal_profile(store),
+        fiscal_invoice_draft=_order_fiscal_invoice_draft(order, store),
+        fiscal_document=_fiscal_document_out(
+            db.scalar(
+                select(FiscalDocument)
+                .where(FiscalDocument.order_id == order.id, FiscalDocument.document_kind == "INVOICE")
+                .order_by(FiscalDocument.updated_at.desc(), FiscalDocument.id.desc())
+                .limit(1)
+            )
+        ),
         table_elapsed_minutes=_minutes_since(table_session.created_at if table_session else order.created_at, now_utc),
         order_elapsed_minutes=_minutes_since(order.created_at, now_utc),
         created_at=order.created_at,
