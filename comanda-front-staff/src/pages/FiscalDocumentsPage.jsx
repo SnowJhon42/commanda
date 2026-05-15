@@ -132,3 +132,5 @@ export function FiscalDocumentsPage({
     </section>
   );
 }
+
+export default FiscalDocumentsPage;
