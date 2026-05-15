@@ -338,6 +338,18 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
             conn.execute(text("ALTER TABLE orders ADD COLUMN payment_gate TEXT NOT NULL DEFAULT 'NONE'"))
         if "payment_status" not in order_columns:
             conn.execute(text("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'CONFIRMED'"))
+        if "fiscal_invoice_requested" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_invoice_requested BOOLEAN NOT NULL DEFAULT FALSE"))
+        if "fiscal_customer_tax_status" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_tax_status TEXT NULL"))
+        if "fiscal_customer_document_type" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_document_type TEXT NULL"))
+        if "fiscal_customer_document_number" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_document_number TEXT NULL"))
+        if "fiscal_customer_name" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_name TEXT NULL"))
+        if "fiscal_customer_email" not in order_columns:
+            conn.execute(text("ALTER TABLE orders ADD COLUMN fiscal_customer_email TEXT NULL"))
         conn.execute(text("UPDATE orders SET service_mode = COALESCE(NULLIF(service_mode, ''), 'RESTAURANTE')"))
         conn.execute(text("UPDATE orders SET review_status = COALESCE(NULLIF(review_status, ''), 'APPROVED')"))
         conn.execute(text("UPDATE orders SET payment_gate = COALESCE(NULLIF(payment_gate, ''), 'NONE')"))
