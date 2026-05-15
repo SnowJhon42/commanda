@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>COMANDA | Presentacion</title>
+  <style>
+    :root {
+      --bg: #efe7dc;
+      --panel: rgba(255, 252, 247, 0.82);
+      --panel-strong: rgba(255, 252, 247, 0.94);
+      --text: #211915;
+      --muted: #66554b;
+      --accent: #a45534;
+      --accent-2: #31473d;
+      --dark: #17120f;
+      --line: rgba(33, 25, 21, 0.12);
+      --shadow: 0 24px 60px rgba(53, 32, 18, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(164, 85, 52, 0.18), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(49, 71, 61, 0.22), transparent 28%),
+        linear-gradient(180deg, #f4ecdf 0%, #e8ddd0 100%);
+    }
+
+    .deck {
+      width: min(1240px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 20px 0 80px;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 18px;
+      margin: 0 0 16px;
+      backdrop-filter: blur(12px);
+      background: rgba(244, 236, 223, 0.74);
+      border: 1px solid rgba(33, 25, 21, 0.08);
+      border-radius: 18px;
+      box-shadow: 0 10px 30px rgba(33, 25, 21, 0.08);
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .brand b {
+      letter-spacing: 0.08em;
+      font-size: 0.92rem;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .topbar nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .topbar a {
+      text-decoration: none;
+      color: var(--text);
+      font: 600 0.88rem/1.1 Arial, Helvetica, sans-serif;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.66);
+      border: 1px solid rgba(33, 25, 21, 0.08);
+    }
+
+    .slide {
+      min-height: calc(100vh - 88px);
+      display: grid;
+      grid-template-columns: 1.06fr 0.94fr;
+      gap: 28px;
+      align-items: center;
+      padding: 36px;
+      margin: 0 0 20px;
+      border-radius: 34px;
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(125deg, rgba(255,255,255,0.24), transparent 30%),
+        linear-gradient(300deg, rgba(255,255,255,0.12), transparent 28%);
+    }
+
+    .slide.dark {
+      color: #f5eee5;
+      background:
+        radial-gradient(circle at top left, rgba(164, 85, 52, 0.32), transparent 24%),
+        linear-gradient(145deg, #1f1713 0%, #18120f 46%, #27382f 100%);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .slide.dark .eyebrow,
+    .slide.dark .muted,
+    .slide.dark li,
+    .slide.dark .step p,
+    .slide.dark .stat p {
+      color: rgba(245, 238, 229, 0.82);
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      margin: 0 0 14px;
+      font: 700 0.82rem/1.2 Arial, Helvetica, sans-serif;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    h1, h2 {
+      margin: 0 0 14px;
+      line-height: 0.94;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    h1 {
+      font-size: clamp(3rem, 7vw, 6.4rem);
+      max-width: 8ch;
+    }
+
+    h2 {
+      font-size: clamp(2rem, 4.4vw, 4rem);
+      max-width: 10ch;
+    }
+
+    .lede {
+      margin: 0 0 18px;
+      max-width: 28ch;
+      font-size: clamp(1.12rem, 2vw, 1.45rem);
+      line-height: 1.35;
+    }
+
+    .muted {
+      margin: 0;
+      max-width: 58ch;
+      color: var(--muted);
+      font: 400 1rem/1.6 Arial, Helvetica, sans-serif;
+    }
+
+    .big-quote {
+      margin-top: 22px;
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent);
+      background: rgba(255,255,255,0.45);
+      border-radius: 0 16px 16px 0;
+      font-size: 1.15rem;
+      line-height: 1.5;
+    }
+
+    .dark .big-quote {
+      background: rgba(255,255,255,0.06);
+      border-left-color: #cf8a65;
+    }
+
+    ul.clean {
+      list-style: none;
+      padding: 0;
+      margin: 22px 0 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    ul.clean li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      font: 600 1rem/1.45 Arial, Helvetica, sans-serif;
+      color: var(--text);
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.5);
+      border: 1px solid rgba(33,25,21,0.08);
+      border-radius: 16px;
+    }
+
+    .dark ul.clean li {
+      color: #f5eee5;
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.08);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #d8926a);
+      flex: 0 0 auto;
+      margin-top: 5px;
+    }
+
+    .media,
+    .stack,
+    .grid,
+    .flow,
+    .compare {
+      position: relative;
+      z-index: 1;
+    }
+
+    .media {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .frame {
+      width: min(100%, 560px);
+      padding: 18px;
+      background: var(--panel-strong);
+      border-radius: 28px;
+      border: 1px solid rgba(33, 25, 21, 0.08);
+      box-shadow: 0 20px 50px rgba(33, 25, 21, 0.12);
+    }
+
+    .dark .frame {
+      background: rgba(255, 250, 244, 0.08);
+      border-color: rgba(255,255,255,0.08);
+    }
+
+    .frame img,
+    .stack img,
+    .grid img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 20px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .stack.two {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .card {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.58);
+      border: 1px solid rgba(33,25,21,0.08);
+    }
+
+    .dark .card {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.08);
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 1.16rem;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font: 400 0.98rem/1.55 Arial, Helvetica, sans-serif;
+    }
+
+    .dark .card p {
+      color: rgba(245, 238, 229, 0.78);
+    }
+
+    .flow {
+      display: grid;
+      gap: 14px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 54px 1fr;
+      gap: 14px;
+      align-items: start;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.52);
+      border: 1px solid rgba(33,25,21,0.08);
+    }
+
+    .dark .step {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.08);
+    }
+
+    .step b {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--accent), #e0a177);
+      color: white;
+      font: 700 1.15rem/1 Arial, Helvetica, sans-serif;
+    }
+
+    .step h3 {
+      margin: 2px 0 6px;
+      font-size: 1.08rem;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      font: 400 0.98rem/1.5 Arial, Helvetica, sans-serif;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .compare {
+      display: grid;
+      gap: 14px;
+    }
+
+    .compare-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .compare-box {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.48);
+      border: 1px solid rgba(33,25,21,0.08);
+    }
+
+    .compare-box h3 {
+      margin: 0 0 10px;
+      font: 700 0.9rem/1.2 Arial, Helvetica, sans-serif;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .compare-box p {
+      margin: 0;
+      font: 600 1.02rem/1.5 Arial, Helvetica, sans-serif;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .stat {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.52);
+      border: 1px solid rgba(33,25,21,0.08);
+    }
+
+    .dark .stat {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.08);
+    }
+
+    .stat b {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 2rem;
+      line-height: 1;
+    }
+
+    .stat p {
+      margin: 0;
+      font: 600 0.92rem/1.45 Arial, Helvetica, sans-serif;
+      color: var(--muted);
+    }
+
+    .dark .stat p {
+      color: rgba(245, 238, 229, 0.8);
+    }
+
+    .footer-note {
+      margin-top: 28px;
+      font: 600 0.96rem/1.5 Arial, Helvetica, sans-serif;
+      color: var(--muted);
+    }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 26px;
+      padding: 16px 20px;
+      border-radius: 999px;
+      text-decoration: none;
+      color: white;
+      background: linear-gradient(135deg, var(--accent), #c26f48);
+      font: 700 0.98rem/1 Arial, Helvetica, sans-serif;
+      box-shadow: 0 18px 30px rgba(164, 85, 52, 0.2);
+    }
+
+    .kbd {
+      font: 700 0.82rem/1 Arial, Helvetica, sans-serif;
+      padding: 6px 9px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(33,25,21,0.1);
+    }
+
+    @media (max-width: 980px) {
+      .slide,
+      .slide.dark {
+        grid-template-columns: 1fr;
+        min-height: auto;
+      }
+
+      .topbar {
+        position: static;
+      }
+
+      .grid,
+      .compare-row,
+      .stack.two,
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      h1,
+      h2,
+      .lede {
+        max-width: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="topbar">
+      <div class="brand">
+        <b>COMANDA</b>
+        <span>Presentacion ejecutiva para ver directo en el navegador</span>
+      </div>
+      <nav>
+        <a href="#s1">Inicio</a>
+        <a href="#s4">Flujo</a>
+        <a href="#s6">Staff</a>
+        <a href="#s8">Valor</a>
+        <a href="#s10">Cierre</a>
+      </nav>
+    </header>
+
+    <section class="slide dark" id="s1">
+      <div class="content">
+        <p class="eyebrow">COMANDA</p>
+        <h1>Mas orden en la operacion.</h1>
+        <p class="lede">Menos errores en el servicio. Mejor experiencia en cada mesa.</p>
+        <p class="muted">El cliente pide desde su celular, el local recibe mejor la orden y el servicio gana claridad en tiempo real.</p>
+        <div class="big-quote">No es solo un menu QR. Es una herramienta para ordenar el servicio completo.</div>
+        <div class="footer-note">Navegacion: usa las anclas de arriba o baja haciendo scroll.</div>
+      </div>
+      <div class="media">
+        <div class="frame">
+          <img src="APP%20mockup/App_Comanda_V2_page-0007.jpg" alt="Mockup de menu cliente">
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s2">
+      <div class="content">
+        <p class="eyebrow">Problema</p>
+        <h2>Cuando la operacion no es clara, el cliente lo siente.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Pedidos mal tomados o repetidos.</span></li>
+          <li><span class="dot"></span><span>Tiempos poco claros para el cliente.</span></li>
+          <li><span class="dot"></span><span>Mesas esperando sin informacion.</span></li>
+          <li><span class="dot"></span><span>Staff resolviendo sobre la marcha.</span></li>
+        </ul>
+        <p class="footer-note">El problema real no es solo tomar un pedido. Es operar con menos ruido durante todo el servicio.</p>
+      </div>
+      <div class="media">
+        <div class="frame">
+          <img src="APP%20mockup/App_Comanda_V2_page-0004.jpg" alt="QR de bienvenida de cliente">
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s3">
+      <div class="content">
+        <p class="eyebrow">Solucion</p>
+        <h2>COMANDA conecta la mesa con la operacion.</h2>
+        <p class="muted">El cliente entra por QR, ve el menu, hace su pedido y sigue el estado sin incertidumbre. El equipo recibe la orden mejor organizada.</p>
+        <div class="stats">
+          <div class="stat">
+            <b>QR</b>
+            <p>Entrada simple desde la mesa.</p>
+          </div>
+          <div class="stat">
+            <b>Live</b>
+            <p>Tracking y estados visibles.</p>
+          </div>
+          <div class="stat">
+            <b>Flow</b>
+            <p>Menos friccion entre cliente y staff.</p>
+          </div>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <img src="APP%20mockup/App_Comanda_V2_page-0007.jpg" alt="Menu cliente">
+        </div>
+        <div class="card">
+          <img src="APP%20mockup/App_Comanda_V2_page-0008.jpg" alt="Resumen de pedido">
+        </div>
+      </div>
+    </section>
+
+    <section class="slide dark" id="s4">
+      <div class="content">
+        <p class="eyebrow">Flujo</p>
+        <h2>Como funciona, de punta a punta.</h2>
+        <p class="muted">Un flujo simple para explicar en segundos y demostrar en menos de cinco minutos.</p>
+      </div>
+      <div class="flow">
+        <div class="step">
+          <b>1</b>
+          <div>
+            <h3>Cliente entra por QR</h3>
+            <p>Escanea, elige mesa y entra al flujo correcto del local.</p>
+          </div>
+        </div>
+        <div class="step">
+          <b>2</b>
+          <div>
+            <h3>Arma y confirma pedido</h3>
+            <p>Selecciona productos, revisa carrito y envia.</p>
+          </div>
+        </div>
+        <div class="step">
+          <b>3</b>
+          <div>
+            <h3>Staff recibe la orden</h3>
+            <p>El tablero muestra actividad y permite avanzar estados.</p>
+          </div>
+        </div>
+        <div class="step">
+          <b>4</b>
+          <div>
+            <h3>Cliente sigue el pedido</h3>
+            <p>Ve el tracking actualizado sin depender de preguntar.</p>
+          </div>
+        </div>
+        <div class="step">
+          <b>5</b>
+          <div>
+            <h3>Cierre y feedback</h3>
+            <p>La experiencia termina con opinion y opcion de compartir el lugar.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s5">
+      <div class="content">
+        <p class="eyebrow">Cliente</p>
+        <h2>Una experiencia mas agil y mas clara.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Pide a su ritmo desde el celular.</span></li>
+          <li><span class="dot"></span><span>Revisa el pedido antes de confirmar.</span></li>
+          <li><span class="dot"></span><span>Entiende mejor que esta pasando.</span></li>
+          <li><span class="dot"></span><span>Cierra con feedback y posibilidad de compartir.</span></li>
+        </ul>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <img src="APP%20mockup/App_Comanda_V2_page-0008.jpg" alt="Pedido del cliente">
+        </div>
+        <div class="card">
+          <img src="APP%20mockup/App_Comanda_V2_page-0013.jpg" alt="Feedback final del cliente">
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s6">
+      <div class="content">
+        <p class="eyebrow">Staff</p>
+        <h2>Mas visibilidad. Menos ruido operativo.</h2>
+        <p class="muted">Del lado del local, COMANDA busca bajar improvisacion, ordenar pedidos y mejorar coordinacion entre salon, cocina, barra y caja.</p>
+        <div class="big-quote">COMANDA no reemplaza al staff. Le da mas control y mas contexto.</div>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <h3>Que gana el equipo</h3>
+          <p>Pedidos mas ordenados, lectura clara de cada mesa, estados en tiempo real y mejor control durante el turno.</p>
+        </div>
+        <div class="card">
+          <h3>Capas operativas</h3>
+          <p>Cliente, tablero staff, flujo por sectores y cierre con feedback forman una experiencia mas consistente.</p>
+        </div>
+        <div class="card">
+          <img src="mockups/staff-menu-editor-wireframe.svg" alt="Wireframe de staff">
+        </div>
+      </div>
+    </section>
+
+    <section class="slide dark" id="s7">
+      <div class="content">
+        <p class="eyebrow">Diferencial</p>
+        <h2>No es solo un menu QR.</h2>
+        <p class="muted">El valor esta en ordenar la operacion y hacer mas transparente el servicio, no solo en digitalizar el pedido.</p>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Tracking del pedido en vivo.</span></li>
+          <li><span class="dot"></span><span>Flujo por sectores para cocina, barra y salon.</span></li>
+          <li><span class="dot"></span><span>Flujo BAR con control de pago antes de avanzar.</span></li>
+          <li><span class="dot"></span><span>Cierre con feedback y recomendacion organica.</span></li>
+        </ul>
+      </div>
+      <div class="stack two">
+        <div class="card">
+          <img src="APP%20mockup/App_Comanda_V2_page-0009.jpg" alt="Pantalla de pago">
+        </div>
+        <div class="card">
+          <img src="APP%20mockup/App_Comanda_V2_page-0010.jpg" alt="Tarjeta seleccionada">
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s8">
+      <div class="content">
+        <p class="eyebrow">Valor</p>
+        <h2>Cuando la operacion se ordena, el cliente lo siente.</h2>
+        <p class="muted">El valor no es solo tecnologico. Es operativo y comercial: menos errores, mejor percepcion del servicio y mas informacion para mejorar.</p>
+      </div>
+      <div class="compare">
+        <div class="compare-row">
+          <div class="compare-box">
+            <h3>Antes</h3>
+            <p>Pedido verbal o disperso. Cliente sin visibilidad. Mas interrupciones durante el turno.</p>
+          </div>
+          <div class="compare-box">
+            <h3>Con COMANDA</h3>
+            <p>Pedido estructurado. Tracking visible. Mejor coordinacion entre mesa y operacion.</p>
+          </div>
+        </div>
+        <div class="compare-row">
+          <div class="compare-box">
+            <h3>Antes</h3>
+            <p>Poca captura de feedback y poca lectura del servicio real.</p>
+          </div>
+          <div class="compare-box">
+            <h3>Con COMANDA</h3>
+            <p>Cierre con opinion del cliente y mas posibilidad de recomendacion organica.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s9">
+      <div class="content">
+        <p class="eyebrow">Estado actual</p>
+        <h2>Ya hay una base real y demoable.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Cliente local en <span class="kbd">5173</span>.</span></li>
+          <li><span class="dot"></span><span>Staff local en <span class="kbd">5174</span>.</span></li>
+          <li><span class="dot"></span><span>Backend local en <span class="kbd">8001</span>.</span></li>
+          <li><span class="dot"></span><span>Hay flujo cliente, flujo staff y documentacion operativa.</span></li>
+        </ul>
+        <p class="footer-note">Hoy ya sirve para explicar, mostrar y demoear el concepto con estructura de producto real.</p>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <h3>Cliente</h3>
+          <p>Entrada por QR, menu, carrito, tracking, cierre y feedback.</p>
+        </div>
+        <div class="card">
+          <h3>Staff</h3>
+          <p>Tablero operativo, visibilidad por sectores, manejo BAR y controles internos.</p>
+        </div>
+        <div class="card">
+          <h3>Operacion</h3>
+          <p>Stack local ordenado, runbooks y referencia de estado online.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide dark" id="s10">
+      <div class="content">
+        <p class="eyebrow">Cierre</p>
+        <h2>COMANDA ayuda a operar con mas orden, menos errores y mejor experiencia en cada mesa.</h2>
+        <p class="lede">No es solo tecnologia. Es una mejora concreta en como se vive el servicio.</p>
+        <a class="cta" href="#s1">Volver al inicio</a>
+      </div>
+      <div class="media">
+        <div class="frame">
+          <img src="APP%20mockup/App_Comanda_V2_page-0013.jpg" alt="Pantalla final de feedback">
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

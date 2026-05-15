@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>COMANDA | Presentacion Tecnica</title>
+  <style>
+    :root {
+      --bg: #0f1217;
+      --panel: #161b22;
+      --panel-2: #1d2430;
+      --soft: #96a0af;
+      --text: #edf2f7;
+      --line: rgba(255,255,255,0.08);
+      --accent: #39b980;
+      --accent-2: #6cb8ff;
+      --accent-3: #ffb86b;
+      --danger: #ff7f7f;
+      --shadow: 0 24px 60px rgba(0,0,0,0.35);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(57,185,128,0.12), transparent 22%),
+        radial-gradient(circle at top right, rgba(108,184,255,0.1), transparent 22%),
+        linear-gradient(180deg, #0d1014 0%, #121720 100%);
+    }
+
+    .deck {
+      width: min(1280px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 18px 0 80px;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 18px;
+      margin-bottom: 16px;
+      background: rgba(13,16,20,0.84);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 14px 30px rgba(0,0,0,0.24);
+    }
+
+    .brand b {
+      display: block;
+      letter-spacing: 0.08em;
+      font-size: 0.92rem;
+    }
+
+    .brand span {
+      color: var(--soft);
+      font-size: 0.92rem;
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    nav a {
+      color: var(--text);
+      text-decoration: none;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.03);
+      font: 600 0.85rem/1 Arial, Helvetica, sans-serif;
+    }
+
+    .slide {
+      min-height: calc(100vh - 86px);
+      margin-bottom: 18px;
+      padding: 34px;
+      border-radius: 28px;
+      background: linear-gradient(180deg, rgba(26,31,40,0.96), rgba(17,21,28,0.96));
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 1.02fr 0.98fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    .slide.full {
+      grid-template-columns: 1fr;
+    }
+
+    .slide.hero {
+      align-items: center;
+      background:
+        radial-gradient(circle at top right, rgba(57,185,128,0.14), transparent 26%),
+        radial-gradient(circle at bottom left, rgba(108,184,255,0.1), transparent 22%),
+        linear-gradient(145deg, #10151c 0%, #141b24 52%, #11171d 100%);
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font: 700 0.8rem/1 Arial, Helvetica, sans-serif;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1, h2 {
+      margin: 0 0 14px;
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+    }
+
+    h1 {
+      font-size: clamp(3rem, 6vw, 5.6rem);
+      max-width: 8ch;
+    }
+
+    h2 {
+      font-size: clamp(2rem, 4vw, 3.6rem);
+      max-width: 11ch;
+    }
+
+    .lede {
+      margin: 0 0 18px;
+      max-width: 60ch;
+      color: #d7dee9;
+      font-size: clamp(1.08rem, 1.8vw, 1.34rem);
+      line-height: 1.45;
+    }
+
+    .muted {
+      margin: 0;
+      max-width: 70ch;
+      color: var(--soft);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .code {
+      margin-top: 22px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: #0d1117;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+      overflow: auto;
+      font: 500 0.92rem/1.55 "Consolas", "Courier New", monospace;
+      color: #d7e3f4;
+      white-space: pre-wrap;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .cards.three {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .card {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+    }
+
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 1.02rem;
+      color: var(--text);
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--soft);
+      line-height: 1.55;
+      font-size: 0.96rem;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    ul.clean {
+      list-style: none;
+      padding: 0;
+      margin: 20px 0 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    ul.clean li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+      color: #dce4ef;
+      line-height: 1.5;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #9fe1c3);
+      flex: 0 0 auto;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .chip {
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.04);
+      color: #dbe5f0;
+      font: 700 0.82rem/1 Arial, Helvetica, sans-serif;
+    }
+
+    .accent { color: var(--accent); }
+    .accent2 { color: var(--accent-2); }
+    .accent3 { color: var(--accent-3); }
+    .danger { color: var(--danger); }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 18px;
+      overflow: hidden;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .table th,
+    .table td {
+      text-align: left;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      vertical-align: top;
+    }
+
+    .table th {
+      color: #f3f7fb;
+      font-size: 0.88rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .table td {
+      color: var(--soft);
+      line-height: 1.45;
+      font-size: 0.96rem;
+    }
+
+    .metric {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+    }
+
+    .metric b {
+      display: block;
+      font-size: 2rem;
+      margin-bottom: 8px;
+      color: #f8fbff;
+    }
+
+    .metric p {
+      margin: 0;
+      color: var(--soft);
+      line-height: 1.45;
+      font-size: 0.94rem;
+    }
+
+    .footer {
+      margin-top: 24px;
+      color: var(--soft);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 980px) {
+      .slide,
+      .slide.full,
+      .slide.hero {
+        grid-template-columns: 1fr;
+        min-height: auto;
+      }
+
+      .cards,
+      .cards.three {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="topbar">
+      <div class="brand">
+        <b>COMANDA | PRESENTACION TECNICA</b>
+        <span>Arquitectura, stack, herramientas, deploy y estado actual</span>
+      </div>
+      <nav>
+        <a href="#s1">Inicio</a>
+        <a href="#s2">Arquitectura</a>
+        <a href="#s4">Backend</a>
+        <a href="#s5">Frontend</a>
+        <a href="#s7">DB</a>
+        <a href="#s9">DevOps</a>
+        <a href="#s10">Estado</a>
+      </nav>
+    </header>
+
+    <section class="slide hero" id="s1">
+      <div>
+        <p class="eyebrow">Stack</p>
+        <h1>Como esta construido COMANDA.</h1>
+        <p class="lede">Sistema de pedidos por mesa con arquitectura separada entre backend, cliente mobile-first, panel staff y sitio web, con operación local en Windows y despliegue en Railway + Vercel.</p>
+        <div class="chip-row">
+          <span class="chip">Python</span>
+          <span class="chip">FastAPI</span>
+          <span class="chip">SQLAlchemy</span>
+          <span class="chip">Pydantic</span>
+          <span class="chip">Next.js 15</span>
+          <span class="chip">React 18</span>
+          <span class="chip">SQLite</span>
+          <span class="chip">Postgres</span>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="metric">
+          <b>4</b>
+          <p>bloques principales del monorepo: `backend`, `front-client`, `front-staff`, `website`.</p>
+        </div>
+        <div class="metric">
+          <b>3</b>
+          <p>servicios locales oficiales: backend `8001`, cliente `5173`, staff `5174`.</p>
+        </div>
+        <div class="metric">
+          <b>2</b>
+          <p>capas de despliegue principales: Railway para API y Vercel para frontends.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s2">
+      <div>
+        <p class="eyebrow">Arquitectura</p>
+        <h2>Monorepo con apps separadas.</h2>
+        <p class="muted">COMANDA no esta resuelto como una sola app. El sistema esta dividido por responsabilidades: API, experiencia cliente, operación staff y sitio comercial.</p>
+        <div class="code">COMANDA_LOCAL/
+├── comanda-backend        → API + reglas de negocio + DB
+├── comanda-front-client   → app cliente mobile-first
+├── comanda-front-staff    → panel staff desktop-first
+├── comanda-website        → web pública / comercial
+├── docs                   → runbooks, arquitectura, release, stack
+└── scripts                → arranque, estado, logs, utilidades</div>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Backend</h3>
+          <p>Expone endpoints de autenticación, menú, pedidos, staff, billing, eventos y sesiones de mesa.</p>
+        </div>
+        <div class="card">
+          <h3>Client App</h3>
+          <p>Flujo de mesa, menú, carrito, tracking, pago asistido y feedback final.</p>
+        </div>
+        <div class="card">
+          <h3>Staff App</h3>
+          <p>Login por rol, tableros, salón, QR, feedback, caja, turnos y configuración del local.</p>
+        </div>
+        <div class="card">
+          <h3>Website</h3>
+          <p>Landing pública basada en Next.js para comunicar el producto hacia afuera.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s3">
+      <div>
+        <p class="eyebrow">Flujo tecnico</p>
+        <h2>Recorrido principal del sistema.</h2>
+        <div class="code">Cliente (celular)
+    ↓ QR / URL
+Next.js Client App
+    ↓ fetch / EventSource
+FastAPI Backend
+    ↓ ORM
+SQLAlchemy
+    ↓
+SQLite local / PostgreSQL online
+    ↑
+FastAPI publica eventos SSE
+    ↑
+Next.js Staff App recibe cambios y actualiza tableros</div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Capa</th>
+              <th>Responsabilidad</th>
+              <th>Tecnologia</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Interfaz cliente</td>
+              <td>Pedido, tracking, ayuda, feedback</td>
+              <td>Next.js 15 + React 18</td>
+            </tr>
+            <tr>
+              <td>Interfaz staff</td>
+              <td>Operación, estados, caja, turnos, QR</td>
+              <td>Next.js 15 + React 18</td>
+            </tr>
+            <tr>
+              <td>API</td>
+              <td>Contratos HTTP, auth, negocio, SSE</td>
+              <td>FastAPI + Uvicorn</td>
+            </tr>
+            <tr>
+              <td>Persistencia</td>
+              <td>Modelo relacional y sesiones</td>
+              <td>SQLAlchemy 2</td>
+            </tr>
+            <tr>
+              <td>Base de datos</td>
+              <td>Local y online</td>
+              <td>SQLite / PostgreSQL</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="slide" id="s4">
+      <div>
+        <p class="eyebrow">Backend</p>
+        <h2>API en Python con FastAPI.</h2>
+        <p class="muted">El backend concentra las reglas de negocio: pedidos, sectores, sesiones de mesa, cobros, eventos, autenticación y validación de transiciones.</p>
+        <div class="chip-row">
+          <span class="chip">fastapi 0.115.8</span>
+          <span class="chip">uvicorn 0.34.0</span>
+          <span class="chip">sqlalchemy 2.0.38</span>
+          <span class="chip">pydantic 2.10.6</span>
+          <span class="chip">psycopg2-binary 2.9.9</span>
+        </div>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Routers cargados en `main.py`: `auth`, `menu`, `orders`, `staff`, `admin`, `events`, `table_sessions`, `billing`.</span></li>
+          <li><span class="dot"></span><span>CORS configurable con defaults para entorno local.</span></li>
+          <li><span class="dot"></span><span>Bootstrap y validación de esquema al startup.</span></li>
+        </ul>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <h3>Auth</h3>
+          <p>`python-jose` para JWT y `passlib` con `pbkdf2_sha256` / `bcrypt` para PIN de staff.</p>
+        </div>
+        <div class="card">
+          <h3>Realtime</h3>
+          <p>El sistema usa eventos SSE para propagar cambios de items, pedidos y sesiones de mesa.</p>
+        </div>
+        <div class="card">
+          <h3>Servicios</h3>
+          <p>Hay módulos dedicados a creación de pedidos, routing, estado, impresión, tiempo real, billing, menú e imágenes.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s5">
+      <div>
+        <p class="eyebrow">Frontend</p>
+        <h2>Cliente y staff con Next.js 15 + React 18.</h2>
+        <p class="muted">Las dos apps comparten stack frontend, pero están separadas por contexto de uso: cliente mobile-first y staff desktop-first.</p>
+        <div class="chip-row">
+          <span class="chip">next 15.5.15</span>
+          <span class="chip">react 18.3.1</span>
+          <span class="chip">react-dom 18.3.1</span>
+          <span class="chip">fetch API</span>
+          <span class="chip">EventSource / SSE</span>
+        </div>
+        <div class="footer">Cada frontend consume `NEXT_PUBLIC_API_URL` y se conecta al backend por HTTP y eventos en tiempo real.</div>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>comanda-front-client</h3>
+          <p>App cliente con páginas de entrada, menú, checkout, tracking, mesa, mozo y feedback final.</p>
+        </div>
+        <div class="card">
+          <h3>comanda-front-staff</h3>
+          <p>Panel con `AdminBoard`, `Kitchen`, `Bar`, `Waiter`, salón, cierres, resúmenes, QR y configuración del local.</p>
+        </div>
+        <div class="card">
+          <h3>comanda-website</h3>
+          <p>Landing pública en Next.js, separada del flujo operativo interno.</p>
+        </div>
+        <div class="card">
+          <h3>Workspaces</h3>
+          <p>El repo raíz usa workspaces NPM para cliente y staff.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s6">
+      <div>
+        <p class="eyebrow">Dominio</p>
+        <h2>Modelo funcional y reglas del sistema.</h2>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Concepto</th>
+              <th>Detalle tecnico</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Multi-local</td>
+              <td>Desde el diseño se usa `tenant_id` y `store_id` para separar negocio y sucursal.</td>
+            </tr>
+            <tr>
+              <td>Sectores</td>
+              <td>`ADMIN`, `KITCHEN`, `BAR`, `WAITER`.</td>
+            </tr>
+            <tr>
+              <td>Estados</td>
+              <td>`RECEIVED → IN_PROGRESS → DONE → DELIVERED` con validación de transición.</td>
+            </tr>
+            <tr>
+              <td>Modos de servicio</td>
+              <td>`RESTAURANTE` y `BAR`.</td>
+            </tr>
+            <tr>
+              <td>Pago</td>
+              <td>Estados `PENDING/CONFIRMED`, split bills, cash requests y sesiones de caja.</td>
+            </tr>
+            <tr>
+              <td>Sesión de mesa</td>
+              <td>`table_sessions` + `table_session_clients` para manejar múltiples clientes por mesa.</td>
+            </tr>
+            <tr>
+              <td>Feedback</td>
+              <td>`table_session_feedback` guarda rating y comentario al cierre.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="slide" id="s7">
+      <div>
+        <p class="eyebrow">Base de datos</p>
+        <h2>Relacional, local en SQLite y online en PostgreSQL.</h2>
+        <p class="muted">La fuente oficial local es `comanda_dev.db`. En online hoy la base canónica de `dev` está en Railway Postgres.</p>
+        <ul class="clean">
+          <li><span class="dot"></span><span>DB local oficial: `comanda-backend/comanda_dev.db`.</span></li>
+          <li><span class="dot"></span><span>DB online de `dev`: Railway Postgres.</span></li>
+          <li><span class="dot"></span><span>Legacy conocido: Neon y Render todavía aparecen como drift operativo.</span></li>
+        </ul>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Entidades clave</h3>
+          <p>`stores`, `tables`, `table_sessions`, `products`, `orders`, `order_items`, `bill_splits`, `payment_records`, `cash_sessions`.</p>
+        </div>
+        <div class="card">
+          <h3>Local</h3>
+          <p>SQLite para desarrollo rápido y entorno portable.</p>
+        </div>
+        <div class="card">
+          <h3>Online</h3>
+          <p>PostgreSQL para el backend desplegado y seed demo compartible.</p>
+        </div>
+        <div class="card">
+          <h3>Bootstrap</h3>
+          <p>Scripts de inicialización, seed y bootstrap para Railway Postgres.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s8">
+      <div>
+        <p class="eyebrow">Herramientas</p>
+        <h2>Programas y utilidades usados en el proyecto.</h2>
+        <p class="muted">Además de los lenguajes y frameworks, el sistema depende de una capa operativa concreta para desarrollarse, probarse y desplegarse.</p>
+      </div>
+      <div class="cards three">
+        <div class="card">
+          <h3>Desarrollo</h3>
+          <p>PowerShell, `npm.cmd`, Python 3.11-3.13, Git y scripts propios de arranque/local ops.</p>
+        </div>
+        <div class="card">
+          <h3>Testing</h3>
+          <p>`pytest` para backend y builds de Next.js para validar frontends.</p>
+        </div>
+        <div class="card">
+          <h3>Deploy</h3>
+          <p>Railway CLI para backend/DB y Vercel para cliente y staff.</p>
+        </div>
+        <div class="card">
+          <h3>Operación local</h3>
+          <p>`scripts/comanda_local.ps1`, `run_all_local.ps1`, `status_all_local.ps1`, `doctor_all_local.ps1`.</p>
+        </div>
+        <div class="card">
+          <h3>Documentación</h3>
+          <p>Runbooks, checklists, mapping online/local y cambios locales por archivo.</p>
+        </div>
+        <div class="card">
+          <h3>Soporte técnico</h3>
+          <p>Archivos SQL, scripts de bootstrap Postgres y utilidades de acceso por restaurante.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s9">
+      <div>
+        <p class="eyebrow">Infra y deploy</p>
+        <h2>Separación clara entre local y online.</h2>
+        <p class="muted">El proyecto ya documenta una regla operativa estricta: primero local, después GitHub, después deploy y al final smoke test.</p>
+        <div class="code">Local oficial
+Backend  → http://localhost:8001
+Cliente  → http://localhost:5173
+Staff    → http://localhost:5174
+
+Online documentado
+Backend  → https://commanda-production.up.railway.app
+Cliente  → https://comanda-cliente.vercel.app
+Staff    → https://comanda-staff.vercel.app</div>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <h3>Railway</h3>
+          <p>Backend desplegado y Railway Postgres como DB canónica de `dev`.</p>
+        </div>
+        <div class="card">
+          <h3>Vercel</h3>
+          <p>Front cliente y front staff desplegados como proyectos separados sobre el mismo repo.</p>
+        </div>
+        <div class="card">
+          <h3>Seguridad mínima recomendada</h3>
+          <p>`JWT_SECRET_KEY` no default, CORS limitado y Basic Auth para la app staff pública.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s10">
+      <div>
+        <p class="eyebrow">Estado actual</p>
+        <h2>Que tan sano esta hoy tecnicamente.</h2>
+        <p class="muted">Verificado el 2026-05-11 sobre este workspace local.</p>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Chequeo</th>
+              <th>Resultado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Build `comanda-front-client`</td>
+              <td><span class="accent">OK</span></td>
+            </tr>
+            <tr>
+              <td>Build `comanda-front-staff`</td>
+              <td><span class="accent">OK</span></td>
+            </tr>
+            <tr>
+              <td>Pytest backend</td>
+              <td><span class="danger">20 pasan / 3 fallan</span></td>
+            </tr>
+            <tr>
+              <td>Drift de puertos/documentación</td>
+              <td><span class="accent3">Hay mezcla entre `8000` histórico y `8001` actual</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Fortalezas</h3>
+          <p>Arquitectura clara, frontends compilando, documentación operativa madura, separación local/online y dominio de negocio ya modelado.</p>
+        </div>
+        <div class="card">
+          <h3>Deuda actual</h3>
+          <p>Regresiones en reglas de negocio backend, drift en puertos/defaults y validación E2E todavía incompleta.</p>
+        </div>
+        <div class="card">
+          <h3>Mensaje tecnico honesto</h3>
+          <p>El sistema ya es un producto real y no solo un prototipo visual, pero todavía necesita estabilización backend para quedar sólido.</p>
+        </div>
+        <div class="card">
+          <h3>Siguiente paso</h3>
+          <p>Cerrar los tests fallidos, unificar defaults a `8001` y preparar una demo técnica limpia de punta a punta.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s11">
+      <div>
+        <p class="eyebrow">Resumen final</p>
+        <h2>COMANDA esta basada en un stack web moderno, modular y operable.</h2>
+        <div class="code">Lenguajes
+- Python
+- JavaScript
+- SQL
+- PowerShell
+- HTML / CSS
+
+Frameworks y libs
+- FastAPI
+- SQLAlchemy
+- Pydantic
+- Uvicorn
+- Next.js
+- React
+- python-jose
+- passlib
+- pytest
+
+Infra
+- SQLite local
+- PostgreSQL online
+- Railway
+- Vercel
+
+Operacion
+- scripts PowerShell propios
+- workspaces NPM
+- documentación técnica y operativa en /docs</div>
+        <p class="footer">Archivo pensado para mostrar el sistema por dentro a alguien técnico: qué piezas tiene, qué lenguaje usa, cómo se despliega y qué estado real tiene hoy.</p>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 Fecha: 2026-02-16
 Estado: activo
-Base URL (dev): `http://localhost:8000`
+Base URL (dev): `http://localhost:8001`
 Formato: `application/json`
 
 ## 1) Convenciones generales

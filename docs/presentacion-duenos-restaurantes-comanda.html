@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>COMANDA | Presentacion para Dueños de Restaurantes</title>
+  <style>
+    :root {
+      --bg: #f4eee5;
+      --panel: rgba(255,252,248,0.9);
+      --text: #211915;
+      --muted: #6a5b52;
+      --line: rgba(33,25,21,0.1);
+      --accent: #a85736;
+      --olive: #405340;
+      --blue: #2b67d1;
+      --gold: #b78b35;
+      --shadow: 0 24px 60px rgba(53,32,18,0.14);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(168,87,54,0.12), transparent 26%),
+        radial-gradient(circle at bottom right, rgba(64,83,64,0.14), transparent 24%),
+        linear-gradient(180deg, #f5efe5 0%, #eadfce 100%);
+    }
+    .deck {
+      width: min(1260px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 18px 0 80px;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 16px;
+      padding: 14px 18px;
+      background: rgba(245,239,229,0.82);
+      backdrop-filter: blur(12px);
+      border-radius: 18px;
+      border: 1px solid rgba(33,25,21,0.08);
+      box-shadow: 0 12px 30px rgba(33,25,21,0.08);
+    }
+    .topbar b { display: block; letter-spacing: 0.08em; font-size: 0.92rem; }
+    .topbar span { color: var(--muted); font-size: 0.92rem; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; }
+    nav a {
+      text-decoration: none;
+      color: var(--text);
+      font: 700 0.84rem/1 Arial, Helvetica, sans-serif;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.62);
+      border: 1px solid rgba(33,25,21,0.08);
+    }
+    .slide {
+      min-height: calc(100vh - 84px);
+      margin-bottom: 18px;
+      padding: 34px;
+      border-radius: 30px;
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.52);
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 1.04fr 0.96fr;
+      gap: 26px;
+      align-items: start;
+    }
+    .slide.hero {
+      align-items: center;
+      background:
+        radial-gradient(circle at top right, rgba(183,139,53,0.12), transparent 24%),
+        linear-gradient(145deg, rgba(255,252,248,0.96), rgba(247,241,234,0.96));
+    }
+    .slide.full { grid-template-columns: 1fr; }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font: 700 0.8rem/1 Arial, Helvetica, sans-serif;
+    }
+    h1, h2 {
+      margin: 0 0 14px;
+      line-height: 0.94;
+      letter-spacing: -0.03em;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+    h1 { font-size: clamp(3rem, 6vw, 5.5rem); max-width: 9ch; }
+    h2 { font-size: clamp(2rem, 4vw, 3.6rem); max-width: 11ch; }
+    .lede {
+      margin: 0 0 16px;
+      max-width: 60ch;
+      font-size: clamp(1.08rem, 1.9vw, 1.34rem);
+      line-height: 1.45;
+    }
+    .muted {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 72ch;
+    }
+    .quote {
+      margin-top: 22px;
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent);
+      border-radius: 0 18px 18px 0;
+      background: rgba(255,255,255,0.58);
+      line-height: 1.55;
+      font-size: 1.06rem;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+    .cards.three { grid-template-columns: repeat(3, 1fr); }
+    .card {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.6);
+      border: 1px solid rgba(33,25,21,0.08);
+    }
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 1.02rem;
+    }
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 0.96rem;
+    }
+    .metric {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.6);
+      border: 1px solid rgba(33,25,21,0.08);
+    }
+    .metric b {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 2rem;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+    .metric p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.95rem;
+    }
+    .stack { display: grid; gap: 14px; }
+    ul.clean {
+      list-style: none;
+      padding: 0;
+      margin: 18px 0 0;
+      display: grid;
+      gap: 12px;
+    }
+    ul.clean li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.62);
+      border: 1px solid rgba(33,25,21,0.08);
+      line-height: 1.5;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 5px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      background: linear-gradient(135deg, var(--accent), #d79b73);
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 18px;
+      border: 1px solid rgba(33,25,21,0.08);
+      overflow: hidden;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.58);
+    }
+    .table th, .table td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid rgba(33,25,21,0.08);
+      vertical-align: top;
+    }
+    .table th {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.8rem;
+    }
+    .table td {
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.95rem;
+    }
+    .accent { color: var(--accent); }
+    .olive { color: var(--olive); }
+    .blue { color: var(--blue); }
+    .gold { color: var(--gold); }
+    @media (max-width: 980px) {
+      .slide, .slide.hero, .slide.full { grid-template-columns: 1fr; min-height: auto; }
+      .cards, .cards.three { grid-template-columns: 1fr; }
+      .topbar { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="topbar">
+      <div>
+        <b>COMANDA | DUEÑOS DE RESTAURANTES</b>
+        <span>Presentación basada en el sistema real actual</span>
+      </div>
+      <nav>
+        <a href="#s1">Inicio</a>
+        <a href="#s2">Problema</a>
+        <a href="#s4">Qué hace</a>
+        <a href="#s6">Tu local</a>
+        <a href="#s8">IA</a>
+        <a href="#s10">Cierre</a>
+      </nav>
+    </header>
+
+    <section class="slide hero" id="s1">
+      <div>
+        <p class="eyebrow">COMANDA</p>
+        <h1>Más orden para tu local. Más claridad para tu equipo.</h1>
+        <p class="lede">COMANDA ayuda a que el cliente pida desde la mesa, que el staff reciba mejor la orden y que vos tengas una operación más clara, más visible y más fácil de organizar.</p>
+        <div class="quote">No es solo un menú QR. Es una herramienta para ordenar el servicio y hacer que el cliente lo sienta.</div>
+      </div>
+      <div class="stack">
+        <div class="metric">
+          <b class="accent">Pedido</b>
+          <p>El cliente entra por QR y hace su pedido desde el celular.</p>
+        </div>
+        <div class="metric">
+          <b class="olive">Operación</b>
+          <p>El staff recibe mejor la orden y actualiza estados en tiempo real.</p>
+        </div>
+        <div class="metric">
+          <b class="gold">Identidad</b>
+          <p>Tu app cliente puede verse con tu estilo, tus fotos, tus colores y tu logo.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s2">
+      <div>
+        <p class="eyebrow">Problema</p>
+        <h2>Cuando el servicio está desordenado, el cliente lo nota.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Pedidos que llegan mal o poco claros.</span></li>
+          <li><span class="dot"></span><span>Mesas esperando sin saber qué está pasando.</span></li>
+          <li><span class="dot"></span><span>Equipo resolviendo sobre la marcha.</span></li>
+          <li><span class="dot"></span><span>Tiempo perdido cargando menú y configurando todo desde cero.</span></li>
+        </ul>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Lo que pasa en el turno</h3>
+          <p>El problema no es solo tomar un pedido. El problema es tener una operación con menos claridad de la necesaria.</p>
+        </div>
+        <div class="card">
+          <h3>Lo que siente el cliente</h3>
+          <p>Cuando el cliente no sabe cuánto falta o qué pasó con su pedido, la percepción del servicio baja aunque la cocina esté trabajando bien.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s3">
+      <div>
+        <p class="eyebrow">Cómo funciona</p>
+        <h2>Una experiencia simple para la mesa y clara para el local.</h2>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Paso</th>
+              <th>Qué hace COMANDA</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1. El cliente entra</td>
+              <td>Escanea el QR, selecciona mesa e ingresa al flujo del local.</td>
+            </tr>
+            <tr>
+              <td>2. Hace el pedido</td>
+              <td>Ve menú, arma pedido y lo confirma desde el celular.</td>
+            </tr>
+            <tr>
+              <td>3. El staff recibe</td>
+              <td>La orden entra más organizada y se muestra en el panel del equipo.</td>
+            </tr>
+            <tr>
+              <td>4. El local avanza estados</td>
+              <td>El staff actualiza el estado del pedido durante el servicio.</td>
+            </tr>
+            <tr>
+              <td>5. El cliente sigue</td>
+              <td>Ve el tracking actualizado y tiene más claridad sobre la espera.</td>
+            </tr>
+            <tr>
+              <td>6. La experiencia cierra</td>
+              <td>El cliente puede dejar feedback y compartir el lugar si tuvo una buena experiencia.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="slide" id="s4">
+      <div>
+        <p class="eyebrow">Valor real</p>
+        <h2>Qué gana tu local en la práctica.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Menos errores entre mesa y operación.</span></li>
+          <li><span class="dot"></span><span>Más claridad para salón, cocina y barra.</span></li>
+          <li><span class="dot"></span><span>Cliente con más visibilidad y menos espera incierta.</span></li>
+          <li><span class="dot"></span><span>Feedback real al final del servicio.</span></li>
+        </ul>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Para el dueño</h3>
+          <p>Más orden, más trazabilidad y una experiencia más consistente entre mesa, staff y operación.</p>
+        </div>
+        <div class="card">
+          <h3>Para el encargado</h3>
+          <p>Más control del turno, mejor lectura de la actividad y menos dependencia de mensajes cruzados.</p>
+        </div>
+        <div class="card">
+          <h3>Para el cliente</h3>
+          <p>Más comodidad para pedir y más claridad sobre lo que está pasando.</p>
+        </div>
+        <div class="card">
+          <h3>Para la marca</h3>
+          <p>Una experiencia más moderna y mejor percepción del servicio.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s5">
+      <div>
+        <p class="eyebrow">Tu local, tu estilo</p>
+        <h2>El staff puede cambiar cómo se ve la app del cliente.</h2>
+        <p class="muted">Esto no es una promesa futura. Hoy el sistema ya permite editar visualmente la experiencia del cliente desde el panel staff.</p>
+      </div>
+      <div class="cards three">
+        <div class="card">
+          <h3>Nombre y marca</h3>
+          <p>Podés definir el nombre del restaurante, subir logo y elegir si se usa como marca de agua.</p>
+        </div>
+        <div class="card">
+          <h3>Portada e imágenes</h3>
+          <p>Podés subir portada y una imagen de fondo para darle atmósfera a la app del cliente.</p>
+        </div>
+        <div class="card">
+          <h3>Colores y estilo</h3>
+          <p>Podés elegir estilo general, color principal de botones y color base del fondo.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s6">
+      <div>
+        <p class="eyebrow">Control comercial</p>
+        <h2>También podés definir cómo cobrar y qué mostrar.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Activar o desactivar efectivo.</span></li>
+          <li><span class="dot"></span><span>Activar o desactivar transferencia.</span></li>
+          <li><span class="dot"></span><span>Activar o desactivar tarjeta, Mercado Pago y MODO.</span></li>
+          <li><span class="dot"></span><span>Dejar instrucciones de transferencia visibles para el cliente.</span></li>
+        </ul>
+      </div>
+      <div class="stack">
+        <div class="metric">
+          <b class="blue">Más control</b>
+          <p>La app del cliente no es fija. Se puede adaptar a la forma real en que trabaja cada local.</p>
+        </div>
+        <div class="metric">
+          <b class="gold">Más confianza</b>
+          <p>El cliente ve un entorno más coherente con la identidad del restaurante y con medios de pago claros.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s7">
+      <div>
+        <p class="eyebrow">Carta e IA</p>
+        <h2>Podés cargar una carta y dejarla operativa mucho más rápido.</h2>
+        <p class="muted">El sistema ya incluye un lector inteligente de carta para ayudar al staff a cargar el menú sin arrancar desde cero.</p>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Qué puede leer</h3>
+          <p>Excel, CSV, Word, PDF y hasta fotos o imágenes de la carta.</p>
+        </div>
+        <div class="card">
+          <h3>Qué hace la IA</h3>
+          <p>Interpreta productos, arma categorías, propone estructura y deja un borrador para revisar.</p>
+        </div>
+        <div class="card">
+          <h3>Qué controla el local</h3>
+          <p>Nada se publica automáticamente. El staff revisa, corrige y recién ahí crea el menú.</p>
+        </div>
+        <div class="card">
+          <h3>Por qué importa</h3>
+          <p>Reduce muchísimo el tiempo de puesta en marcha y hace más fácil empezar a usar el sistema.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s8">
+      <div>
+        <p class="eyebrow">Diferencial</p>
+        <h2>COMANDA no es solo un menú QR.</h2>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Solución simple</th>
+              <th>COMANDA</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Solo muestra la carta</td>
+              <td>Conecta pedido, tracking, staff, operación y cierre.</td>
+            </tr>
+            <tr>
+              <td>Diseño igual para todos</td>
+              <td>Permite personalizar la experiencia del cliente por local.</td>
+            </tr>
+            <tr>
+              <td>Carga manual lenta</td>
+              <td>Usa IA para interpretar carta y acelerar onboarding.</td>
+            </tr>
+            <tr>
+              <td>Poca trazabilidad del servicio</td>
+              <td>Da más visibilidad a cliente y staff durante el turno.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="slide" id="s9">
+      <div>
+        <p class="eyebrow">Qué ya existe</p>
+        <h2>Esto ya está construido en el sistema actual.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Backend, cliente y staff funcionando en local.</span></li>
+          <li><span class="dot"></span><span>Editor visual del local desde staff.</span></li>
+          <li><span class="dot"></span><span>Lector de carta con IA y borrador revisable.</span></li>
+          <li><span class="dot"></span><span>Flujo de operación con seguimiento de pedido.</span></li>
+        </ul>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Mensaje honesto</h3>
+          <p>La base es real y valiosa. No está solo en idea ni en diseño. Ya tiene lógica, panel y operación.</p>
+        </div>
+        <div class="card">
+          <h3>Siguiente paso natural</h3>
+          <p>Terminar de consolidar estabilidad y usar demo real para validar con locales concretos.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s10">
+      <div>
+        <p class="eyebrow">Cierre</p>
+        <h2>Si querés un servicio más ordenado, más claro y más fácil de gestionar, COMANDA va en esa dirección.</h2>
+        <div class="quote">La propuesta no es solo que el cliente pida desde la mesa. La propuesta es que el servicio entero se vuelva más visible, más ordenado y más fácil de operar para tu equipo.</div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>COMANDA | Presentacion para Inversores</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121924;
+      --panel-2: #192231;
+      --text: #eef4fb;
+      --muted: #97a3b7;
+      --line: rgba(255,255,255,0.08);
+      --green: #19b37d;
+      --blue: #63a8ff;
+      --gold: #d8a25a;
+      --red: #ff7f7f;
+      --shadow: 0 24px 60px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(25,179,125,0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(99,168,255,0.1), transparent 22%),
+        linear-gradient(180deg, #0b0f14 0%, #111722 100%);
+    }
+    .deck {
+      width: min(1280px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 18px 0 80px;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 16px;
+      padding: 14px 18px;
+      border-radius: 18px;
+      background: rgba(11,15,20,0.82);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--line);
+    }
+    .topbar b { display: block; letter-spacing: 0.08em; font-size: 0.92rem; }
+    .topbar span { color: var(--muted); font-size: 0.92rem; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; }
+    nav a {
+      text-decoration: none;
+      color: var(--text);
+      font: 700 0.84rem/1 Arial, Helvetica, sans-serif;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+    }
+    .slide {
+      min-height: calc(100vh - 84px);
+      margin-bottom: 18px;
+      padding: 34px;
+      border-radius: 30px;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      background: linear-gradient(180deg, rgba(18,25,36,0.96), rgba(14,20,29,0.98));
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 26px;
+      align-items: start;
+    }
+    .slide.hero {
+      align-items: center;
+      background:
+        radial-gradient(circle at top right, rgba(216,162,90,0.12), transparent 24%),
+        radial-gradient(circle at bottom left, rgba(25,179,125,0.12), transparent 22%),
+        linear-gradient(145deg, #101722 0%, #121a27 100%);
+    }
+    .slide.full { grid-template-columns: 1fr; }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font: 700 0.8rem/1 Arial, Helvetica, sans-serif;
+    }
+    h1, h2 {
+      margin: 0 0 14px;
+      line-height: 0.94;
+      letter-spacing: -0.03em;
+    }
+    h1 { font-size: clamp(3rem, 6vw, 5.6rem); max-width: 9ch; }
+    h2 { font-size: clamp(2rem, 4vw, 3.6rem); max-width: 11ch; }
+    .lede {
+      margin: 0 0 16px;
+      max-width: 60ch;
+      font-size: clamp(1.08rem, 1.9vw, 1.34rem);
+      line-height: 1.45;
+      color: #dbe4ef;
+    }
+    .muted {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 72ch;
+    }
+    .quote {
+      margin-top: 22px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--line);
+      font-size: 1.05rem;
+      line-height: 1.55;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+    .cards.three { grid-template-columns: repeat(3, 1fr); }
+    .card {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+    }
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 1.02rem;
+    }
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 0.96rem;
+    }
+    .metric {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+    }
+    .metric b {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 2.2rem;
+    }
+    .metric p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.95rem;
+    }
+    .stack { display: grid; gap: 14px; }
+    ul.clean {
+      list-style: none;
+      padding: 0;
+      margin: 18px 0 0;
+      display: grid;
+      gap: 12px;
+    }
+    ul.clean li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+      line-height: 1.5;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 5px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      background: linear-gradient(135deg, var(--green), #85e0bd);
+    }
+    .code {
+      margin-top: 20px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: #0c1118;
+      border: 1px solid rgba(255,255,255,0.07);
+      color: #dce6f3;
+      font: 500 0.92rem/1.55 Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.03);
+    }
+    .table th, .table td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      vertical-align: top;
+    }
+    .table th {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.8rem;
+      color: #f4f7fb;
+    }
+    .table td {
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.95rem;
+    }
+    .green { color: var(--green); }
+    .blue { color: var(--blue); }
+    .gold { color: var(--gold); }
+    .red { color: var(--red); }
+    @media (max-width: 980px) {
+      .slide, .slide.hero, .slide.full { grid-template-columns: 1fr; min-height: auto; }
+      .cards, .cards.three { grid-template-columns: 1fr; }
+      .topbar { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="topbar">
+      <div>
+        <b>COMANDA | INVERSORES</b>
+        <span>Presentación basada en el producto real actual</span>
+      </div>
+      <nav>
+        <a href="#s1">Inicio</a>
+        <a href="#s2">Problema</a>
+        <a href="#s4">Producto</a>
+        <a href="#s6">Ventaja</a>
+        <a href="#s8">Stack</a>
+        <a href="#s10">Estado</a>
+      </nav>
+    </header>
+
+    <section class="slide hero" id="s1">
+      <div>
+        <p class="eyebrow">COMANDA</p>
+        <h1>Infraestructura de servicio para restaurantes.</h1>
+        <p class="lede">COMANDA no resuelve solo el pedido por QR. Resuelve operación, visibilidad del servicio, personalización del local y activación rápida del menú, incluso con lectura asistida por IA.</p>
+        <div class="quote">La tesis de producto es simple: si ordenás la operación desde la mesa, mejorás experiencia, percepción de tiempo, captura de feedback y capacidad de replicar el sistema en distintos locales.</div>
+      </div>
+      <div class="stack">
+        <div class="metric">
+          <b class="green">B2B SaaS</b>
+          <p>Orientado a restaurantes y bares con necesidad de orden operativo y mejor experiencia al cliente.</p>
+        </div>
+        <div class="metric">
+          <b class="blue">White-label light</b>
+          <p>Cada local puede personalizar identidad visual, portada, logo, fondo, acentos y medios de pago visibles.</p>
+        </div>
+        <div class="metric">
+          <b class="gold">Onboarding acelerado</b>
+          <p>El staff puede importar una carta con IA y dejarla operativa tras revisar un borrador editable.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s2">
+      <div>
+        <p class="eyebrow">Problema</p>
+        <h2>El dolor real no es el QR. Es el desorden operativo.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Pedidos tomados de forma dispersa o poco estructurada.</span></li>
+          <li><span class="dot"></span><span>Cliente sin visibilidad sobre el estado real del servicio.</span></li>
+          <li><span class="dot"></span><span>Staff operando por memoria, interrupción y urgencia.</span></li>
+          <li><span class="dot"></span><span>Onboarding lento de nuevos locales por carga manual de menú e identidad.</span></li>
+        </ul>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Problema de categoría</h3>
+          <p>Muchas soluciones venden un “menú QR”, pero no resuelven visibilidad del servicio, operación por sectores ni configuración rápida para cada restaurante.</p>
+        </div>
+        <div class="card">
+          <h3>Oportunidad</h3>
+          <p>Unificar experiencia cliente, tablero staff y setup del local dentro de una misma plataforma operativa.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s3">
+      <div>
+        <p class="eyebrow">Propuesta</p>
+        <h2>Una plataforma operativa, no solo una interfaz de pedido.</h2>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Capa</th>
+              <th>Qué hace hoy</th>
+              <th>Por qué importa para negocio</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Cliente</td>
+              <td>Mesa, menú, carrito, tracking, pago asistido, feedback final.</td>
+              <td>Mejora claridad del servicio y experiencia percibida.</td>
+            </tr>
+            <tr>
+              <td>Staff</td>
+              <td>Login por roles, tablero, salón, BAR, caja, turnos, QR, configuración.</td>
+              <td>Reduce ruido operativo y hace más repetible la operación.</td>
+            </tr>
+            <tr>
+              <td>Personalización</td>
+              <td>Logo, portada, fondo, colores, watermark, medios de pago visibles.</td>
+              <td>Acerca el producto a un modelo multi-local y más adaptable.</td>
+            </tr>
+            <tr>
+              <td>IA aplicada</td>
+              <td>Lector inteligente de carta que interpreta PDF, foto, Excel o Word y arma borrador.</td>
+              <td>Reduce fricción de activación y acelera onboarding comercial.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="slide" id="s4">
+      <div>
+        <p class="eyebrow">Producto real</p>
+        <h2>Capacidades actuales con valor comercial claro.</h2>
+        <p class="muted">Estas funciones ya están presentes en el producto actual y no dependen de los mockups viejos.</p>
+      </div>
+      <div class="cards three">
+        <div class="card">
+          <h3>Editor visual del local</h3>
+          <p>El staff puede cambiar nombre, estilo, color principal, color de fondo, logo, portada e imagen ambiental del cliente.</p>
+        </div>
+        <div class="card">
+          <h3>Configuración de cobros</h3>
+          <p>El local puede activar o desactivar efectivo, transferencia, tarjeta, Mercado Pago y MODO, con instrucciones visibles para transferencia.</p>
+        </div>
+        <div class="card">
+          <h3>Lector de carta con IA</h3>
+          <p>Importa carta desde Excel, CSV, Word, PDF o foto. La IA interpreta, clasifica, propone categorías y genera borrador editable.</p>
+        </div>
+        <div class="card">
+          <h3>Operación BAR y RESTAURANTE</h3>
+          <p>Soporta modos de servicio distintos, incluyendo pedidos BAR con lógica de pago antes de avanzar preparación.</p>
+        </div>
+        <div class="card">
+          <h3>Feedback al cierre</h3>
+          <p>La experiencia termina con calificación del cliente y potencial de recomendación orgánica.</p>
+        </div>
+        <div class="card">
+          <h3>Modelo multi-local</h3>
+          <p>La base ya está pensada con `tenant_id` y `store_id`, habilitando escalabilidad de cuenta y sucursal.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s5">
+      <div>
+        <p class="eyebrow">Moat operativo</p>
+        <h2>La ventaja está en combinar operación + personalización + activación.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>No se limita a mostrar productos: gobierna estados, sectores, mesa, caja y cierre.</span></li>
+          <li><span class="dot"></span><span>No requiere que cada local “aprenda diseño”: puede editar la app cliente desde staff.</span></li>
+          <li><span class="dot"></span><span>No obliga a cargar menú desde cero: la IA reduce tiempo de setup.</span></li>
+        </ul>
+      </div>
+      <div class="stack">
+        <div class="metric">
+          <b class="green">Configuración con IA</b>
+          <p>Convierte un proceso pesado de alta de menú en un flujo revisable y publicable.</p>
+        </div>
+        <div class="metric">
+          <b class="blue">Configuración de identidad</b>
+          <p>Permite que cada restaurante sienta que la app del cliente es “suya”, sin desarrollo adicional.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s6">
+      <div>
+        <p class="eyebrow">Narrativa inversor</p>
+        <h2>Qué se está construyendo en términos de negocio.</h2>
+        <div class="code">COMANDA = capa operativa digital para hospitality
+
+Entrada:
+- QR / mesa / cliente
+
+Core:
+- flujo de pedido
+- estados y sectores
+- tablero staff
+- caja / pagos / cierre
+
+Expansión:
+- personalización por local
+- multi-sucursal
+- onboarding de menú con IA
+- feedback y share del cliente
+
+Tesis:
+- más orden operativo
+- menos fricción de implementación
+- mejor experiencia
+- producto más replicable entre restaurantes</div>
+      </div>
+    </section>
+
+    <section class="slide" id="s7">
+      <div>
+        <p class="eyebrow">Mercado y expansión</p>
+        <h2>Dos palancas fuertes de crecimiento.</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Onboarding más rápido</h3>
+          <p>Si un restaurante puede subir una carta y dejarla operativa con ayuda de IA, el costo de adopción baja y la conversión comercial puede subir.</p>
+        </div>
+        <div class="card">
+          <h3>Customización sin código</h3>
+          <p>La posibilidad de cambiar apariencia, marca e identidad del cliente desde staff mejora percepción de producto premium y retención.</p>
+        </div>
+        <div class="card">
+          <h3>Base multi-local</h3>
+          <p>La estructura `tenant/store` ya prepara el camino para grupos gastronómicos y operación por sucursal.</p>
+        </div>
+        <div class="card">
+          <h3>Datos de servicio</h3>
+          <p>La operación digital deja una traza útil para entender tiempos, turnos, pedidos, feedback y comportamiento real del local.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s8">
+      <div>
+        <p class="eyebrow">Base técnica</p>
+        <h2>El producto ya está construido sobre stack moderno y modular.</h2>
+        <ul class="clean">
+          <li><span class="dot"></span><span>Backend en `FastAPI + SQLAlchemy + Pydantic`.</span></li>
+          <li><span class="dot"></span><span>Cliente, staff y website en `Next.js 15 + React 18`.</span></li>
+          <li><span class="dot"></span><span>DB local `SQLite`; DB online `Railway Postgres`.</span></li>
+          <li><span class="dot"></span><span>Deploy actual: Railway para backend y Vercel para frontends.</span></li>
+        </ul>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Operación local</h3>
+          <p>Stack oficial en `8001`, `5173`, `5174` con scripts de arranque, estado y doctor.</p>
+        </div>
+        <div class="card">
+          <h3>Escalabilidad técnica</h3>
+          <p>La separación entre backend, cliente y staff facilita evolucionar módulos sin rehacer todo.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s9">
+      <div>
+        <p class="eyebrow">Riesgo honesto</p>
+        <h2>Qué está bien y qué todavía falta cerrar.</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3 class="green">Lo bueno</h3>
+          <p>El producto ya no está en idea. Tiene cliente, staff, configuración, IA aplicada y documentación operativa real.</p>
+        </div>
+        <div class="card">
+          <h3 class="gold">Lo pendiente</h3>
+          <p>Hay que consolidar reglas críticas de backend y cerrar validación E2E para hablar de estabilidad más fuerte.</p>
+        </div>
+        <div class="card">
+          <h3 class="blue">Señal positiva</h3>
+          <p>La dirección del producto es más interesante que un simple menú QR por su capacidad de activación y configuración.</p>
+        </div>
+        <div class="card">
+          <h3 class="red">Señal de cautela</h3>
+          <p>La parte de negocio sensible todavía requiere estabilización antes de escalar agresivamente.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide full" id="s10">
+      <div>
+        <p class="eyebrow">Cierre</p>
+        <h2>COMANDA tiene una tesis de producto defendible.</h2>
+        <div class="quote">No compite solamente en “digitalizar el pedido”. Compite en reducir fricción de adopción, ordenar la operación del local y permitir que cada restaurante use una app cliente con identidad propia y menú activable en menos tiempo.</div>
+        <div class="code">Mensaje final para inversor:
+
+COMANDA está construyendo una plataforma operativa para hospitality.
+La combinación de:
+- experiencia cliente,
+- tablero staff,
+- configuración visual por local,
+- y carga inteligente de menú con IA,
+
+la vuelve más potente que un simple QR y más replicable como producto SaaS.</div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -30,7 +30,7 @@ Tener un checklist corto y repetible para distinguir:
 
 ## Checklist de salida
 
-- Backend local responde en `http://localhost:8000/health`
+- Backend local responde en `http://localhost:8001/health`
 - Cliente local abre en `http://localhost:5173`
 - Staff local abre en `http://localhost:5174`
 - Cambio identificado con owner y fecha
@@ -90,7 +90,7 @@ Estado:
 - Deploy staff: PENDING
 
 Validacion:
-- Backend: http://localhost:8000/health responde 200
+- Backend: http://localhost:8001/health responde 200
 - Cliente: http://localhost:5173 responde 200 y muestra productos importados
 - Staff: http://localhost:5174 responde 200 y permite importar carta
 - E2E: staff importa carta -> revisa borrador -> crea productos -> cliente local los ve

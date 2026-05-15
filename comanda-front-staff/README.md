@@ -11,7 +11,7 @@ npm run dev -- -H 0.0.0.0 -p 5174
 
 ## Env
 
-- `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`)
+- `NEXT_PUBLIC_API_URL` (default `http://localhost:8001`)
 - `STAFF_APP_BASIC_AUTH_USER` (activar en Vercel para cerrar el deploy de staff)
 - `STAFF_APP_BASIC_AUTH_PASSWORD` (activar en Vercel para cerrar el deploy de staff)
 

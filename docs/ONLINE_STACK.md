@@ -1,6 +1,6 @@
 # COMANDA - Online Stack
 
-Ultima actualizacion: `2026-04-21`
+Ultima actualizacion: `2026-05-11`
 Owner: `Santiago (Infra-Ops-Agent)`
 
 ## Objetivo
@@ -14,10 +14,31 @@ Este archivo es la fuente de verdad operativa del entorno online.
 
 ## Mapa actual del stack
 
-- Base de datos: `Neon`
-- Backend publico: `https://commanda-apy.onrender.com`
+- Base de datos canonica para Railway `dev`: `Railway Postgres`
+- Base de datos legacy: `Neon` (pendiente de baja si se confirma que no se usa mas)
+- Backend publico Railway enlazado desde CLI: `https://commanda-production.up.railway.app`
+- Backend publico historico: `https://commanda-apy.onrender.com`
 - Front cliente publico: `https://comanda-cliente.vercel.app`
 - Front staff publico: `https://comanda-staff.vercel.app`
+
+## Estado confirmado el 2026-05-11
+
+- Railway CLI conectado al workspace `snowjhon42's Projects`
+- Proyecto Railway: `comanda`
+- Environment enlazado: `dev`
+- Service enlazado: `commanda`
+- `DATABASE_URL` de `commanda` en `dev` ya no apunta a `Neon`
+- `DATABASE_URL` de `commanda` en `dev` ahora apunta a `Railway Postgres`
+- Bootstrap demo ejecutado en `Railway Postgres`
+- Healthcheck validado: `https://commanda-production.up.railway.app/health` -> `{"status":"ok"}`
+
+## Seed actual en Railway Postgres dev
+
+- tenant: `Comanda Demo`
+- store: `Local Centro`
+- mesas: `M1` a `M20`
+- usuarios: `dueno`, `admin`, `kitchen`, `bar`, `waiter`
+- pin demo: `1234`
 
 ## URLs canonicas para compartir
 
@@ -78,7 +99,9 @@ Checklist detallado:
 
 - El repo local puede tener `.env.local` apuntando a `localhost`
 - Vercel puede estar usando otra `NEXT_PUBLIC_API_URL`
-- Render puede tener `DATABASE_URL`, CORS y otras variables que no existen en el repo
+- Render puede seguir vivo aunque el backend `dev` ya este en Railway
+- La URL de Railway contiene `production` en el dominio, pero el environment enlazado hoy por CLI es `dev`
+- `ENVIRONMENT=prod` sigue presente dentro del servicio Railway `dev`
 - El comportamiento de share en cliente depende del soporte real de `navigator.share` del navegador/celular; si no esta disponible, cae a WhatsApp como fallback
 
 Esto no es un bug por si mismo, pero debe quedar explicitado cada vez que revisamos estado online.
@@ -86,21 +109,25 @@ Esto no es un bug por si mismo, pero debe quedar explicitado cada vez que revisa
 ## Cambio pendiente de verificacion
 
 Estado online:
-- DB: `DEPLOYED`
-- Backend: `DEPLOYED`
+- DB Railway dev: `DEPLOYED`
+- DB Neon legacy: `ACTIVE` pero fuera del flujo objetivo
+- Backend Railway dev: `DEPLOYED`
+- Backend Render legacy: `UNKNOWN`
 - Cliente: `DEPLOYED` con posible drift funcional respecto de local
 - Staff: `DEPLOYED`
 
 Estado del cambio consultado:
 - Local: `VERIFIED`
-- GitHub: `IN_GIT`
-- Deploy: `DEPLOYED`
+- GitHub: `NO_VERIFIED`
+- Deploy Railway dev: `DEPLOYED`
+- Smoke E2E publico: `PENDING`
 
 Evidencia usada:
-- archivo `comanda-front-client/src/views/SessionClosedFeedbackPage.jsx`
-- rama `sec-hardening-runtime-cut`
-- commits `7785f60` y `4433d3f`
-- historial de deploys de Vercel con `4433d3f` y `d20644d`
+- Railway CLI `status`
+- Railway CLI `variable list`
+- Railway Postgres bootstrap ejecutado desde `comanda-backend/scripts/bootstrap_postgres.py`
+- lectura de seed via `comanda-backend/scripts/list_restaurant_access.py`
+- healthcheck `https://commanda-production.up.railway.app/health`
 
 ## Como responder a la pregunta "esto ya esta en servidor?"
 
@@ -132,3 +159,4 @@ Los links privados de dashboard y credenciales no deben quedar hardcodeados en a
 - Staff en Vercel protegido con Basic Auth via `STAFF_APP_BASIC_AUTH_USER` y `STAFF_APP_BASIC_AUTH_PASSWORD`
 - Backend con `ENVIRONMENT=prod`, `JWT_SECRET_KEY` no default y `CORS_ALLOW_ORIGINS` limitado a dominios reales
 - No compartir previews ni URLs temporales con terceros
+- Rotar secretos expuestos en sesiones operativas antes de cerrar release
