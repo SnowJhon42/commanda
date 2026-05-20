@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -405,6 +405,9 @@ class StoreProfileResponse(BaseModel):
     fiscal_business_name: str | None = None
     fiscal_tax_id: str | None = None
     fiscal_tax_status: str = "RESPONSABLE_INSCRIPTO"
+    fiscal_commercial_address: str | None = None
+    fiscal_gross_income_number: str | None = None
+    fiscal_activity_start_date: date | None = None
     fiscal_point_of_sale: str | None = None
     fiscal_issuer_email: str | None = None
     fiscal_integration_provider: str = "MANUAL_DEMO"
@@ -485,6 +488,9 @@ class UpdateStoreProfileRequest(BaseModel):
     fiscal_business_name: str | None = Field(default=None, max_length=255)
     fiscal_tax_id: str | None = Field(default=None, max_length=32)
     fiscal_tax_status: str = Field("RESPONSABLE_INSCRIPTO")
+    fiscal_commercial_address: str | None = Field(default=None, max_length=255)
+    fiscal_gross_income_number: str | None = Field(default=None, max_length=64)
+    fiscal_activity_start_date: date | None = None
     fiscal_point_of_sale: str | None = Field(default=None, max_length=5)
     fiscal_issuer_email: str | None = Field(default=None, max_length=255)
     fiscal_integration_provider: str = Field("MANUAL_DEMO")

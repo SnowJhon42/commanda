@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -126,6 +126,9 @@ class Store(Base):
     fiscal_business_name: Mapped[str | None] = mapped_column(String(255))
     fiscal_tax_id: Mapped[str | None] = mapped_column(String(32))
     fiscal_tax_status: Mapped[str] = mapped_column(String(40), default="RESPONSABLE_INSCRIPTO", nullable=False)
+    fiscal_commercial_address: Mapped[str | None] = mapped_column(String(255))
+    fiscal_gross_income_number: Mapped[str | None] = mapped_column(String(64))
+    fiscal_activity_start_date: Mapped[date | None] = mapped_column(Date)
     fiscal_point_of_sale: Mapped[str | None] = mapped_column(String(5))
     fiscal_issuer_email: Mapped[str | None] = mapped_column(String(255))
     fiscal_integration_provider: Mapped[str] = mapped_column(String(40), default="MANUAL_DEMO", nullable=False)

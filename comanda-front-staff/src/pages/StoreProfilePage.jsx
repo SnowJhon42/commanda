@@ -86,6 +86,9 @@ const EMPTY_PROFILE = {
   fiscal_business_name: "",
   fiscal_tax_id: "",
   fiscal_tax_status: "RESPONSABLE_INSCRIPTO",
+  fiscal_commercial_address: "",
+  fiscal_gross_income_number: "",
+  fiscal_activity_start_date: "",
   fiscal_point_of_sale: "",
   fiscal_issuer_email: "",
   fiscal_integration_provider: "MANUAL_DEMO",
@@ -120,6 +123,9 @@ function normalizeProfile(data) {
     fiscal_business_name: data?.fiscal_business_name || "",
     fiscal_tax_id: data?.fiscal_tax_id || "",
     fiscal_tax_status: data?.fiscal_tax_status || "RESPONSABLE_INSCRIPTO",
+    fiscal_commercial_address: data?.fiscal_commercial_address || "",
+    fiscal_gross_income_number: data?.fiscal_gross_income_number || "",
+    fiscal_activity_start_date: data?.fiscal_activity_start_date ? String(data.fiscal_activity_start_date).slice(0, 10) : "",
     fiscal_point_of_sale: data?.fiscal_point_of_sale || "",
     fiscal_issuer_email: data?.fiscal_issuer_email || "",
     fiscal_integration_provider: data?.fiscal_integration_provider || "MANUAL_DEMO",
@@ -306,6 +312,9 @@ export function StoreProfilePage({ token, storeId, sessionStaffId = null, staffD
           fiscal_business_name: profile.fiscal_business_name.trim() || null,
           fiscal_tax_id: profile.fiscal_tax_id.trim() || null,
           fiscal_tax_status: profile.fiscal_tax_status,
+          fiscal_commercial_address: profile.fiscal_commercial_address.trim() || null,
+          fiscal_gross_income_number: profile.fiscal_gross_income_number.trim() || null,
+          fiscal_activity_start_date: profile.fiscal_activity_start_date || null,
           fiscal_point_of_sale: profile.fiscal_point_of_sale.trim() || null,
           fiscal_issuer_email: profile.fiscal_issuer_email.trim() || null,
           fiscal_integration_provider: profile.fiscal_integration_provider,
@@ -750,6 +759,33 @@ export function StoreProfilePage({ token, storeId, sessionStaffId = null, staffD
                   ))}
                 </select>
               </label>
+              <label className="field field-span-2">
+                Domicilio comercial
+                <input
+                  value={profile.fiscal_commercial_address}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_commercial_address", event.target.value)}
+                  placeholder="Av. Corrientes 1234, CABA"
+                />
+              </label>
+              <label className="field">
+                Ingresos Brutos
+                <input
+                  value={profile.fiscal_gross_income_number}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_gross_income_number", event.target.value)}
+                  placeholder="901-123456-7"
+                />
+              </label>
+              <label className="field">
+                Inicio de actividades
+                <input
+                  type="date"
+                  value={profile.fiscal_activity_start_date}
+                  disabled={!unlocked}
+                  onChange={(event) => updateProfile("fiscal_activity_start_date", event.target.value)}
+                />
+              </label>
               <label className="field">
                 Punto de venta
                 <input
@@ -791,6 +827,10 @@ export function StoreProfilePage({ token, storeId, sessionStaffId = null, staffD
             )}
             <p className="muted">
               Esto todavía no emite en ARCA. Deja preparado el perfil fiscal del local para el siguiente sprint.
+            </p>
+            <p className="muted">
+              Para un alta real por local también pedimos domicilio comercial, Ingresos Brutos e inicio de actividades,
+              porque suelen formar parte del circuito fiscal y del alta del punto de venta.
             </p>
           </div>
 

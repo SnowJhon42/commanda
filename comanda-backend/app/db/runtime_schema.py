@@ -294,6 +294,12 @@ def apply_runtime_schema_bootstrap(conn: Connection) -> None:
             conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_tax_id TEXT NULL"))
         if "fiscal_tax_status" not in store_columns:
             conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_tax_status TEXT NOT NULL DEFAULT 'RESPONSABLE_INSCRIPTO'"))
+        if "fiscal_commercial_address" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_commercial_address TEXT NULL"))
+        if "fiscal_gross_income_number" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_gross_income_number TEXT NULL"))
+        if "fiscal_activity_start_date" not in store_columns:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_activity_start_date DATE NULL"))
         if "fiscal_point_of_sale" not in store_columns:
             conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_point_of_sale TEXT NULL"))
         if "fiscal_issuer_email" not in store_columns:
@@ -745,6 +751,12 @@ def apply_sqlite_schema_bootstrap(conn: Connection) -> None:
         conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_tax_id TEXT NULL"))
     if "fiscal_tax_status" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_tax_status TEXT NOT NULL DEFAULT 'RESPONSABLE_INSCRIPTO'"))
+    if "fiscal_commercial_address" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_commercial_address TEXT NULL"))
+    if "fiscal_gross_income_number" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_gross_income_number TEXT NULL"))
+    if "fiscal_activity_start_date" not in store_column_names:
+        conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_activity_start_date DATE NULL"))
     if "fiscal_point_of_sale" not in store_column_names:
         conn.execute(text("ALTER TABLE stores ADD COLUMN fiscal_point_of_sale TEXT NULL"))
     if "fiscal_issuer_email" not in store_column_names:

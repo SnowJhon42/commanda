@@ -150,6 +150,9 @@ STORE_FISCAL_REQUIRED_FIELDS = {
     "fiscal_business_name": "razon social",
     "fiscal_tax_id": "CUIT",
     "fiscal_tax_status": "condicion fiscal",
+    "fiscal_commercial_address": "domicilio comercial",
+    "fiscal_gross_income_number": "Ingresos Brutos",
+    "fiscal_activity_start_date": "inicio de actividades",
     "fiscal_point_of_sale": "punto de venta",
     "fiscal_issuer_email": "email emisor",
 }
@@ -164,6 +167,9 @@ def _store_fiscal_setup(store: Store) -> tuple[str, list[str]]:
     configured_core_fields = (
         str(store.fiscal_business_name or "").strip(),
         str(store.fiscal_tax_id or "").strip(),
+        str(store.fiscal_commercial_address or "").strip(),
+        str(store.fiscal_gross_income_number or "").strip(),
+        str(store.fiscal_activity_start_date or "").strip(),
         str(store.fiscal_point_of_sale or "").strip(),
         str(store.fiscal_issuer_email or "").strip(),
     )
@@ -196,6 +202,9 @@ def _store_profile_out(store: Store) -> StoreProfileResponse:
         fiscal_business_name=store.fiscal_business_name,
         fiscal_tax_id=store.fiscal_tax_id,
         fiscal_tax_status=store.fiscal_tax_status or "RESPONSABLE_INSCRIPTO",
+        fiscal_commercial_address=store.fiscal_commercial_address,
+        fiscal_gross_income_number=store.fiscal_gross_income_number,
+        fiscal_activity_start_date=store.fiscal_activity_start_date,
         fiscal_point_of_sale=store.fiscal_point_of_sale,
         fiscal_issuer_email=store.fiscal_issuer_email,
         fiscal_integration_provider=store.fiscal_integration_provider or "MANUAL_DEMO",
@@ -1784,6 +1793,9 @@ def patch_store_profile_settings(
     store.fiscal_business_name = (payload.fiscal_business_name or "").strip() or None
     store.fiscal_tax_id = (payload.fiscal_tax_id or "").strip() or None
     store.fiscal_tax_status = payload.fiscal_tax_status
+    store.fiscal_commercial_address = (payload.fiscal_commercial_address or "").strip() or None
+    store.fiscal_gross_income_number = (payload.fiscal_gross_income_number or "").strip() or None
+    store.fiscal_activity_start_date = payload.fiscal_activity_start_date
     store.fiscal_point_of_sale = (payload.fiscal_point_of_sale or "").strip() or None
     store.fiscal_issuer_email = (payload.fiscal_issuer_email or "").strip() or None
     store.fiscal_integration_provider = payload.fiscal_integration_provider

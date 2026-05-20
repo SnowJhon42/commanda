@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cuestionario Facturación - COMANDA</title>
+  <style>
+    :root {
+      --bg: #f6f1e8;
+      --paper: #fffaf4;
+      --ink: #1f2a2e;
+      --muted: #5b676d;
+      --line: #d8cbb6;
+      --brand: #1f6c63;
+      --accent: #b25a30;
+      --soft: #efe5d5;
+      --shadow: 0 16px 36px rgba(60, 42, 20, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(31, 108, 99, 0.10), transparent 25%),
+        radial-gradient(circle at top right, rgba(178, 90, 48, 0.12), transparent 25%),
+        linear-gradient(180deg, #f9f5ee 0%, var(--bg) 100%);
+      line-height: 1.6;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 36px 20px 60px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, rgba(255,250,244,0.98), rgba(245,236,222,0.98));
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 30px;
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(31, 108, 99, 0.10);
+      color: var(--brand);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 12px;
+      line-height: 1.12;
+    }
+
+    h1 {
+      font-size: clamp(30px, 5vw, 52px);
+      max-width: 12ch;
+    }
+
+    .lead {
+      max-width: 70ch;
+      color: var(--muted);
+      font-size: 18px;
+      margin-top: 12px;
+    }
+
+    .meta {
+      margin-top: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      font-size: 14px;
+    }
+
+    .section {
+      margin-top: 26px;
+    }
+
+    .section-title {
+      font-size: 28px;
+      margin-bottom: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 24px rgba(48, 36, 24, 0.06);
+    }
+
+    .card h3 {
+      font-size: 22px;
+    }
+
+    .qa {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .q {
+      font-weight: bold;
+      color: var(--brand);
+      margin-bottom: 6px;
+    }
+
+    .a {
+      color: var(--ink);
+    }
+
+    .note {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(178, 90, 48, 0.08);
+      border: 1px solid rgba(178, 90, 48, 0.12);
+      color: #5d4638;
+    }
+
+    .status {
+      display: inline-block;
+      margin-bottom: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(31, 108, 99, 0.10);
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .warn {
+      background: rgba(178, 90, 48, 0.10);
+      color: var(--accent);
+    }
+
+    ul {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+
+    li { margin-bottom: 8px; }
+
+    .footer {
+      margin-top: 28px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: rgba(31, 42, 46, 0.04);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 640px) {
+      .wrap { padding: 20px 14px 42px; }
+      .hero, .card { padding: 22px; }
+      .section-title { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">COMANDA · Cuestionario de facturación</div>
+      <h1>Base para reunión e integración</h1>
+      <p class="lead">
+        Este documento junta lo que ya está definido, lo que todavía está abierto y lo que
+        conviene aclarar con un proveedor de facturación electrónica.
+      </p>
+      <div class="meta">
+        <div class="pill">Modelo: SaaS para gastronomía</div>
+        <div class="pill">Objetivo: facturación por restaurante</div>
+        <div class="pill">Escala buscada: muchos comercios</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">1. Sobre el negocio</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="status">Definido</div>
+          <h3>Qué hace COMANDA</h3>
+          <div class="qa">
+            <div class="q">¿Qué hace COMANDA exactamente?</div>
+            <div class="a">Automatiza la operación en lugares gastronómicos. Toma pedidos online, los prepara, los entrega y acompaña el cobro.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Quién va a emitir la factura?</div>
+            <div class="a">Cada restaurante usando COMANDA. La idea es que cada establecimiento cargue sus propios datos fiscales y opere desde nuestra herramienta.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Es para un solo comercio o para muchos?</div>
+            <div class="a">Para muchos. La intención es escalar a muchos comercios de verdad.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="status">Definido con matices</div>
+          <h3>Clientes y comprobantes</h3>
+          <div class="qa">
+            <div class="q">¿Van a facturar al consumidor final, empresas, o ambos?</div>
+            <div class="a">Ambos. Si alguien pide factura, se emite. Si no la pide, la idea es trabajar con preticket.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Qué tipo de comprobantes necesitan?</div>
+            <div class="a">Facturas A, B, C y también notas de crédito.</div>
+          </div>
+          <div class="note">
+            Punto importante: esto ya implica pensar COMANDA como plataforma multi-comercio y
+            potencialmente multi-CUIT.
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">2. Sobre el flujo operativo</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="status">Mayormente definido</div>
+          <h3>Momento de emisión</h3>
+          <div class="qa">
+            <div class="q">¿En qué momento quieren emitir la factura?</div>
+            <div class="a">Cuando la piden.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Cuándo se crea el pedido?</div>
+            <div class="a">En restaurante, cuando piden. En modo bar, cuando pagan.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Factura automática o manual desde staff?</div>
+            <div class="a">Manual, pero simple: un botón para facturar. Si es factura B, idealmente que sea casi automática con los datos mínimos.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="status">Definido</div>
+          <h3>Excepciones</h3>
+          <div class="qa">
+            <div class="q">¿Qué pasa si el cliente se va sin pedir factura?</div>
+            <div class="a">El pedido queda guardado y debe quedar marcado como no facturado.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Necesitan reemitir, anular o hacer nota de crédito?</div>
+            <div class="a">Sí. Si hay cancelaciones o correcciones, va a hacer falta resolverlo.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">3. Sobre datos disponibles</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="status">Parcial</div>
+          <h3>Datos del cliente</h3>
+          <div class="qa">
+            <div class="q">¿Qué datos del cliente tienen hoy?</div>
+            <div class="a">Hoy no hay datos fiscales persistidos por defecto. Si el cliente pide factura A, la idea es que complete los datos necesarios desde su celular.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Piden CUIT/DNI, nombre, domicilio, condición IVA?</div>
+            <div class="a">Sí, si pide factura se pedirían esos datos.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="status">Parcial</div>
+          <h3>Items e importes</h3>
+          <div class="qa">
+            <div class="q">¿Cómo modelan hoy los productos o ítems?</div>
+            <div class="a">Pendiente de describir con precisión para el proveedor. Hay que documentar cómo se representan productos, cantidades, precios, descuentos, combos y observaciones.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Ya calculan neto, IVA y total?</div>
+            <div class="a">Sí. Hoy ya se calcula todo: importes con IVA, sin IVA, total de IVA y total final.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Tienen punto de venta definido?</div>
+            <div class="a">No todavía. Se entiende que debería ser por establecimiento, pero está pendiente aprender bien cómo funciona.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">4. Fiscal / ARCA-AFIP</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="status warn">Abierto</div>
+          <h3>Estado actual</h3>
+          <div class="qa">
+            <div class="q">¿Ya tienen CUIT emisor?</div>
+            <div class="a">No definido para la solución. En principio sería el CUIT de cada restaurante.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Ya tienen certificado digital?</div>
+            <div class="a">No definido.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Ya tienen punto de venta habilitado?</div>
+            <div class="a">No definido.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Ya operaron alguna vez con factura electrónica?</div>
+            <div class="a">No está claro todavía.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Quieren homologación y producción desde cero?</div>
+            <div class="a">Probablemente sí, pero hay que validarlo con el proveedor y entender el proceso real.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="status">Lectura CTO</div>
+          <h3>Interpretación</h3>
+          <ul>
+            <li>COMANDA no sería el emisor fiscal central.</li>
+            <li>Cada restaurante tendría su propia identidad fiscal.</li>
+            <li>Eso vuelve importante definir onboarding fiscal por comercio.</li>
+            <li>También empuja a pensar en multi-CUIT desde el diseño inicial.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">5. Volumen y operación</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="status">Definido</div>
+          <h3>Escala esperada</h3>
+          <div class="qa">
+            <div class="q">¿Cuántas facturas por día estiman?</div>
+            <div class="a">Más de 100 por día.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Cuántos restaurantes o razones sociales quieren soportar?</div>
+            <div class="a">Más de mil si el producto escala bien.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Necesitan multi-CUIT?</div>
+            <div class="a">Todavía no estaba claro al responder, pero por el modelo de negocio la respuesta muy probablemente sea sí.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="status">A definir mejor</div>
+          <h3>Operación y soporte</h3>
+          <div class="qa">
+            <div class="q">¿Qué tolerancia tienen a caídas o demoras?</div>
+            <div class="a">No definida con precisión todavía.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Necesitan soporte operativo si falla AFIP?</div>
+            <div class="a">Probablemente sí, aunque falta definir si se cubre con reintentos automáticos o si también hará falta soporte humano.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">6. Integración y tiempos</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="status">Definido</div>
+          <h3>Dirección deseada</h3>
+          <div class="qa">
+            <div class="q">¿Quieren una solución rápida o robusta?</div>
+            <div class="a">Si es robusta y de largo plazo, mejor.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Quieren depender de un proveedor o prefieren una capa propia?</div>
+            <div class="a">Si el proveedor es bueno, están dispuestos a quedarse con él.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Tienen fecha objetivo?</div>
+            <div class="a">Una semana.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="status">Parcial</div>
+          <h3>Implementación</h3>
+          <div class="qa">
+            <div class="q">¿Quién implementa del lado de ustedes?</div>
+            <div class="a">El equipo propio con apoyo de Codex como agente CTO.</div>
+          </div>
+          <div class="qa">
+            <div class="q">¿Qué documentación técnica pueden compartir?</div>
+            <div class="a">Pendiente de definir. Lo razonable sería compartir flujo funcional, modelo de datos relevante, ejemplo de pedido y arquitectura del backend.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Preguntas que siguen abiertas</h2>
+      <div class="card">
+        <ul>
+          <li>Cómo funciona exactamente un punto de venta y si se necesita uno por local o por razón social.</li>
+          <li>Cómo sería el onboarding fiscal de cada restaurante dentro de COMANDA.</li>
+          <li>Qué validaciones mínimas pedir al cliente cuando solicita factura A, B o C.</li>
+          <li>Cómo modelar el estado fiscal del pedido: no facturado, pendiente, emitido, error, anulado.</li>
+          <li>Cómo manejar caídas de AFIP o respuestas ambiguas sin duplicar comprobantes.</li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="footer">
+      Documento interno de trabajo. Sirve para preparar reuniones, responder cuestionarios de
+      proveedores y bajar a tierra el alcance real de la facturación en COMANDA.
+    </div>
+  </div>
+</body>
+</html>

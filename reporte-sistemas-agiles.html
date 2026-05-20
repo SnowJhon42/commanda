@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Investigación Comercial - Sistemas Ágiles</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --paper: #fffaf2;
+      --ink: #1f2a2e;
+      --muted: #5e6a6f;
+      --line: #d9ccb8;
+      --accent: #ba5a31;
+      --accent-2: #226b62;
+      --warn: #9c6a00;
+      --good: #1f7a4d;
+      --shadow: 0 18px 40px rgba(58, 43, 24, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(186, 90, 49, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(34, 107, 98, 0.10), transparent 26%),
+        linear-gradient(180deg, #f7f1e8 0%, var(--bg) 100%);
+      line-height: 1.55;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 20px 64px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, rgba(255,250,242,0.98), rgba(246,237,223,0.98));
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 32px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -60px;
+      top: -60px;
+      width: 180px;
+      height: 180px;
+      background: radial-gradient(circle, rgba(186, 90, 49, 0.16), transparent 70%);
+      border-radius: 50%;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(34, 107, 98, 0.10);
+      color: var(--accent-2);
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 12px;
+      line-height: 1.1;
+    }
+
+    h1 {
+      font-size: clamp(32px, 5vw, 54px);
+      max-width: 12ch;
+    }
+
+    .lead {
+      max-width: 64ch;
+      color: var(--muted);
+      font-size: 18px;
+      margin-top: 14px;
+    }
+
+    .meeting {
+      margin-top: 22px;
+      display: inline-block;
+      padding: 12px 16px;
+      border-radius: 16px;
+      background: rgba(186, 90, 49, 0.10);
+      border: 1px solid rgba(186, 90, 49, 0.18);
+      font-size: 15px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+      margin-top: 28px;
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 24px rgba(48, 36, 24, 0.06);
+    }
+
+    .card h2 {
+      font-size: 22px;
+      margin-bottom: 10px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 12px;
+    }
+
+    .good { background: rgba(31, 122, 77, 0.12); color: var(--good); }
+    .warn { background: rgba(156, 106, 0, 0.12); color: var(--warn); }
+    .accent { background: rgba(34, 107, 98, 0.10); color: var(--accent-2); }
+
+    p { margin: 0 0 12px; }
+
+    ul {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+
+    li { margin-bottom: 8px; }
+
+    .section {
+      margin-top: 26px;
+    }
+
+    .section-title {
+      font-size: 28px;
+      margin-bottom: 14px;
+    }
+
+    .quote {
+      border-left: 4px solid var(--accent);
+      padding: 16px 18px;
+      background: rgba(186, 90, 49, 0.06);
+      border-radius: 0 16px 16px 0;
+      color: #4c3d35;
+      margin: 16px 0;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--paper);
+      box-shadow: 0 10px 24px rgba(48, 36, 24, 0.05);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: rgba(34, 107, 98, 0.08);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .sources a,
+    a {
+      color: var(--accent-2);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    .footer-note {
+      margin-top: 28px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: rgba(31, 42, 46, 0.04);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      font-size: 14px;
+    }
+
+    @media (max-width: 640px) {
+      .hero, .card { padding: 22px; }
+      .wrap { padding: 20px 14px 42px; }
+      .section-title { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">Research brief para COMANDA</div>
+      <h1>Sistemas Ágiles</h1>
+      <p class="lead">
+        Evaluación rápida, humana y profesional para decidir si vale la pena avanzar con ellos
+        como apoyo en facturación electrónica e integraciones con ARCA/AFIP.
+      </p>
+      <div class="meeting">
+        Reunión prevista: <strong>miércoles 20 de mayo de 2026, 16:00 hs</strong> · Argentina
+      </div>
+      <div class="pill-row">
+        <div class="pill">Nicho: facturación electrónica</div>
+        <div class="pill">Perfil: técnico-especialista</div>
+        <div class="pill">Encaje: alto para COMANDA</div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <span class="badge good">Conclusión corta</span>
+        <h2>¿Parece seria?</h2>
+        <p>
+          Sí. No transmite imagen de empresa grande o corporativa, pero sí de equipo con
+          experiencia real y profunda en el problema exacto que ustedes necesitan.
+        </p>
+        <p>
+          La señal más fuerte no es el diseño del sitio, sino la trayectoria pública en
+          <strong>PyAfipWs</strong>, integraciones ARCA/AFIP y soporte histórico del ecosistema.
+        </p>
+      </article>
+
+      <article class="card">
+        <span class="badge accent">Lo mejor</span>
+        <h2>Encaje con COMANDA</h2>
+        <p>
+          Si el objetivo es salir sin construir ustedes toda la capa fiscal desde cero,
+          tienen un encaje natural: conocen autenticación, emisión, certificados, CAE,
+          validaciones y errores operativos.
+        </p>
+      </article>
+
+      <article class="card">
+        <span class="badge warn">Ojo</span>
+        <h2>Qué puede preocupar</h2>
+        <p>
+          La presencia comercial se ve más artesanal que enterprise. Hay señales fuertes de
+          expertise técnico, pero menos evidencia pública de estructura grande, SLA formal
+          o cartera actual visible 2025-2026.
+        </p>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Mi lectura ejecutiva</h2>
+      <div class="quote">
+        Si quieren un proveedor que conozca de verdad el barro de AFIP/ARCA, Sistemas Ágiles
+        parece un candidato serio. Si quieren una empresa grande, con imagen corporativa
+        moderna y operación estilo enterprise, eso no es lo que muestra públicamente.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Qué encontré</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>1. Foco técnico real</h3>
+          <p>
+            Su web está muy orientada a servicios regulatorios: factura electrónica,
+            padrón, ARBA, trazabilidad, retenciones y distintos web services argentinos.
+          </p>
+        </article>
+        <article class="card">
+          <h3>2. Proyecto público relevante</h3>
+          <p>
+            Impulsan <strong>PyAfipWs</strong>, una interfaz abierta para servicios web de AFIP/ARCA,
+            con documentación pública, historial largo y repositorio activo.
+          </p>
+        </article>
+        <article class="card">
+          <h3>3. Trayectoria visible</h3>
+          <p>
+            Mariano Reingart aparece vinculado a la comunidad Python/PostgreSQL Argentina,
+            con antecedentes públicos de software libre y sistemas críticos.
+          </p>
+        </article>
+        <article class="card">
+          <h3>4. Actividad reciente</h3>
+          <p>
+            El repositorio de PyAfipWs muestra releases y cambios recientes asociados a
+            normativa actual, señal de mantenimiento vivo.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Clientes y referencias</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Señal</th>
+              <th>Qué dice</th>
+              <th>Lectura útil</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Lista pública de clientes destacados</td>
+              <td>
+                En la documentación de PyAfipWs aparecen nombres como Coca-Cola LATAM Group,
+                Boehringer Ingelheim, Tupperware Brands Argentina, Nucete, FILA Argentina,
+                Scienza y otros.
+              </td>
+              <td>
+                Es una buena señal de antecedentes. Pero la propia referencia indica un corte
+                histórico de <strong>abril de 2013</strong>, así que no prueba cartera actual.
+              </td>
+            </tr>
+            <tr>
+              <td>PostgreSQL Professional Services</td>
+              <td>
+                PostgreSQL lista a Sistemas Ágiles como proveedor de servicios en Sudamérica y
+                menciona ejemplos de clientes y experiencia.
+              </td>
+              <td>
+                Es una señal externa razonable de legitimidad técnica.
+              </td>
+            </tr>
+            <tr>
+              <td>Open source mantenido</td>
+              <td>
+                GitHub de PyAfipWs con código, issues, releases y actividad reciente.
+              </td>
+              <td>
+                Para este nicho vale mucho: indica conocimiento real, no solo relato comercial.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Fortalezas para COMANDA</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>Especialización exacta</h3>
+          <ul>
+            <li>Conocen WSAA, WSFEv1, certificados, homologación y producción.</li>
+            <li>Ya vienen pensando este problema hace muchos años.</li>
+            <li>Pueden ahorrar errores caros de integración fiscal.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Posibles formas de trabajo</h3>
+          <ul>
+            <li>Asistencia técnica para que ustedes integren.</li>
+            <li>Componente o librería para usar como base.</li>
+            <li>Resolución más llave en mano si ofrecen ese esquema.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Ventaja frente a un proveedor generalista</h3>
+          <ul>
+            <li>Hablan el idioma del problema.</li>
+            <li>Entienden los edge cases argentinos.</li>
+            <li>Probablemente resuelvan más rápido la parte fiscal que una factory común.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Riesgos o puntos a validar mañana</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>Estructura operativa</h3>
+          <p>
+            Confirmar tamaño del equipo, quién responde, tiempos de soporte y qué pasa ante
+            incidentes reales.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Clientes activos</h3>
+          <p>
+            Pedir referencias actuales, no solo históricas. Idealmente 1 o 2 casos recientes
+            parecidos a su necesidad.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Forma de integración</h3>
+          <p>
+            Entender si nos venden horas, soporte, componente, librería, servicio operado
+            o una mezcla.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Dependencia técnica</h3>
+          <p>
+            Aclarar si COMANDA queda acoplado a una herramienta concreta o si podemos mantener
+            una capa propia y documentada.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Preguntas recomendadas para la reunión</h2>
+      <div class="card">
+        <ul>
+          <li>¿Qué clientes activos tienen hoy usando su solución de factura electrónica?</li>
+          <li>¿Qué parte resuelven ustedes y qué parte deberíamos resolver nosotros?</li>
+          <li>¿Nos conviene usar su librería, una integración directa asistida o un esquema más cerrado?</li>
+          <li>¿Cómo manejan homologación, certificados, producción y cambios normativos?</li>
+          <li>¿Cómo resuelven reintentos, timeouts y doble emisión?</li>
+          <li>¿Qué soporte dan cuando AFIP/ARCA falla o devuelve respuestas ambiguas?</li>
+          <li>¿Qué tiempos de respuesta y modalidad de soporte ofrecen?</li>
+          <li>¿Pueden ayudarnos a diseñar una integración desacoplada para no quedar atados?</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Recomendación final</h2>
+      <div class="card">
+        <p>
+          <strong>Sí vale la pena tener la reunión y evaluarlos en serio.</strong>
+        </p>
+        <p>
+          Mi impresión es que pueden ser un muy buen aliado para facturación electrónica
+          argentina si ustedes priorizan conocimiento técnico del problema por encima de la
+          imagen corporativa.
+        </p>
+        <p>
+          Para COMANDA, los trataría como <strong>proveedor especialista</strong>. La decisión de
+          contratarlos debería depender de tres cosas:
+        </p>
+        <ul>
+          <li>si muestran casos actuales y soporte real,</li>
+          <li>si proponen una integración clara y mantenible,</li>
+          <li>si no los atan innecesariamente a una caja negra difícil de reemplazar.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section sources">
+      <h2 class="section-title">Fuentes consultadas</h2>
+      <div class="card">
+        <ul>
+          <li><a href="https://www.sistemasagiles.com.ar/">sistemasagiles.com.ar</a></li>
+          <li><a href="https://sistemasagiles.com.ar/equipo.html">Equipo</a></li>
+          <li><a href="https://sistemasagiles.com.ar/contacto.html">Contacto</a></li>
+          <li><a href="https://www.sistemasagiles.com.ar/trac/wiki/PyAfipWs">PyAfipWs - referencias y documentación</a></li>
+          <li><a href="https://github.com/reingart/pyafipws">GitHub - reingart/pyafipws</a></li>
+          <li><a href="https://github.com/reingart/pyafipws/releases">Releases de PyAfipWs</a></li>
+          <li><a href="https://wiki.python.org.ar/marianoreingart/">Python Argentina Wiki - Mariano Reingart</a></li>
+          <li><a href="https://www.postgresql.org/support/professional_support_southamerica/">PostgreSQL Professional Services - South America</a></li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="footer-note">
+      Documento preparado para evaluación comercial previa. No reemplaza due diligence contractual,
+      fiscal ni de seguridad. Conviene pedir referencias actuales, modalidad de soporte y alcance
+      exacto antes de contratar.
+    </div>
+  </div>
+</body>
+</html>

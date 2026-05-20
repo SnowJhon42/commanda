@@ -186,13 +186,23 @@ def _suggest_invoice_type(*, store_tax_status: str | None, customer_tax_status: 
 
 
 def _store_fiscal_profile(store: Store | None) -> StoreFiscalProfileOut:
+    is_ready = bool(
+        store
+        and store.fiscal_business_name
+        and store.fiscal_tax_id
+        and store.fiscal_commercial_address
+        and store.fiscal_gross_income_number
+        and store.fiscal_activity_start_date
+        and store.fiscal_point_of_sale
+        and store.fiscal_issuer_email
+    )
     return StoreFiscalProfileOut(
         business_name=(store.fiscal_business_name or store.name) if store else None,
         tax_id=store.fiscal_tax_id if store else None,
         tax_status=(store.fiscal_tax_status or "RESPONSABLE_INSCRIPTO") if store else "RESPONSABLE_INSCRIPTO",
         point_of_sale=store.fiscal_point_of_sale if store else None,
         issuer_email=store.fiscal_issuer_email if store else None,
-        setup_status="READY_TO_INTEGRATE" if store and store.fiscal_business_name and store.fiscal_tax_id and store.fiscal_point_of_sale and store.fiscal_issuer_email else "INCOMPLETE",
+        setup_status="READY_TO_INTEGRATE" if is_ready else "INCOMPLETE",
         integration_provider=(store.fiscal_integration_provider or "MANUAL_DEMO") if store else "MANUAL_DEMO",
     )
 
